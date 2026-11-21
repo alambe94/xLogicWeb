@@ -66,8 +66,25 @@
   <link rel="stylesheet" href="/src/ui/style.css" />
 </head>
 <body>
+  <main id="esk-home" hidden aria-labelledby="esk-home-title">
+    <div class="esk-home-content">
+      <h1 id="esk-home-title" tabindex="-1">xEskWeb</h1>
+      <section class="esk-device" aria-labelledby="esk-device-title">
+        <header><h2 id="esk-device-title" data-i18n="open.eskStatus">ESK device status</h2>
+          <button class="mini" id="esk-refresh" type="button" data-i18n="capturePanel.tempRate" hidden>Refresh</button></header>
+        <p id="esk-connection" role="status"></p>
+        <pre id="esk-identity" hidden></pre>
+        <details id="esk-features" hidden><summary data-i18n="home.features">Features</summary><ul></ul></details>
+      </section>
+      <h2 data-i18n="home.instruments">Instruments</h2>
+      <button id="esk-logic" class="esk-instrument" type="button">
+        <strong>xLogicWeb</strong><span data-i18n="home.logic">Capture waveforms and decode protocols</span>
+      </button>
+    </div>
+  </main>
   <div id="app">
     <div id="toolbar">
+      <button id="btn-esk-home" type="button" class="mini" data-i18n="home.button" title="xEskWeb">Home</button>
       <button id="btn-connect" class="toolbar-item toolbar-device" title="Connect device" aria-label="Device">
         <span class="toolbar-item-media">
           <svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" data-icon="inline-start">

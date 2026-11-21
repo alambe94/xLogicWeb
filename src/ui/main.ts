@@ -5,6 +5,7 @@
  * a shell that silently renders nothing is the worst possible outcome to debug.
  */
 
+import { initEskHome } from './eskHome.js';
 import { App } from './app.js';
 import { initLocale } from './i18n.js';
 import { initPanelWidth } from './panelWidth.js';
@@ -34,6 +35,7 @@ async function boot(): Promise<void> {
     initPanelWidth();
     await initLocale();
     window.slogicweb = new App();
+    initEskHome();
     document.getElementById('empty-hint-starting')?.remove();
     // After App: the offline shell must never delay or break the first paint.
     initServiceWorker();

@@ -215,6 +215,22 @@ html, body {
   html, body, #app { height: 100dvh; }
 }
 
+#esk-home[hidden], #app[hidden], #esk-home [hidden] { display: none; }
+#esk-home { height: 100%; overflow: auto; background: var(--background); color: var(--foreground); }
+.esk-home-content { max-width: 56rem; margin: 0 auto; padding: clamp(20px, 6vw, 64px) 20px; }
+#esk-home-title { font-size: clamp(32px, 7vw, 48px); letter-spacing: -.04em; margin: 0 0 1.5rem; }
+#esk-home h2 { font-size: 1.15rem; margin: 0; }
+.esk-device { border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 1.2rem; margin-bottom: 2rem; }
+.esk-device header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.esk-device pre { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.esk-device summary { cursor: pointer; }
+.esk-device li { margin-block: .35rem; }
+.esk-instrument { display: grid; gap: .45rem; text-align: left; width: 100%; margin-top: .7rem; padding: 1.2rem; cursor: pointer;
+  color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-inline-start: 3px solid var(--primary); border-radius: 6px; }
+.esk-instrument:hover, .esk-instrument:focus-visible { background: var(--popover-hover); }
+.esk-instrument strong { font-size: 1.15rem; }
+.esk-instrument span { color: var(--muted-foreground); }
+
 /* ---------------------------------------------------------------- toolbar */
 
 #toolbar {
