@@ -37,12 +37,22 @@ export async function capturePairedBoard(): Promise<{ samples: Uint8Array; ticks
 }
 
 interface Feature { name: string; instance: number; enabled: boolean; ownership: string }
-export interface BoardStatus { deviceId: string; boot: string; firmware: number; features: Feature[] }
+interface Catalog { services: string[][]; resources: string[][] }
+export interface BoardStatus { deviceId: string; boot: string; firmware: number; features: Feature[]; catalog?: Catalog }
+
+function validRows(rows: unknown, limit: number): boolean {
+  return Array.isArray(rows) && rows.length <= limit && rows.every(row =>
+    Array.isArray(row) && row.length === 5 && row.every(cell => typeof cell === 'string'));
+}
 export async function readBoardStatus(): Promise<BoardStatus> {
   const data = await request('status') as BoardStatus | null;
   if (!data || !/^[0-9a-f]{32}$/i.test(data.deviceId) || !/^\d{1,20}$/.test(data.boot) ||
       !Number.isSafeInteger(data.firmware) || !Array.isArray(data.features) || data.features.length > 64 ||
       !data.features.every(row => row && typeof row.name === 'string' && Number.isInteger(row.instance) &&
         typeof row.enabled === 'boolean' && typeof row.ownership === 'string')) throw new Error('Invalid ESK status');
+  if (data.catalog !== undefined && (!data.catalog ||
+      !validRows(data.catalog.services, 32) || !validRows(data.catalog.resources, 64))) {
+    throw new Error('Invalid ESK device catalog');
+  }
   return data;
 }
