@@ -1,165 +1,54 @@
-# Build the multi-file web distribution and publish it to GitHub Pages.
-#
-# Why each step exists (see docs/ and src/decode/tools/vendor-assets.mjs):
-#   - public/pyodide/ and public/decoders/ are gitignored; they are vendored at
-#     build time from the `pyodide` npm package and a libsigrokdecode checkout.
-#     `vite build` refuses to run without them (requireRuntimeAssets plugin).
-#   - vendor-assets.mjs needs `zip` and `python3` on PATH (both preinstalled on
-#     ubuntu runners) and the `pyodide` dependency from `npm ci`.
-#   - The site is served at the ROOT of the custom domain slogic.sipeed.com, so
-#     the base is `/`. It MUST be an absolute base: the decode worker resolves
-#     Pyodide/decoders from import.meta.env.BASE_URL, and a relative base ('./')
-#     would 404 inside the blob worker (see src/decode/worker.ts).
-#   - sub_service/ota is the sipeed/slogic_ota_server submodule: the WebUSB
-#     firmware-update pages. They are copied verbatim into dist/ota/ so the
-#     published site carries both the analyser and the updater on one origin -
-#     which is also the origin its batch-page browser policy names
-#     (STATION_ORIGIN in sub_service/ota/src/station.js).
-name: Deploy to GitHub Pages
+name: Deploy xLogicWeb to GitHub Pages
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# Never let two Pages deploys race; let a running one finish.
 concurrency:
   group: pages
   cancel-in-progress: false
-
-env:
-  # Pin a libsigrokdecode commit for reproducible decoder sets. Bump deliberately.
-  # Using a branch instead of a SHA makes the build non-reproducible over time.
-  LIBSIGROKDECODE_REF: master
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          # sub_service/ota is a submodule: without this the directory is empty
-          # and the staging step below cannot publish /ota/. Its remote is an
-          # SSH URL; with no ssh-key the action rewrites git@github.com: to
-          # HTTPS, which is all a public submodule needs.
-          submodules: true
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+          node-version: 22
           cache: npm
-
-      - name: Test Kodo publisher
-        run: node --test .github/scripts/upload-qiniu.test.mjs
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Fetch libsigrokdecode decoders
+      - run: npm ci
+      - name: Prepare protocol decoders
         run: |
-          git clone --depth 1 --branch "$LIBSIGROKDECODE_REF" \
-            https://github.com/sigrokproject/libsigrokdecode "$RUNNER_TEMP/lsd"
-
-      - name: Vendor runtime assets (Pyodide + decoders + manifest)
-        run: node src/decode/tools/vendor-assets.mjs "$RUNNER_TEMP/lsd/decoders"
-
-      - name: Type-check
-        run: npm run check
-
-      # The update pages ship byte-for-byte as the submodule holds them, so the
-      # submodule's own suite is what proves the copy is publishable - including
-      # stamp.test.mjs, which fails on a stale asset hash in the import map.
-      - name: Test the OTA update pages
-        working-directory: sub_service/ota
-        run: node --test test/*.test.mjs
-
-      - name: Build (absolute base for the custom-domain root)
-        run: npx vite build --base=/
-
-      # Only the files the browser needs, exactly as the submodule's own pages
-      # workflow publishes them. The pages use relative URLs and a relative
-      # import map, so they need no base rewriting to live under /ota/.
-      - name: Stage the OTA update pages under /ota/
-        run: |
-          mkdir -p dist/ota
-          cp -r sub_service/ota/index.html \
-                sub_service/ota/batch.html \
-                sub_service/ota/style.css \
-                sub_service/ota/favicon.svg \
-                sub_service/ota/firmware.json \
-                sub_service/ota/src \
-                dist/ota/
-          # Preserve /ota without a slash on Kodo, which has no directory redirect.
-          cp .github/scripts/ota-redirect.html dist/ota-redirect.html
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+          git init "$RUNNER_TEMP/decoders"
+          git -C "$RUNNER_TEMP/decoders" fetch --depth 1 https://github.com/sigrokproject/libsigrokdecode 71f451443029322d57376214c330b518efd84f88
+          git -C "$RUNNER_TEMP/decoders" checkout --detach FETCH_HEAD
+          node src/decode/tools/vendor-assets.mjs "$RUNNER_TEMP/decoders/decoders"
+      - run: npm run check
+      - name: Build for the repository's Pages path
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: npx --no-install vite build --base="/$REPO_NAME/"
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
+    permissions:
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
-
-  # Keep Pages for overseas users/rollback. Publish the SAME artifact to Kodo before
-  # purging the mainland CDN; never refresh an origin that still has the old release.
-  purge-cdn:
-    needs: deploy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # The exact files Pages just published: the edge is checked against these bytes.
-      - name: Download the Pages artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: github-pages
-          path: ${{ runner.temp }}/pages
-
-      - name: Unpack the Pages artifact
-        run: |
-          mkdir -p "$RUNNER_TEMP/site"
-          tar -xf "$RUNNER_TEMP/pages/artifact.tar" -C "$RUNNER_TEMP/site"
-
-      - name: Set up Node for Kodo upload
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Upload the same artifact to the Qiniu origin bucket
-        env:
-          QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
-          QINIU_SECRET_KEY: ${{ secrets.QINIU_SECRET_KEY }}
-          QINIU_BUCKET: ${{ vars.QINIU_BUCKET }}
-        run: node .github/scripts/upload-qiniu.mjs "$RUNNER_TEMP/site"
-
-      - name: Purge the Qiniu CDN and verify an edge
-        env:
-          QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
-          QINIU_SECRET_KEY: ${{ secrets.QINIU_SECRET_KEY }}
-        run: .github/scripts/purge-qiniu-cdn.sh "$RUNNER_TEMP/site"
-
-      # Source maps are only fetched by DevTools and the entry map is renamed on every
-      # build, so they go up after the purge and never fail or delay the deploy.
-      - name: Upload source maps to the Qiniu origin (best-effort)
-        continue-on-error: true
-        env:
-          QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
-          QINIU_SECRET_KEY: ${{ secrets.QINIU_SECRET_KEY }}
-          QINIU_BUCKET: ${{ vars.QINIU_BUCKET }}
-        run: node .github/scripts/upload-qiniu.mjs --source-maps "$RUNNER_TEMP/site"

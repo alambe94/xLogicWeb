@@ -146,6 +146,9 @@ import {
   type CaptureAbort,
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
+import { showEskStatus } from './eskStatusDialog.js';
+import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
+import { captureEsk, ESK_RATE, requestEskDevice } from '../device/eskCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
 import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';
@@ -490,6 +493,7 @@ export class App {
     key: string; store: SampleStore; job: CaptureRangeJob; sources: CaptureJobSource[];
   } | null = null;
   private captureSessionId = 0;
+  private eskCapturePending = false;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
   /**
@@ -1131,7 +1135,7 @@ export class App {
   }
 
   private loadedCapture(): boolean {
-    return this.captureLabel.kind === 'loaded';
+    return this.captureLabel.kind === 'loaded' || this.captureLabel.kind === 'esk';
   }
 
   /**
@@ -6503,7 +6507,7 @@ export class App {
 
   private renderPlatformNotice(): void {
     const key = platformNoticeKey(this.deviceSupport);
-    const show = key !== null && !this.platformNoticeDismissed;
+    const show = key !== null && !this.platformNoticeDismissed && !eskLanMode();
     this.el.platformNoticeText.textContent = show ? t(key) : '';
     this.el.platformNotice.hidden = !show;
   }
@@ -7584,10 +7588,47 @@ export class App {
     this.scheduleAutoDecode();
   }
 
-  /** One Open entry point: a file from disk first, then the bundled example capture. */
+  private async openEskCapture(transport: 'usb' | 'ethernet'): Promise<void> {
+    if (this.eskCapturePending || this.running || this.stopping) return;
+    this.eskCapturePending = true;
+    const previous = this.captureSessionId;
+    try {
+      const device = transport === 'usb' ? await requestEskDevice() : null;
+      if (!(await this.confirmDiscardCapture())) return;
+      if (previous !== this.captureSessionId || this.running || this.stopping) return;
+      this.endPendingRepeatSession();
+      const { samples, ticks } = device ? { samples: await captureEsk(device), ticks: undefined } : await captureEskLan();
+      // Another open or acquisition can replace the display while the capture is in progress.
+      if (previous !== this.captureSessionId || this.running || this.stopping) return;
+      const store = createSampleStore(8, ESK_RATE);
+      store.append(samples);
+      this.statusError = null;
+      this.renderErrorBanner();
+      this.captureOrigin = { model: 'ESK xLOGIC', fileName: null };
+      this.adoptCapture(store, [], { kind: 'esk', samples: store.length, rate: store.samplerate, ticks });
+      const vars = { samples: formatCount(store.length), rate: formatRate(store.samplerate) };
+      this.setFileNotice(ticks === undefined ? { key: 'capture.esk', vars } :
+        { key: 'capture.eskLan', vars: { ...vars, ticks } });
+      this.syncUnloadGuard();
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'NotFoundError')) this.fail('error.openCapture', error);
+    } finally {
+      this.eskCapturePending = false;
+    }
+  }
+
+  /** Open a file, a finite ESK USB capture, or the bundled example. */
   private openItems(): SettingsMenuItem[] {
     return [
       { label: t('open.file'), hint: t('open.fileHint'), onPick: () => void this.pickFiles() },
+      ...(navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
+        label: t('open.esk'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('usb'),
+      }] : []),
+      ...(eskLanMode() === 'paired' ? [{ label: t('open.eskStatus'), onPick: () => void showEskStatus() }] : []),
+      ...(eskLanMode() &&
+          !this.running && !this.stopping && !this.eskCapturePending ? [{
+        label: t('open.eskLan'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('ethernet'),
+      }] : []),
       { label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openExample() },
     ];
   }
