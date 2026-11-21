@@ -256,6 +256,7 @@ export type CaptureLabel =
   | { kind: 'none' }
   | { kind: 'capturing'; channels: number; rate: number }
   | { kind: 'loaded'; source: string; ms: number }
+  | { kind: 'esk'; samples: number; rate: number }
   | { kind: 'stoppedNoTrigger'; samples: number }
   | { kind: 'live'; samples: number; rate: number; seconds: number }
   /** An analog Auto sweep forced the capture: real data, no trigger (no T). */

@@ -146,6 +146,7 @@ import {
   type CaptureAbort,
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
+import { captureEsk, ESK_RATE, requestEskDevice } from '../device/eskCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
 import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';
@@ -490,6 +491,7 @@ export class App {
     key: string; store: SampleStore; job: CaptureRangeJob; sources: CaptureJobSource[];
   } | null = null;
   private captureSessionId = 0;
+  private eskCapturePending = false;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
   /**
@@ -1131,7 +1133,7 @@ export class App {
   }
 
   private loadedCapture(): boolean {
-    return this.captureLabel.kind === 'loaded';
+    return this.captureLabel.kind === 'loaded' || this.captureLabel.kind === 'esk';
   }
 
   /**
@@ -7584,10 +7586,40 @@ export class App {
     this.scheduleAutoDecode();
   }
 
-  /** One Open entry point: a file from disk first, then the bundled example capture. */
+  private async openEskCapture(): Promise<void> {
+    if (this.eskCapturePending || this.running || this.stopping) return;
+    this.eskCapturePending = true;
+    const previous = this.captureSessionId;
+    try {
+      const device = await requestEskDevice();
+      if (!(await this.confirmDiscardCapture())) return;
+      if (previous !== this.captureSessionId || this.running || this.stopping) return;
+      this.endPendingRepeatSession();
+      const samples = await captureEsk(device);
+      // Another open or acquisition can replace the display while the USB promise settles.
+      if (previous !== this.captureSessionId || this.running || this.stopping) return;
+      const store = createSampleStore(8, ESK_RATE);
+      store.append(samples);
+      this.statusError = null;
+      this.renderErrorBanner();
+      this.captureOrigin = { model: 'ESK xLOGIC', fileName: null };
+      this.adoptCapture(store, [], { kind: 'esk', samples: store.length, rate: store.samplerate });
+      this.setFileNotice(null);
+      this.syncUnloadGuard();
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'NotFoundError')) this.fail('error.openCapture', error);
+    } finally {
+      this.eskCapturePending = false;
+    }
+  }
+
+  /** Open a file, a finite ESK USB capture, or the bundled example. */
   private openItems(): SettingsMenuItem[] {
     return [
       { label: t('open.file'), hint: t('open.fileHint'), onPick: () => void this.pickFiles() },
+      ...(navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
+        label: t('open.esk'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture(),
+      }] : []),
       { label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openExample() },
     ];
   }

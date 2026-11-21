@@ -9,6 +9,14 @@ Everything runs locally; there are no accounts and no cloud.
 - Hosted: https://slogic.sipeed.com
 - Source: https://github.com/sipeed/slogicweb
 
+## ESK xLOGIC over USB
+
+Open the app in Chrome or Edge on HTTPS or localhost and connect the ESK application
+USB cable. From **Open**, choose **Capture from ESK USB…** and select the board.
+The viewer displays eight digital channels from one 65,536-sample acquisition at
+333,333,333 Hz. Zoom, add decoders or save the trace using the usual viewer controls.
+The board can be released or unplugged after the waveform appears.
+
 ## Features
 
 - Single, Repeat and Loop capture with digital and qualified analog triggers, pre-trigger
