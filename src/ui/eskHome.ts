@@ -2,6 +2,19 @@
 import { fromBoard, readBoardStatus } from '../device/eskPairedBoard.js';
 import { t } from './i18n.js';
 
+function showRows(body: HTMLTableSectionElement, rows: string[][]): void {
+  body.replaceChildren();
+  if (!rows.length) {
+    const cell = body.insertRow().insertCell();
+    cell.colSpan = 5;
+    cell.textContent = t('home.empty');
+  }
+  for (const fields of rows) {
+    const row = body.insertRow();
+    for (const field of fields) row.insertCell().textContent = field;
+  }
+}
+
 export function initEskHome(): void {
   const home = document.querySelector<HTMLElement>('#esk-home')!;
   const logic = document.querySelector<HTMLElement>('#app')!;
@@ -12,9 +25,13 @@ export function initEskHome(): void {
   const connection = document.querySelector<HTMLElement>('#esk-connection')!;
   const features = document.querySelector<HTMLDetailsElement>('#esk-features')!;
 
+  const details = document.querySelector<HTMLDetailsElement>('#esk-details')!;
+  const services = document.querySelector<HTMLTableSectionElement>('#esk-services')!;
+  const resources = document.querySelector<HTMLTableSectionElement>('#esk-resources')!;
+
   async function updateStatus(): Promise<void> {
     if (refresh.disabled) return;
-    identity.hidden = features.hidden = true;
+    identity.hidden = features.hidden = details.hidden = true;
     refresh.hidden = !fromBoard();
     if (refresh.hidden) {
       connection.textContent = t('home.unpaired');
@@ -34,6 +51,11 @@ export function initEskHome(): void {
       });
       features.querySelector('ul')!.replaceChildren(...rows);
       features.hidden = !rows.length;
+      if (board.catalog) {
+        showRows(services, board.catalog.services);
+        showRows(resources, board.catalog.resources);
+        details.hidden = false;
+      }
     } catch (error) {
       connection.textContent = error instanceof Error ? error.message : String(error);
     } finally { refresh.disabled = false; }

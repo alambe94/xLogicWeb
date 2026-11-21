@@ -75,6 +75,14 @@
         <p id="esk-connection" role="status"></p>
         <pre id="esk-identity" hidden></pre>
         <details id="esk-features" hidden><summary data-i18n="home.features">Features</summary><ul></ul></details>
+        <details id="esk-details" hidden><summary data-i18n="home.details">Device details</summary>
+          <div class="esk-catalog-scroll"><table><caption data-i18n="home.services">Services</caption>
+            <thead><tr><th scope="col" data-i18n="home.service">Service / instance</th><th scope="col" data-i18n="home.transport">Transport</th><th scope="col" data-i18n="home.limits">Request / reply bytes</th><th scope="col" data-i18n="home.requirements">Requirements</th><th scope="col" data-i18n="home.access">Browser access</th></tr></thead>
+            <tbody id="esk-services"></tbody></table></div>
+          <div class="esk-catalog-scroll"><table><caption data-i18n="home.resources">Resources</caption>
+            <thead><tr><th scope="col" data-i18n="home.resource">ID / type</th><th scope="col" data-i18n="home.sharing">Sharing</th><th scope="col" data-i18n="home.capacity">Capacity</th><th scope="col" data-i18n="home.range">Range</th><th scope="col" data-i18n="home.unit">Unit</th></tr></thead>
+            <tbody id="esk-resources"></tbody></table></div>
+        </details>
       </section>
       <h2 data-i18n="home.instruments">Instruments</h2>
       <button id="esk-logic" class="esk-instrument" type="button">
