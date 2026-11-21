@@ -58,6 +58,8 @@ export const ru: Messages = {
   'save.srType': 'Сеанс sigrok (PulseView)',
   'open.file': 'Открыть файл…',
   'open.fileHint': '.sr или .lwcap',
+  'open.eskLan': 'Захват с ESK Ethernet…',
+  'capture.eskLan': 'ESK Ethernet · {samples} отсчётов при {rate} · такты платы {ticks}',
   'open.esk': 'Захват с ESK USB…',
   'open.eskHint': '8 каналов · 65 536 отсчётов',
   'capture.esk': 'ESK xLOGIC · {samples} отсчётов при {rate}',

@@ -58,6 +58,8 @@ export const fr: Messages = {
   'save.srType': 'Session sigrok (PulseView)',
   'open.file': 'Ouvrir un fichier…',
   'open.fileHint': '.sr ou .lwcap',
+  'open.eskLan': 'Capturer depuis ESK Ethernet…',
+  'capture.eskLan': 'ESK Ethernet · {samples} échantillons à {rate} · horloge carte {ticks}',
   'open.esk': 'Capturer depuis ESK USB…',
   'open.eskHint': '8 voies · 65 536 échantillons',
   'capture.esk': 'ESK xLOGIC · {samples} échantillons à {rate}',

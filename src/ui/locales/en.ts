@@ -62,6 +62,8 @@ export const en = {
   'save.srType': 'sigrok session (PulseView)',
   'open.file': 'Open file…',
   'open.fileHint': '.sr or .lwcap',
+  'open.eskLan': 'Capture from ESK Ethernet…',
+  'capture.eskLan': 'ESK Ethernet · {samples} samples at {rate} · board ticks {ticks}',
   'open.esk': 'Capture from ESK USB…',
   'open.eskHint': '8 channels · 65,536 samples',
   'capture.esk': 'ESK xLOGIC · {samples} samples at {rate}',

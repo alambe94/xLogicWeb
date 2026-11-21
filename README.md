@@ -17,6 +17,21 @@ The viewer displays eight digital channels from one 65,536-sample acquisition at
 333,333,333 Hz. Zoom, add decoders or save the trace using the usual viewer controls.
 The board can be released or unplugged after the waveform appears.
 
+## ESK xLOGIC over Ethernet
+
+On a trusted LAN, run the bridge on a computer with the built viewer, Python
+and the xSDK host tools. The phone only needs a browser on the same network.
+
+```sh
+python dev/esk_lan.py --dist dist --xsdk /path/to/xSDK --bind <host-lan-ip> --locator tcp://<board-ip>:5555 --device-id <board-device-id> --board sk-am64b
+```
+
+Open the printed `/esk.html` URL and choose **Open → Capture from ESK Ethernet…**.
+Each request acquires a new eight-channel record using the board's TCP service.
+The capture title includes the board timestamp in ticks. Acquisition uses the
+same finite profile as USB. The bridge releases the board after each request.
+Anyone who can open the bridge on the LAN can request a capture.
+
 ## Features
 
 - Single, Repeat and Loop capture with digital and qualified analog triggers, pre-trigger
