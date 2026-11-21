@@ -5074,6 +5074,7 @@ export class App {
     });
 
     window.addEventListener('keydown', (e) => {
+      if (document.getElementById('app')?.hidden) return;
       const chord = chordOf(e);
       if (chord === null) return;
       const id = actionOf(chord);
