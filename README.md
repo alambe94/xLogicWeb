@@ -1,4 +1,4 @@
-# SLogicWeb
+# xLogicWeb
 
 A browser logic analyzer and mixed-signal viewer for Sipeed SLogic16 U3 and SLogic32 U3:
 digital channels, the SLogic32 U3's ADC module as analog rows, and sigrok protocol
@@ -6,8 +6,9 @@ decoders on one timeline. It talks to the board over WebUSB, so there is nothing
 install: open the page in a Chromium-based browser, connect the board and capture.
 Everything runs locally; there are no accounts and no cloud.
 
-- Hosted: https://slogic.sipeed.com
-- Source: https://github.com/sipeed/slogicweb
+This fork adds ESK acquisition to the Sipeed viewer. The fork's Pages workflow builds for the repository path on `github.io`. A Pages-hosted session can acquire over WebUSB after the user selects the probe. Waveform acquisition and decoding run in the browser.
+
+Upstream viewer and source: [SLogicWeb](https://github.com/sipeed/slogicweb).
 
 ## ESK xLOGIC over USB
 
@@ -31,6 +32,14 @@ Each request acquires a new eight-channel record using the board's TCP service.
 The capture title includes the board timestamp in ticks. Acquisition uses the
 same finite profile as USB. The bridge releases the board after each request.
 Anyone who can open the bridge on the LAN can request a capture.
+
+### Open from the board
+
+On firmware with **Open xLogicWeb**, tap that button at the board IP and keep the board tab open. The new tab loads the full viewer from GitHub Pages. Under **Open**, select **ESK device status** or **Capture from ESK Ethernet…**. The board tab owns the local WebSocket and returns the reply directly to the viewer tab. The initial viewer load needs Internet access. A USB-only user can open the hosted viewer directly.
+
+### Board-origin viewer
+
+When the full viewer files are served at the board's numeric HTTP origin, open the viewer with `?esk=board` and choose **Open → Capture from ESK Ethernet…**. It uses the board's existing `/control.mjs` and `/finite.mjs` and its same-origin `/api/capture` WebSocket. Each capture acquires and releases LOGIC/0. The current small firmware dashboard does not include the full viewer files. Opening the public Pages site alone does not enable Ethernet capture against a board IP.
 
 ## Features
 

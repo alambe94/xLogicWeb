@@ -146,7 +146,8 @@ import {
   type CaptureAbort,
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
-import { captureEskLan } from '../device/eskLanCapture.js';
+import { showEskStatus } from './eskStatusDialog.js';
+import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
 import { captureEsk, ESK_RATE, requestEskDevice } from '../device/eskCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
@@ -6506,7 +6507,7 @@ export class App {
 
   private renderPlatformNotice(): void {
     const key = platformNoticeKey(this.deviceSupport);
-    const show = key !== null && !this.platformNoticeDismissed;
+    const show = key !== null && !this.platformNoticeDismissed && !eskLanMode();
     this.el.platformNoticeText.textContent = show ? t(key) : '';
     this.el.platformNotice.hidden = !show;
   }
@@ -7605,7 +7606,9 @@ export class App {
       this.renderErrorBanner();
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: null };
       this.adoptCapture(store, [], { kind: 'esk', samples: store.length, rate: store.samplerate, ticks });
-      this.setFileNotice(null);
+      const vars = { samples: formatCount(store.length), rate: formatRate(store.samplerate) };
+      this.setFileNotice(ticks === undefined ? { key: 'capture.esk', vars } :
+        { key: 'capture.eskLan', vars: { ...vars, ticks } });
       this.syncUnloadGuard();
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'NotFoundError')) this.fail('error.openCapture', error);
@@ -7621,7 +7624,8 @@ export class App {
       ...(navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
         label: t('open.esk'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('usb'),
       }] : []),
-      ...(document.querySelector('meta[name="esk-lan-capture"][content="finite"]') &&
+      ...(eskLanMode() === 'paired' ? [{ label: t('open.eskStatus'), onPick: () => void showEskStatus() }] : []),
+      ...(eskLanMode() &&
           !this.running && !this.stopping && !this.eskCapturePending ? [{
         label: t('open.eskLan'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('ethernet'),
       }] : []),
