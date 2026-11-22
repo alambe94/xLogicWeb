@@ -58,6 +58,8 @@ export const ru: Messages = {
   'save.srType': 'Сеанс sigrok (PulseView)',
   'open.file': 'Открыть файл…',
   'open.fileHint': '.sr или .lwcap',
+  'rec.live': 'Запись ESK по USB (41,67 Мвыб/с)',
+  'rec.tail': 'При остановке за пределами записи осталось {samples} отсчётов',
   'rec.title': 'Запись из сохранённого сеанса',
   'rec.source': 'Источник (.sr, 8 цифровых каналов)',
   'rec.limit': 'Лимит записи (МиБ, необязательно)',

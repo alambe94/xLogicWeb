@@ -7621,6 +7621,18 @@ export class App {
     }
   }
 
+  private openEskRecorder(live: boolean): void {
+    showEskRecorder(live, (bytes, rate, start, name) => {
+      this.endPendingRepeatSession();
+      const store = createSampleStore(8, rate);
+      store.append(bytes);
+      this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };
+      this.adoptCapture(store, [], { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 });
+      this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
+      this.syncUnloadGuard();
+    }, () => this.confirmDiscardCapture());
+  }
+
   /** Open a file, a finite ESK USB capture, or the bundled example. */
   private openItems(): SettingsMenuItem[] {
     return [
@@ -7633,17 +7645,10 @@ export class App {
           !this.running && !this.stopping && !this.eskCapturePending ? [{
         label: t('open.eskLan'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('ethernet'),
       }] : []),
-      ...(!this.running && !this.stopping && !this.eskCapturePending ? [{
-        label: t('rec.title'), onPick: () => showEskRecorder((bytes, rate, start, name) => {
-          this.endPendingRepeatSession();
-          const store = createSampleStore(8, rate);
-          store.append(bytes);
-          this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };
-          this.adoptCapture(store, [], { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 });
-          this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
-          this.syncUnloadGuard();
-        }, () => this.confirmDiscardCapture()),
-      }] : []),
+      ...(!this.running && !this.stopping && !this.eskCapturePending ? [
+        ...(navigator.usb ? [{ label: t('rec.live'), onPick: () => this.openEskRecorder(true) }] : []),
+        { label: t('rec.title'), onPick: () => this.openEskRecorder(false) },
+      ] : []),
       { label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openExample() },
     ];
   }

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { OpfsRecordController, RecordArchive } from '../data/recordController.js';
 import { createOpfsRecordStorage } from '../data/opfsStorage.js';
+import { ESK_STREAM_RATE, requestEskDevice } from '../device/eskCapture.js';
 import { openEskReplay } from './srLoad.js';
 import { t } from './i18n.js';
+
+import type { LiveReply, LiveRequest } from '../device/eskRecordWorker.js';
 
 const MiB = 1024 * 1024;
 const displaySamples = 65536;
@@ -33,7 +36,7 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export function showEskRecorder(display: Display, confirmReplace: () => Promise<boolean>): void {
+export function showEskRecorder(live: boolean, display: Display, confirmReplace: () => Promise<boolean>): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
   if (dialog.open) return;
   const get = <T extends HTMLElement>(id: string) => dialog.querySelector<T>('#rec-' + id)!;
@@ -42,9 +45,13 @@ export function showEskRecorder(display: Display, confirmReplace: () => Promise<
   const archive = get<HTMLSelectElement>('archive'), first = get<HTMLInputElement>('first');
   const reopen = get<HTMLButtonElement>('reopen'), remove = get<HTMLButtonElement>('delete');
   const close = get<HTMLButtonElement>('close'), status = get<HTMLOutputElement>('status');
+  const heading = get<HTMLElement>('heading');
+  heading.dataset.i18n = live ? 'rec.live' : 'rec.title';
+  heading.textContent = live ? t('rec.live') : t('rec.title');
+  source.parentElement!.hidden = live;
   let busy = false, abort: AbortController | null = null, ready = false;
   function update() {
-    record.disabled = busy || !ready || !source.files?.length || !limit.validity.valid;
+    record.disabled = busy || !ready || (!live && !source.files?.length) || !limit.validity.valid;
     source.disabled = limit.disabled = archive.disabled = first.disabled = busy || !ready;
     stop.disabled = !abort || abort.signal.aborted;
     close.disabled = busy;
@@ -69,29 +76,84 @@ export function showEskRecorder(display: Display, confirmReplace: () => Promise<
     t('rec.progress', { accepted: accepted.toLocaleString(), saved: saved.toLocaleString(), queue: (queued / MiB).toFixed(1) });
   record.onclick = () => void run(async () => {
     const file = source.files?.[0];
-    if (!file || !(await confirmReplace())) return;
-    const replay = await openEskReplay(file);
+    if (!live && !file) return;
+    const device = live ? await requestEskDevice() : null;
+    if (!(await confirmReplace())) return;
+    const replay = live ? null : await openEskReplay(file!);
+    const rate = replay?.rate ?? ESK_STREAM_RATE;
+    const title = live ? 'xLOGIC USB' : file!.name;
     const budget = limit.value ? limit.valueAsNumber * MiB : Infinity;
     if (budget !== Infinity && !Number.isSafeInteger(budget)) throw new Error(t('rec.invalidLimit'));
     const root = await recordingRoot();
     const name = new Date().toISOString().replace(/:/g, '-') + ' ' +
-      file.name.replace(/[^\p{L}\p{N} ._-]/gu, '_').slice(0, 48) + ' ' + crypto.randomUUID().slice(0, 8);
+      title.replace(/[^\p{L}\p{N} ._-]/gu, '_').slice(0, 48) + ' ' + crypto.randomUUID().slice(0, 8);
     await withArchive(name, async () => {
       const dir = await root.getDirectoryHandle(name, { create: true });
+      const signal = (abort = new AbortController()).signal;
+      update();
+      if (device) {
+        const worker = new Worker(new URL('../device/eskRecordWorker.ts', import.meta.url), { type: 'module' });
+        const send = (message: LiveRequest) => worker.postMessage(message);
+        const stopWorker = () => send({ type: 'stop' });
+        signal.addEventListener('abort', stopWorker, { once: true });
+        try {
+          const result = await new Promise<Extract<LiveReply, { type: 'end' }>>((resolve, reject) => {
+            worker.onerror = e => reject(new Error(e.message));
+            worker.onmessageerror = () => reject(new Error('Invalid USB recording worker response'));
+            worker.onmessage = ({ data }: MessageEvent<LiveReply>) => {
+              if (data.type === 'end') { resolve(data); return; }
+              try {
+                display(data.data, rate, data.accepted - data.data.length, title);
+                status.value = progress(data.accepted, data.saved, data.queue);
+              } finally { send({ type: 'displayed' }); }
+            };
+            send({ type: 'start', directory: dir, serial: device.serialNumber ?? '', limit: budget });
+          });
+          first.value = String(Math.max(0, result.saved - displaySamples));
+          status.value = progress(result.accepted, result.saved, 0);
+          if (result.error) throw new Error(result.error + ' · ' + status.value);
+          if (result.wire !== undefined) status.value += ' · ' + t('rec.tail', { samples: (result.wire - BigInt(result.accepted)).toLocaleString() });
+          if (result.accepted === budget) status.value = t('rec.atLimit') + ' · ' + status.value;
+          // The last preview may have been skipped while the renderer was busy.
+          if (result.saved) {
+            const saved = new RecordArchive(await createOpfsRecordStorage(dir));
+            const last = Number(first.value);
+            display(await saved.readBytes(last, result.saved), rate, last, title);
+          }
+        } finally {
+          signal.removeEventListener('abort', stopWorker);
+          worker.terminate();
+          await list(name);
+        }
+        return;
+      }
+      if (!replay) return;
       const controller = new OpfsRecordController(await createOpfsRecordStorage(dir), {
-        profile: { profileId: file.name, calibrationId: null, channels: 8, sampleRateHz: replay.rate, bytesPerSample: 1 },
+        profile: { profileId: title, calibrationId: null, channels: 8, sampleRateHz: rate, bytesPerSample: 1 },
         maxBytes: budget,
       });
       let accepted = 0;
       let invalidReplay = false;
-      const signal = (abort = new AbortController()).signal;
-      update();
+      let tail = new Uint8Array(0);
+      function accept(sourceBlock: Uint8Array) {
+        const block = sourceBlock.subarray(0, Math.min(sourceBlock.length, budget - accepted));
+        controller.capture(block, { startSeconds: accepted / rate, endSeconds: (accepted + block.length) / rate });
+        if (controller.lastError) throw new Error(controller.lastError);
+        accepted += block.length;
+        const n = Math.min(displaySamples, accepted);
+        const next = new Uint8Array(n);
+        const take = Math.min(n, block.length);
+        if (take < n) next.set(tail.subarray(tail.length - (n - take)));
+        next.set(block.subarray(block.length - take), n - take);
+        tail = next;
+        display(tail, rate, accepted - n, title);
+        status.value = progress(accepted, controller.bytes, controller.queuedBytes);
+      }
       try {
         controller.arm();
         await controller.whenIdle();
         if (controller.lastError) throw new Error(controller.lastError);
         let nextBlock = performance.now();
-        let tail = new Uint8Array(0);
         for await (const sourceBlock of replay.blocks()) {
           // File replay can slow its producer without losing samples. Leave queue headroom
           // for the block being decoded and keep disk stalls from causing catch-up bursts.
@@ -102,19 +164,8 @@ export function showEskRecorder(display: Display, confirmReplace: () => Promise<
           await waitForBlock(nextBlock - performance.now(), signal);
           if (controller.lastError) throw new Error(controller.lastError);
           if (signal.aborted) break;
-          const block = sourceBlock.subarray(0, Math.min(sourceBlock.length, budget - accepted));
-          nextBlock = performance.now() + block.length / replay.rate * 1000;
-          controller.capture(block, { startSeconds: accepted / replay.rate, endSeconds: (accepted + block.length) / replay.rate });
-          if (controller.lastError) throw new Error(controller.lastError);
-          accepted += block.length;
-          const n = Math.min(displaySamples, accepted);
-          const next = new Uint8Array(n);
-          const take = Math.min(n, block.length);
-          if (take < n) next.set(tail.subarray(tail.length - (n - take)));
-          next.set(block.subarray(block.length - take), n - take);
-          tail = next;
-          display(tail, replay.rate, accepted - n, file.name);
-          status.value = progress(accepted, controller.bytes, controller.queuedBytes);
+          accept(sourceBlock);
+          nextBlock = performance.now() + sourceBlock.length / rate * 1000;
           if (accepted === budget && accepted < replay.size) break;
         }
       } catch (error) {

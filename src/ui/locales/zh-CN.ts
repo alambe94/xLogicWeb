@@ -56,6 +56,8 @@ export const zhCN: Messages = {
   'save.srType': 'sigrok 会话（PulseView）',
   'open.file': '打开文件…',
   'open.fileHint': '.sr 或 .lwcap',
+  'rec.live': '实时录制 ESK USB（41.67 MS/s）',
+  'rec.tail': '停止时有 {samples} 个样本未保存',
   'rec.title': '从已保存的会话录制',
   'rec.source': '源文件（.sr，8 个数字通道）',
   'rec.limit': '录制上限（MiB，可选）',

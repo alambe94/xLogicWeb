@@ -62,6 +62,8 @@ export const en = {
   'save.srType': 'sigrok session (PulseView)',
   'open.file': 'Open file…',
   'open.fileHint': '.sr or .lwcap',
+  'rec.live': 'Record live ESK USB (41.67 MS/s)',
+  'rec.tail': '{samples} samples outside the saved window at Stop',
   'rec.title': 'Recording from a saved session',
   'rec.source': 'Source (.sr, 8 digital channels)',
   'rec.limit': 'Recording limit (MiB, optional)',

@@ -2,6 +2,8 @@
 /** Finite raw8 capture on ESK's existing scoped xLOGIC USB interface. */
 export const ESK_SAMPLES = 65_536;
 export const ESK_RATE = 333_333_333;
+export const ESK_STREAM_RATE = 41_666_666;
+const streamReadBytes = 4 * 1024 * 1024;
 const LOGIC = 2;
 const USB_INTERFACE = 0;
 const ABI_MAGIC = 0x584c4f47;
@@ -65,9 +67,9 @@ class LogicSession {
     } while (performance.now() < end);
     throw new Error('ESK control reply deadline expired');
   }
-  private async control(opcode: 2 | 4 | 5 | 6): Promise<number> {
+  private async control(opcode: 2 | 3 | 4 | 5 | 6): Promise<number> {
     const claiming = opcode === 2;
-    const request = new ArrayBuffer(claiming ? 64 : 48);
+    const request = new ArrayBuffer(claiming ? 64 : opcode === 3 ? 56 : 48);
     const bytes = new Uint8Array(request);
     const v = new DataView(request);
     bytes.set(CONTROL_MAGIC);
@@ -81,6 +83,7 @@ class LogicSession {
       bytes[48] = 1; // deadline lease, 1,000 ticks on ESK's millisecond timebase
       v.setBigUint64(56, 1000n, true);
     }
+    if (opcode === 3) v.setBigUint64(48, 1000n, true);
     await this.output(0x71, request);
     const r = await this.fetchControl();
     const accepted = r.getUint8(11) === 0;
@@ -102,7 +105,7 @@ class LogicSession {
       r.getUint8(92) === 1 && r.getUint8(93) === 1 && r.getUint8(95) === 1,
       'Unexpected LOGIC/0 session binding');
     const flags = r.getUint32(96, true);
-    requireField(r.getUint8(94) === (claiming ? 1 : 3) && (claiming ? flags === 0 : flags <= 1),
+    requireField(r.getUint8(94) === (opcode <= 3 ? 1 : 3) && (opcode <= 3 ? flags === 0 : flags <= 1),
       'Unexpected ESK session state');
     this.session = sid;
     return flags;
@@ -125,13 +128,15 @@ class LogicSession {
     requireField(reply.getUint8(6) === 0, 'ESK rejected capture command ' + opcode);
     abi(new DataView(reply.buffer, reply.byteOffset + 32, 64), 64);
   }
-  async capture(): Promise<Uint8Array> {
+  private async configure(stream: boolean): Promise<void> {
     const caps = await this.input(0x60, 56, 0);
     abi(caps, 56);
-    requireField(caps.getUint32(8, true) === 0 && caps.getUint32(12, true) >= ESK_SAMPLES &&
-      caps.getUint32(20, true) >= ESK_SAMPLES && caps.getUint32(24, true) === ESK_RATE &&
-      caps.getUint32(28, true) === 8 && (caps.getUint32(32, true) & 256),
-      'This ESK firmware does not advertise the finite raw8 profile');
+    const flags = caps.getUint32(32, true);
+    const uniformMax = caps.getUint32(36, true);
+    const supported = stream ? (flags & 4) && !(flags & 512) && (!uniformMax || uniformMax >= ESK_STREAM_RATE) :
+      caps.getUint32(12, true) >= ESK_SAMPLES && caps.getUint32(20, true) >= ESK_SAMPLES;
+    requireField(supported && caps.getUint32(8, true) === 0 && caps.getUint32(24, true) === ESK_RATE &&
+      caps.getUint32(28, true) === 8 && (flags & 256), 'ESK firmware does not support the requested raw8 profile');
     const header = await this.input(0x70, 24, 0);
     requireField(header.getUint16(0, true) === 1 && header.getUint16(2, true) && header.getUint32(4, true) === 0 &&
       header.getBigUint64(8, true) && header.getUint32(16, true) === 5000 &&
@@ -143,10 +148,13 @@ class LogicSession {
     config.setUint32(0, ABI_MAGIC, true);
     config.setUint16(4, 3, true);
     config.setUint16(6, 44, true);
-    config.setUint32(8, ESK_RATE, true);
-    config.setUint32(12, ESK_SAMPLES, true);
+    config.setUint32(8, stream ? ESK_STREAM_RATE : ESK_RATE, true);
+    config.setUint32(12, stream ? 0 : ESK_SAMPLES, true);
     config.setUint32(16, 0xff, true);
     await this.command(1, config.buffer);
+  }
+  async capture(): Promise<Uint8Array> {
+    await this.configure(false);
     // Queue the exact-length read before START. A packet-aligned finite record has no trailing ZLP.
     const read = this.usb.transferIn(1, ESK_SAMPLES);
     void read.catch(() => {}); // START can fail before we await the pending read.
@@ -154,15 +162,55 @@ class LogicSession {
     const data = await within(read, 700);
     requireField(data.status === 'ok' && data.data?.byteLength === ESK_SAMPLES, 'Incomplete xLOGIC sample record');
     await this.command(3);
-    await this.checkFinalStatus();
+    await this.checkFinalStatus(false);
+    await this.release();
+    return new Uint8Array(data.data.buffer, data.data.byteOffset, data.data.byteLength);
+  }
+
+  async stream(signal: AbortSignal, accept: (bytes: Uint8Array) => void): Promise<bigint> {
+    if (signal.aborted) return 0n;
+    await this.configure(true);
+    if (signal.aborted) { await this.release(); return 0n; }
+    const pending: Promise<USBInTransferResult>[] = [];
+    const post = () => {
+      const read = this.usb.transferIn(1, streamReadBytes);
+      void read.catch(() => {}); // Device close retires any outstanding bulk reads.
+      pending.push(read);
+    };
+    for (let i = 0; i < 4; i++) post();
+    await this.command(2);
+    let renew = performance.now() + 200;
+    let received = 0n, transmitted = 0n;
+    try {
+      while (!signal.aborted) {
+        if (performance.now() >= renew) {
+          await this.control(3);
+          renew = performance.now() + 200;
+        }
+        const read = await within(pending.shift()!, 700);
+        if (signal.aborted) break;
+        requireField(read.status === 'ok' && read.data?.byteLength === streamReadBytes, 'Incomplete xLOGIC stream read');
+        post();
+        accept(new Uint8Array(read.data.buffer, read.data.byteOffset, read.data.byteLength));
+        received += BigInt(read.data.byteLength);
+      }
+    } finally {
+      await this.command(3);
+      try { transmitted = await this.checkFinalStatus(true); }
+      finally { await this.release(); }
+    }
+    requireField(transmitted >= received, 'ESK transmitted fewer bytes than the host received');
+    return transmitted;
+  }
+
+  private async release(): Promise<void> {
     let safe = await this.control(4);
     const until = performance.now() + 500;
     while (!safe && performance.now() < until) { await delay(); safe = await this.control(5); }
     requireField(safe === 1, 'ESK has not confirmed safe release');
     await this.control(6);
-    return new Uint8Array(data.data.buffer, data.data.byteOffset, data.data.byteLength);
   }
-  private async checkFinalStatus(): Promise<void> {
+  private async checkFinalStatus(stream: boolean): Promise<bigint> {
     const end = performance.now() + 400;
     do {
       const s = await this.input(0x64, 64, 0);
@@ -170,10 +218,12 @@ class LogicSession {
       const flags = s.getUint32(56, true);
       requireField(!(flags & 32), 'ESK capture session fault');
       if (!s.getUint32(12, true) && (flags & 28) === 4) {
-        requireField(s.getBigUint64(16, true) === BigInt(ESK_SAMPLES) &&
-          s.getBigUint64(24, true) === BigInt(ESK_SAMPLES) && [32, 36, 40, 52, 60].every(i => !s.getUint32(i, true)) &&
-          (flags & 1) && s.getUint32(48, true) === ESK_RATE, 'xLOGIC sample counts, rate or error counters differ');
-        return;
+        const sent = s.getBigUint64(24, true);
+        const rate = stream ? ESK_STREAM_RATE : ESK_RATE;
+        requireField((stream ? s.getUint32(8, true) === 1 && s.getUint32(44, true) === rate : (s.getBigUint64(16, true) === BigInt(ESK_SAMPLES) && sent === BigInt(ESK_SAMPLES))) &&
+          [32, 36, 40, 52, 60].every(i => !s.getUint32(i, true)) && (flags & 1) &&
+          s.getUint32(48, true) === rate, 'xLOGIC sample counts, rate or error counters differ');
+        return sent;
       }
       await delay();
     } while (performance.now() < end);
@@ -185,7 +235,7 @@ class LogicSession {
 }
 
 /** One acquisition owns only MI0. Closing its handle cancels pending endpoint work on failure. */
-export async function captureEsk(device: USBDevice): Promise<Uint8Array> {
+async function withLogic<T>(device: USBDevice, run: (session: LogicSession) => Promise<T>): Promise<T> {
   const session = new LogicSession(device);
   try {
     await device.open();
@@ -194,9 +244,17 @@ export async function captureEsk(device: USBDevice): Promise<Uint8Array> {
     requireField(intf?.alternate.interfaceClass === 255 && intf.alternate.endpoints.some(
       ep => ep.type === 'bulk' && ep.direction === 'in' && ep.endpointNumber === 1), 'Missing xLOGIC bulk IN endpoint');
     await device.claimInterface(USB_INTERFACE);
-    return await session.capture();
+    return await run(session);
   } finally {
     try { await session.close(); }
     finally { if (device.opened) await device.close(); }
   }
+}
+
+export function captureEsk(device: USBDevice): Promise<Uint8Array> {
+  return withLogic(device, session => session.capture());
+}
+
+export function recordEskUsb(device: USBDevice, signal: AbortSignal, accept: (bytes: Uint8Array) => void): Promise<bigint> {
+  return withLogic(device, session => session.stream(signal, accept));
 }

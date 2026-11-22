@@ -1021,6 +1021,7 @@ html[data-theme="light"] .channel-color-custom { background: var(--bg30); }
 .esk-record-controls { display: grid; gap: .55rem; padding: 1rem; }
 .esk-record-controls h2 { font-size: 1rem; margin: 0; }
 .esk-record-controls label { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: .5rem; }
+.esk-record-controls label[hidden] { display: none; }
 .esk-record-controls input, .esk-record-controls select { min-width: 0; width: 100%; }
 .esk-record-controls output { overflow-wrap: anywhere; }
 .esk-record-controls button { justify-self: start; }

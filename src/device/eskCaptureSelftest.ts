@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { captureEsk, ESK_RATE, ESK_SAMPLES } from './eskCapture.js';
+import { captureEsk, recordEskUsb, ESK_RATE, ESK_SAMPLES, ESK_STREAM_RATE } from './eskCapture.js';
 import { createSampleStore } from '../data/index.js';
 
 function expect(ok: unknown, detail: string): asserts ok {
@@ -15,6 +15,8 @@ function native(length: number): DataView<ArrayBuffer> {
 
 /** Model the scoped replies, including the delayed common FETCH and safe-release query. */
 class Board {
+  live = false;
+  readCount = 0;
   opened = false;
   configuration = { interfaces: [{ interfaceNumber: 0, alternate: {
     interfaceClass: 255, endpoints: [{ type: 'bulk', direction: 'in', endpointNumber: 1 }],
@@ -46,8 +48,8 @@ class Board {
       const op = v.getUint8(5);
       this.commands.push(op);
       if (op === 1) {
-        expect(v.byteLength === 76 && v.getUint32(40, true) === ESK_RATE &&
-          v.getUint32(44, true) === ESK_SAMPLES && v.getUint32(48, true) === 255, 'finite configuration');
+        expect(v.byteLength === 76 && v.getUint32(40, true) === (this.live ? ESK_STREAM_RATE : ESK_RATE) &&
+          v.getUint32(44, true) === (this.live ? 0 : ESK_SAMPLES) && v.getUint32(48, true) === 255, 'finite configuration');
       }
       if (op === 2) expect(this.readQueued, 'read must be queued before START');
     } else if (setup.request === 0x75) {
@@ -62,7 +64,7 @@ class Board {
     switch (setup.request) {
       case 0x60:
         data = native(56);
-        for (const [i, n] of [[12, 131072], [20, 262144], [24, ESK_RATE], [28, 8], [32, 256]]) data.setUint32(i, n, true);
+        for (const [i, n] of [[12, 131072], [20, 262144], [24, ESK_RATE], [28, 8], [32, this.live ? 260 : 256]]) data.setUint32(i, n, true);
         break;
       case 0x70:
         data = new DataView(new ArrayBuffer(24));
@@ -81,7 +83,7 @@ class Board {
           data.setBigUint64(60, this.boot, true); data.setBigUint64(68, 24n, true);
           data.setBigUint64(76, 1000n, true);
           data.setUint16(84, 2, true); data.setUint32(88, 1, true);
-          bytes.set([1, 1, op === 2 ? 1 : 3, 1], 92);
+          bytes.set([1, 1, op <= 3 ? 1 : 3, 1], 92);
           data.setUint32(96, op === 5 ? 1 : 0, true);
         }
         break;
@@ -95,13 +97,26 @@ class Board {
         data = native(64);
         data.setUint32(8, 1, true); data.setBigUint64(16, BigInt(ESK_SAMPLES), true);
         data.setBigUint64(24, BigInt(ESK_SAMPLES - Number(this.badCount)), true);
-        data.setUint32(48, ESK_RATE, true); data.setUint32(56, 5, true);
+        if (this.live) {
+          data.setBigUint64(24, 2n * 4194304n, true);
+          data.setUint32(44, ESK_STREAM_RATE, true);
+        }
+        data.setUint32(48, this.live ? ESK_STREAM_RATE : ESK_RATE, true); data.setUint32(56, 5, true);
         break;
       default: throw new Error('unexpected control read');
     }
     return { status: 'ok', data };
   }
   async transferIn(endpoint: number, size: number) {
+    if (this.live) {
+      expect(endpoint === 1 && size === 4194304, 'live read size');
+      this.readQueued = true;
+      const seq = ++this.readCount;
+      if (seq === 1) await new Promise(done => setTimeout(done, 230));
+      const data = new Uint8Array(size - Number(this.short));
+      data[0] = seq;
+      return { status: 'ok', data: new DataView(data.buffer) };
+    }
     expect(endpoint === 1 && size === ESK_SAMPLES, 'finite endpoint and size');
     this.readQueued = true;
     const data = new Uint8Array(size - Number(this.short));
@@ -126,3 +141,25 @@ for (const failure of ['short', 'badCount'] as const) {
   expect(rejected && board.closedSession && !board.opened, failure + ' must fail and close');
 }
 console.log('ESK raw8 capture, channel mapping, release and error cleanup passed');
+
+for (const scenario of ['stop', 'storage', 'short']) {
+  const board = new Board();
+  board.live = true;
+  board.short = scenario === 'short';
+  const stop = new AbortController();
+  const order: number[] = [];
+  let failure = '';
+  try {
+    const wire = await recordEskUsb(board as unknown as USBDevice, stop.signal, bytes => {
+      order.push(bytes[0]);
+      if (scenario === 'storage') throw Error('storage backlog');
+      if (order.length === 2) stop.abort();
+    });
+    expect(wire === 8388608n, 'terminal wire count');
+  } catch (error) { failure = String(error); }
+  if (scenario === 'stop') expect(!failure && String(order) === '1,2' && board.controls.includes(3), 'ordered live blocks and renewal');
+  else expect(failure.includes(scenario === 'short' ? 'Incomplete' : 'backlog'), 'surface the causal failure');
+  expect(String(board.commands) === '1,2,3' && board.controls.includes(6) && board.closedSession && !board.opened,
+    'stop, reap and close on every started stream');
+}
+console.log('ESK continuous USB ordered delivery, renewal, Stop and error cleanup passed');
