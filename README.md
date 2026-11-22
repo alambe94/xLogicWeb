@@ -7,6 +7,17 @@ The viewer runs in your browser. [Open xEskWeb](https://alambe94.github.io/xLogi
 The viewer builds on Sipeed SLogicWeb. **Other analyzer** opens the USB chooser for
 compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWeb)
 
+## USB Home and Bridge
+
+On the hosted xEskWeb Home page, choose **Connect via USB** and select the ESK
+application device. Home displays its identity, boot ID, firmware and advertised
+features. Open **xLogicWeb** for capture or **xBridgeWeb** for active bus tools.
+Both use the device selected on Home during this tab session.
+
+In xBridgeWeb, **I²C → Read board ID** reads the TI identification record from
+the SK-AM64B EEPROM at address 0x51 and displays its board name and revision.
+The transfer sets the EEPROM word address to zero and reads 128 bytes.
+
 ## ESK xLOGIC over USB
 
 Open xEskWeb directly in Chrome or Edge using HTTPS or localhost. Connect the ESK
