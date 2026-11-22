@@ -146,6 +146,7 @@ import {
   type CaptureAbort,
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
+import { showEskRecorder } from './eskRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
 import { captureEsk, ESK_RATE, requestEskDevice } from '../device/eskCapture.js';
@@ -7631,6 +7632,17 @@ export class App {
       ...(eskLanMode() &&
           !this.running && !this.stopping && !this.eskCapturePending ? [{
         label: t('open.eskLan'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('ethernet'),
+      }] : []),
+      ...(!this.running && !this.stopping && !this.eskCapturePending ? [{
+        label: t('rec.title'), onPick: () => showEskRecorder((bytes, rate, start, name) => {
+          this.endPendingRepeatSession();
+          const store = createSampleStore(8, rate);
+          store.append(bytes);
+          this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };
+          this.adoptCapture(store, [], { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 });
+          this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
+          this.syncUnloadGuard();
+        }, () => this.confirmDiscardCapture()),
       }] : []),
       { label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openExample() },
     ];

@@ -20,7 +20,7 @@ import { channelAcrossGaps, createEdgeStore, createSampleStore } from '../../dat
 import type { SampleStore } from '../../data/types.js';
 import type { ChannelCount } from '../../types.js';
 import { diagnosticOf } from '../../diagnostics.js';
-import { parseSr } from '../srLoad.js';
+import { openEskReplay, parseSr } from '../srLoad.js';
 import {
   saveSr, srExportParts, srMetadata, srProbeName, srSamplerateString, type SrProbe,
 } from '../srSave.js';
@@ -128,6 +128,36 @@ async function roundTrip(
 }
 
 async function main(): Promise<void> {
+  // The replay reader consumes ZIP members in order without constructing an edge store.
+  const replayData = Uint8Array.from({ length: 1537 }, (_, i) => (i * 17) & 255);
+  const replayStore = createSampleStore(8, 1234567);
+  replayStore.append(replayData);
+  const replayProbes = Array.from({ length: 8 }, (_, index) => ({ index, name: 'D' + index }));
+  for (const compression of ['store', 'deflate'] as const) {
+    const blob = await saveSr(replayStore, replayProbes, { chunkBytes: 73, compression });
+    const file = new File([blob], 'eight.sr');
+    const source = await openEskReplay(file);
+    const parts: Uint8Array[] = [];
+    for await (const part of source.blocks()) parts.push(part.slice());
+    check('replay preserves ' + compression + ' packs and the short tail',
+      source.rate === 1234567 && source.size === replayData.length && parts.length === 1 &&
+      parts[0]!.length === replayData.length && parts[0]!.every((v, i) => v === replayData[i]));
+    const corrupted = new Uint8Array(await file.arrayBuffer());
+    const view = new DataView(corrupted.buffer);
+    let entry = view.getUint32(view.byteLength - 22 + 16, true);
+    while (view.getUint32(entry, true) === 0x02014b50) {
+      const n = view.getUint16(entry + 28, true);
+      if (new TextDecoder().decode(corrupted.subarray(entry + 46, entry + 46 + n)).startsWith('logic-1-')) break;
+      entry += 46 + n + view.getUint16(entry + 30, true) + view.getUint16(entry + 32, true);
+    }
+    corrupted[entry + 16]! ^= 1;
+    let rejected = false;
+    try {
+      const bad = await openEskReplay(new File([corrupted], 'bad.sr'));
+      for await (const _part of bad.blocks()) { /* exhaust the member and check its CRC */ }
+    } catch (error) { rejected = String(error).includes('checksum'); }
+    check('replay rejects a wrong ' + compression + ' member checksum', rejected);
+  }
   // ------------------------------------------------------------ metadata
   check('samplerate strings use whole units', [16e6, 1.5e6, 100, 1e9, 250e3]
     .map(srSamplerateString).join('|') === '16 MHz|1500 kHz|100 Hz|1 GHz|250 kHz');
