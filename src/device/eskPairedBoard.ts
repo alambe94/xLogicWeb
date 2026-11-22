@@ -7,6 +7,8 @@ function boardWindow(): Window | null {
 }
 
 let connected = false;
+let captureMaximum: number | undefined;
+export function boardCaptureMaximum(): number | undefined { return captureMaximum; }
 export function needsBoardConsent(): boolean {
   return fromBoard() && window.parent !== window && !connected;
 }
@@ -62,7 +64,7 @@ export async function capturePairedBoard(): Promise<{ samples: Uint8Array; ticks
 
 interface Feature { name: string; instance: number; enabled: boolean; ownership: string }
 interface Catalog { services: string[][]; resources: string[][] }
-export interface BoardStatus { deviceId: string; boot: string; firmware: number; features: Feature[]; catalog?: Catalog }
+export interface BoardStatus { deviceId: string; boot: string; firmware: number; captureMaxSamples?: number; features: Feature[]; catalog?: Catalog }
 
 function validRows(rows: unknown, limit: number): boolean {
   return Array.isArray(rows) && rows.length <= limit && rows.every(row =>
@@ -79,5 +81,72 @@ export async function readBoardStatus(): Promise<BoardStatus> {
       !validRows(data.catalog.services, 32) || !validRows(data.catalog.resources, 64))) {
     throw new Error('Invalid ESK device catalog');
   }
+  const max = data.captureMaxSamples;
+  if (max !== undefined && (!Number.isSafeInteger(max) || max < 0 || max > 0xffffffff || max % 64)) {
+    throw new Error('Invalid board capture capacity');
+  }
+  if (captureMaximum !== max) {
+    captureMaximum = max;
+    window.dispatchEvent(new Event('esk-capture-capacity'));
+  }
   return data;
+}
+
+/** Receive one board block at a time. Acknowledge only after the sink accepts it. */
+export async function receiveBoardCapture(count: number, signal: AbortSignal,
+    accept: (block: Uint8Array, offset: number) => Promise<void>): Promise<string> {
+  await connectBoard();
+  signal.throwIfAborted();
+  const origin = launchingBoard(), peer = boardWindow();
+  if (!origin || !peer || !Number.isSafeInteger(count) || count < 1 || count > (captureMaximum ?? 0)) {
+    throw new Error('Capture exceeds board capacity');
+  }
+  const {port1, port2} = new MessageChannel();
+  return new Promise((resolve, reject) => {
+    let bytes = 0, receiving = false, finished = false;
+    let timer: ReturnType<typeof setTimeout>;
+    function finish() {
+      finished = true;
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      port1.close();
+    }
+    function fail(error: unknown) {
+      if (finished) return;
+      port1.postMessage('cancel');
+      finish();
+      reject(error);
+    }
+    function abort() { fail(signal.reason); }
+    function deadline() {
+      clearTimeout(timer);
+      timer = setTimeout(() => fail(new Error('Board capture timed out')), 65000);
+    }
+    port1.onmessage = async ({data}) => {
+      if (finished) return;
+      try {
+        if (receiving || !data) throw new Error('Unexpected board capture reply');
+        if (typeof data.error === 'string') throw new Error(data.error);
+        if (data.done === true) {
+          if (bytes !== count || typeof data.ticks !== 'string' || !/^\d{1,20}$/.test(data.ticks)) throw new Error('Incomplete board capture');
+          finish(); resolve(data.ticks); return;
+        }
+        const block = data.data;
+        if (!(block instanceof Uint8Array) || data.offset !== bytes || !block.length || block.length > 32768 ||
+            bytes + block.length > count) throw new Error('Invalid board capture block');
+        receiving = true;
+        await accept(block, bytes);
+        if (finished) return;
+        bytes += block.length;
+        receiving = false;
+        deadline();
+        port1.postMessage('ack');
+      } catch (error) { fail(error); }
+    };
+    port1.onmessageerror = () => fail(new Error('Unreadable capture block'));
+    signal.addEventListener('abort', abort, {once: true});
+    deadline();
+    try { peer.postMessage({type: 'xesk.capture.v2', count}, origin, [port2]); }
+    catch (error) { finish(); port2.close(); reject(error); }
+  });
 }

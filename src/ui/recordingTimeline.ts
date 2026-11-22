@@ -13,6 +13,7 @@ export class RecordingTimeline {
 
   clear(key?: string): void {
     if (key !== undefined && this.archive?.key !== key) return;
+    this.archive?.dispose?.();
     this.archive = undefined;
     this.form.hidden = true;
     this.form.onsubmit = this.slider.oninput = null;
