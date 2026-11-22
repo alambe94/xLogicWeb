@@ -8,17 +8,23 @@ import { t } from './i18n.js';
 import type { LiveReply, LiveRequest } from '../device/eskRecordWorker.js';
 
 const MiB = 1024 * 1024;
-const displaySamples = 65536;
-type Display = (bytes: Uint8Array, rate: number, start: number, name: string) => void;
+export const displaySamples = 65536;
+export interface SavedRecording {
+  key: string;
+  samples: number;
+  summary?: string;
+  read(start: number, end: number): Promise<Uint8Array>;
+}
+type Display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: SavedRecording) => void;
 
 async function recordingRoot(): Promise<FileSystemDirectoryHandle> {
   return (await navigator.storage.getDirectory()).getDirectoryHandle('esk-recordings', { create: true });
 }
 
-async function withArchive(name: string, action: () => Promise<void>): Promise<void> {
-  await navigator.locks.request('xesk-recording-' + name, { ifAvailable: true }, async lock => {
+async function withArchive<T>(name: string, action: () => Promise<T>): Promise<T> {
+  return navigator.locks.request('xesk-recording-' + name, { ifAvailable: true }, async lock => {
     if (!lock) throw new Error(t('rec.busy'));
-    await action();
+    return action();
   });
 }
 
@@ -36,7 +42,7 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export function showEskRecorder(live: boolean, display: Display, confirmReplace: () => Promise<boolean>): void {
+export function showEskRecorder(live: boolean, display: Display, confirmReplace: () => Promise<boolean>, removed: (key: string) => void): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
   if (dialog.open) return;
   const get = <T extends HTMLElement>(id: string) => dialog.querySelector<T>('#rec-' + id)!;
@@ -72,6 +78,12 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
     catch (e) { status.value = e instanceof Error ? e.message : String(e); }
     finally { abort = null; busy = false; update(); }
   }
+  function showSaved(bytes: Uint8Array, rate: number, start: number, title: string, key: string,
+                     saved: RecordArchive, samples: number, summary = '') {
+    display(bytes, rate, start, title, {
+      key, samples, summary, read: (from, to) => withArchive(key, () => saved.readBytes(from, to)),
+    });
+  }
   const progress = (accepted: number, saved: number, queued: number) =>
     t('rec.progress', { accepted: accepted.toLocaleString(), saved: saved.toLocaleString(), queue: (queued / MiB).toFixed(1) });
   record.onclick = () => void run(async () => {
@@ -96,6 +108,7 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
         const send = (message: LiveRequest) => worker.postMessage(message);
         const stopWorker = () => send({ type: 'stop' });
         signal.addEventListener('abort', stopWorker, { once: true });
+        let completed = false;
         try {
           const result = await new Promise<Extract<LiveReply, { type: 'end' }>>((resolve, reject) => {
             worker.onerror = e => reject(new Error(e.message));
@@ -118,13 +131,15 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
           if (result.saved) {
             const saved = new RecordArchive(await createOpfsRecordStorage(dir));
             const last = Number(first.value);
-            display(await saved.readBytes(last, result.saved), rate, last, title);
+            showSaved(await saved.readBytes(last, result.saved), rate, last, title, name, saved, result.saved, status.value);
+            completed = true;
           }
         } finally {
           signal.removeEventListener('abort', stopWorker);
           worker.terminate();
           await list(name);
         }
+        if (completed) dialog.close();
         return;
       }
       if (!replay) return;
@@ -181,6 +196,11 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
       }
       if (controller.lastError) throw new Error(controller.lastError + ' · ' + status.value);
       if (accepted === budget && accepted < replay.size) status.value = t('rec.atLimit') + ' · ' + status.value;
+      if (controller.bytes) {
+        const saved = new RecordArchive(await createOpfsRecordStorage(dir));
+        showSaved(tail, rate, accepted - tail.length, title, name, saved, controller.bytes, status.value);
+        dialog.close();
+      }
     });
   });
   stop.onclick = () => { abort?.abort(); update(); };
@@ -196,7 +216,8 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
       const start = Math.min(first.valueAsNumber, manifest.bytes - 1);
       first.value = String(start);
       const data = await saved.readBytes(start, Math.min(manifest.bytes, start + displaySamples));
-      display(data, manifest.profile.sampleRateHz, start, manifest.profile.profileId);
+      showSaved(data, manifest.profile.sampleRateHz, start, manifest.profile.profileId, name, saved, manifest.bytes);
+      dialog.close();
       status.value = t('rec.range', { start, end: start + data.length - 1, total: manifest.bytes });
     });
   });
@@ -204,6 +225,7 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
     const name = archive.value;
     if (!window.confirm(t('rec.confirmDelete', { name }))) return;
     await withArchive(name, async () => { await (await recordingRoot()).removeEntry(name, { recursive: true }); });
+    removed(name);
     await list(); status.value = '';
   });
   archive.onchange = () => { first.value = '0'; update(); };

@@ -255,6 +255,14 @@
       </button>
     </div>
 
+    <form id="rec-timeline" hidden>
+      <label><span data-i18n="rec.position">Position (s)</span> <input id="rec-seconds" type="number" min="0" step="any" required></label>
+      <button type="submit" data-i18n="rec.go">Go</button>
+      <input id="rec-slider" type="range" min="0" step="1" aria-labelledby="rec-duration">
+      <output id="rec-duration"></output>
+      <small id="rec-summary"></small>
+      <span id="rec-seek-error" role="status"></span>
+    </form>
     <div id="main">
       <div id="scroll-area">
         <!-- Channel names, waveforms, decoder annotations and readouts are data: the
