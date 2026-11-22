@@ -74,7 +74,9 @@
           <button class="mini" id="esk-refresh" type="button" data-i18n="capturePanel.tempRate" hidden>Refresh</button></header>
         <p id="esk-connection" role="status"></p>
         <pre id="esk-identity" hidden></pre>
-        <details id="esk-features" hidden><summary data-i18n="home.features">Features</summary><ul></ul></details>
+        <details id="esk-features" hidden><summary id="esk-feature-label" data-i18n="home.features">Features</summary><div class="esk-catalog-scroll"><table aria-labelledby="esk-feature-label">
+          <thead><tr><th scope="col" data-i18n="home.feature">Feature</th><th scope="col" data-i18n="home.instance">Instance</th><th scope="col" data-i18n="home.state">State</th></tr></thead>
+          <tbody id="esk-feature-rows"></tbody></table></div></details>
         <details id="esk-details" hidden><summary data-i18n="home.details">Device details</summary>
           <div class="esk-catalog-scroll"><table><caption data-i18n="home.services">Services</caption>
             <thead><tr><th scope="col" data-i18n="home.service">Service / instance</th><th scope="col" data-i18n="home.transport">Transport</th><th scope="col" data-i18n="home.limits">Request / reply bytes</th><th scope="col" data-i18n="home.requirements">Requirements</th><th scope="col" data-i18n="home.access">Browser access</th></tr></thead>
@@ -97,7 +99,7 @@
     <div class="esk-home-content">
       <button class="mini" id="bridge-home" type="button" data-i18n="home.button">Home</button>
       <h1 id="bridge-title" tabindex="-1">xBridgeWeb</h1>
-      <section class="esk-device">
+      <section id="bridge-controls" class="esk-device">
         <h2>I²C</h2>
         <p data-i18n="bridge.eeprom">Board identification EEPROM · address 0x51</p>
         <button class="mini" id="bridge-read" type="button" data-i18n="bridge.read" disabled>Read board ID</button>
@@ -108,6 +110,7 @@
   <div id="app">
     <div id="toolbar">
       <button id="btn-esk-home" type="button" class="mini" data-i18n="home.button" title="xEskWeb">Home</button>
+      <button id="btn-bridge-panel" class="mini" type="button" aria-controls="bridge-dock" aria-expanded="false" hidden>xBridgeWeb</button>
       <button id="btn-connect" class="toolbar-item toolbar-device" title="Connect device" aria-label="Device">
         <span class="toolbar-item-media">
           <svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" data-icon="inline-start">
@@ -270,6 +273,7 @@
       </button>
     </div>
 
+    <aside id="bridge-dock" aria-label="xBridgeWeb" hidden></aside>
     <form id="rec-timeline" hidden>
       <label><span data-i18n="rec.position">Position (s)</span> <input id="rec-seconds" type="number" min="0" step="any" required></label>
       <button type="submit" data-i18n="rec.go">Go</button>

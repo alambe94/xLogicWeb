@@ -19,6 +19,15 @@ export async function within<T>(operation: Promise<T>, ms: number): Promise<T> {
   } finally { clearTimeout(timer); }
 }
 
+// Chromium rejects EP0 transfers while an interface claim or release is pending.
+// Sequence those short operations per handle. Bulk sample reads stay independent.
+const controlTail = new WeakMap<USBDevice, Promise<void>>();
+function onControlPipe<T>(device: USBDevice, run: () => Promise<T>): Promise<T> {
+  const result = (controlTail.get(device) ?? Promise.resolve()).then(run);
+  controlTail.set(device, result.then(() => {}, () => {}));
+  return result;
+}
+
 export class EskUsbSession {
   protected connection = 0;
   protected boot = 0n;
@@ -30,18 +39,18 @@ export class EskUsbSession {
     return { requestType: 'vendor', recipient: 'interface', request, value, index: this.intf };
   }
   protected async input(request: number, length: number, value = this.connection): Promise<DataView> {
-    const r = await within(this.usb.controlTransferIn(this.setup(request, value), length), 1000);
+    const r = await onControlPipe(this.usb, () => within(this.usb.controlTransferIn(this.setup(request, value), length), 1000));
     requireField(r.status === 'ok' && r.data?.byteLength === length, 'Short or failed ESK control read');
     return r.data;
   }
   protected async output(request: number, data: ArrayBuffer): Promise<void> {
-    const r = await within(this.usb.controlTransferOut(this.setup(request), data), 1000);
+    const r = await onControlPipe(this.usb, () => within(this.usb.controlTransferOut(this.setup(request), data), 1000));
     requireField(r.status === 'ok' && r.bytesWritten === data.byteLength, 'Short or failed ESK control write');
   }
   private async fetchControl(): Promise<DataView> {
     const end = performance.now() + 500;
     do {
-      const r = await within(this.usb.controlTransferIn(this.setup(this.base + 2), 176), 500);
+      const r = await onControlPipe(this.usb, () => within(this.usb.controlTransferIn(this.setup(this.base + 2), 176), 500));
       if (r.status === 'stall') { await delay(); continue; }
       requireField(r.status === 'ok' && r.data && r.data.byteLength >= 48, 'Invalid ESK control response');
       return r.data;
@@ -115,23 +124,49 @@ export class EskUsbSession {
   }
 }
 
-const active = new WeakSet<USBDevice>();
+// Share the handle while keeping interface claims and firmware sessions independent.
+interface DeviceUse {
+  ready: Promise<void>;
+  interfaces: Set<number>;
+  closing?: Promise<void>;
+}
+const active = new WeakMap<USBDevice, DeviceUse>();
 export async function withUsbInterface<T>(device: USBDevice, session: EskUsbSession,
     run: (intf: USBAlternateInterface) => Promise<T>): Promise<T> {
-  requireField(!active.has(device), 'ESK USB is busy');
-  active.add(device);
+  let use = active.get(device);
+  while (use?.closing) {
+    await use.closing;
+    use = active.get(device);
+  }
+  if (!use) {
+    const ready = device.open().then(async () => {
+      if (!device.configuration) await device.selectConfiguration(1);
+    });
+    use = { ready, interfaces: new Set() };
+    active.set(device, use);
+  }
+  requireField(!use.interfaces.has(session.intf), 'ESK USB interface is busy');
+  use.interfaces.add(session.intf);
+  let claimed = false;
   try {
-    await device.open();
-    if (!device.configuration) await device.selectConfiguration(1);
+    await use.ready;
     const intf = device.configuration?.interfaces.find(i => i.interfaceNumber === session.intf);
     requireField(intf?.alternate.interfaceClass === 255, 'Missing ESK USB interface');
-    await device.claimInterface(session.intf);
+    await onControlPipe(device, () => device.claimInterface(session.intf));
+    claimed = true;
     return await run(intf.alternate);
   } finally {
-    try { await session.close(); }
-    finally {
-      try { if (device.opened) await device.close(); }
-      finally { active.delete(device); }
+    try {
+      if (claimed) {
+        try { await session.close(); }
+        finally { await onControlPipe(device, () => device.releaseInterface(session.intf)); }
+      }
+    } finally {
+      use.interfaces.delete(session.intf);
+      if (!use.interfaces.size) {
+        use.closing = (device.opened ? device.close() : Promise.resolve()).finally(() => active.delete(device));
+        await use.closing;
+      }
     }
   }
 }

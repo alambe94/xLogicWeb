@@ -6,6 +6,7 @@ export const ESK_CHANNELS = 8;
 export const ESK_SAMPLES = 65_536;
 export const ESK_RATE = 333_333_333;
 export const ESK_STREAM_RATE = 41_666_666;
+export const ESK_FINITE_RATES = [ESK_RATE, 166_666_666, 83_333_333, ESK_STREAM_RATE];
 const streamReadBytes = 4 * 1024 * 1024;
 const LOGIC = 2;
 const USB_INTERFACE = 0;
@@ -43,7 +44,7 @@ class LogicSession extends EskUsbSession {
     requireField(reply.getUint8(6) === 0, 'ESK rejected capture command ' + opcode);
     abi(new DataView(reply.buffer, reply.byteOffset + 32, 64), 64);
   }
-  private async configure(stream: boolean): Promise<void> {
+  private async configure(stream: boolean, rate: number): Promise<void> {
     const caps = await this.input(0x60, 56, 0);
     abi(caps, 56);
     const flags = caps.getUint32(32, true);
@@ -52,19 +53,21 @@ class LogicSession extends EskUsbSession {
       caps.getUint32(12, true) >= ESK_SAMPLES && caps.getUint32(20, true) >= ESK_SAMPLES;
     requireField(supported && caps.getUint32(8, true) === 0 && caps.getUint32(24, true) === ESK_RATE &&
       caps.getUint32(28, true) === 8 && (flags & 256), 'ESK firmware does not support the requested raw8 profile');
+    requireField(ESK_FINITE_RATES.includes(rate) && (!uniformMax || rate <= uniformMax) &&
+      (!(flags & 512) || rate === ESK_RATE), 'Sample rate unavailable on this ESK');
     await this.openConnection();
     await this.control(2);
     const config = new DataView(new ArrayBuffer(44));
     config.setUint32(0, ABI_MAGIC, true);
     config.setUint16(4, 3, true);
     config.setUint16(6, 44, true);
-    config.setUint32(8, stream ? ESK_STREAM_RATE : ESK_RATE, true);
+    config.setUint32(8, rate, true);
     config.setUint32(12, stream ? 0 : ESK_SAMPLES, true);
     config.setUint32(16, 0xff, true);
     await this.command(1, config.buffer);
   }
-  async capture(): Promise<Uint8Array> {
-    await this.configure(false);
+  async capture(rate: number): Promise<Uint8Array> {
+    await this.configure(false, rate);
     // Queue the exact-length read before START. A packet-aligned finite record has no trailing ZLP.
     const read = this.usb.transferIn(1, ESK_SAMPLES);
     void read.catch(() => {}); // START can fail before we await the pending read.
@@ -72,14 +75,14 @@ class LogicSession extends EskUsbSession {
     const data = await within(read, 700);
     requireField(data.status === 'ok' && data.data?.byteLength === ESK_SAMPLES, 'Incomplete xLOGIC sample record');
     await this.command(3);
-    await this.checkFinalStatus(false);
+    await this.checkFinalStatus(false, rate);
     await this.release();
     return new Uint8Array(data.data.buffer, data.data.byteOffset, data.data.byteLength);
   }
 
   async stream(signal: AbortSignal, accept: (bytes: Uint8Array) => void): Promise<bigint> {
     if (signal.aborted) return 0n;
-    await this.configure(true);
+    await this.configure(true, ESK_STREAM_RATE);
     if (signal.aborted) { await this.release(); return 0n; }
     const pending: Promise<USBInTransferResult>[] = [];
     const post = () => {
@@ -107,7 +110,7 @@ class LogicSession extends EskUsbSession {
     } finally {
       await this.command(3);
       try {
-        transmitted = await this.checkFinalStatus(true);
+        transmitted = await this.checkFinalStatus(true, ESK_STREAM_RATE);
         // Queued IN reads can outlive Stop. Reset this pipe while LOGIC is
         // still ours so the next client can receive its first finite record.
         await this.usb.clearHalt('in', 1);
@@ -117,7 +120,7 @@ class LogicSession extends EskUsbSession {
     return transmitted;
   }
 
-  private async checkFinalStatus(stream: boolean): Promise<bigint> {
+  private async checkFinalStatus(stream: boolean, rate: number): Promise<bigint> {
     const end = performance.now() + 400;
     do {
       const s = await this.input(0x64, 64, 0);
@@ -126,7 +129,6 @@ class LogicSession extends EskUsbSession {
       requireField(!(flags & 32), 'ESK capture session fault');
       if (!s.getUint32(12, true) && (flags & 28) === 4) {
         const sent = s.getBigUint64(24, true);
-        const rate = stream ? ESK_STREAM_RATE : ESK_RATE;
         requireField((stream ? s.getUint32(8, true) === 1 && s.getUint32(44, true) === rate : (s.getBigUint64(16, true) === BigInt(ESK_SAMPLES) && sent === BigInt(ESK_SAMPLES))) &&
           [32, 36, 40, 52, 60].every(i => !s.getUint32(i, true)) && (flags & 1) &&
           s.getUint32(48, true) === rate, 'xLOGIC sample counts, rate or error counters differ');
@@ -147,8 +149,8 @@ async function withLogic<T>(device: USBDevice, run: (session: LogicSession) => P
   });
 }
 
-export function captureEsk(device: USBDevice): Promise<Uint8Array> {
-  return withLogic(device, session => session.capture());
+export function captureEsk(device: USBDevice, rate = ESK_RATE): Promise<Uint8Array> {
+  return withLogic(device, session => session.capture(rate));
 }
 
 export function recordEskUsb(device: USBDevice, signal: AbortSignal, accept: (bytes: Uint8Array) => void): Promise<bigint> {

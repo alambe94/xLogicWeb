@@ -150,7 +150,7 @@ import { RecordingTimeline } from './recordingTimeline.js';
 import { showEskRecorder } from './eskRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
-import { captureEsk, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, requestEskDevice } from '../device/eskCapture.js';
+import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, requestEskDevice } from '../device/eskCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
 import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';
@@ -496,6 +496,7 @@ export class App {
   } | null = null;
   private captureSessionId = 0;
   private recordingTimeline = new RecordingTimeline();
+  private eskFiniteRate = ESK_RATE;
   private eskCapturePending = false;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
@@ -6922,10 +6923,36 @@ export class App {
       const panel = this.sidebarHost.containerFor('capture');
       const profile = document.createElement('p');
       profile.className = 'panel-note';
+      const lan = !!eskLanMode();
+      const rate = lan ? ESK_RATE : this.eskFiniteRate;
       profile.textContent = t('esk.finiteProfile', {
-        channels: ESK_CHANNELS, samples: formatCount(ESK_SAMPLES), rate: formatRate(ESK_RATE),
+        channels: ESK_CHANNELS, samples: formatCount(ESK_SAMPLES), rate: formatRate(rate),
       });
-      panel.replaceChildren(profile);
+      const rateLabel = document.createElement('label');
+      rateLabel.textContent = t('capturePanel.sampleRate') + ' ';
+      const rates = document.createElement('select');
+      rates.id = 'esk-finite-rate';
+      for (const hz of lan ? [ESK_RATE] : ESK_FINITE_RATES) {
+        rates.add(new Option(formatRate(hz), String(hz), false, hz === rate));
+      }
+      rates.disabled = lan || this.eskCapturePending;
+      rates.onchange = () => { this.eskFiniteRate = Number(rates.value); this.renderSidebarContent(); };
+      rateLabel.append(rates);
+      const channels = document.createElement('fieldset');
+      channels.className = 'esk-channel-picker';
+      const legend = document.createElement('legend');
+      legend.textContent = t('esk.visibleChannels');
+      channels.append(legend);
+      for (const ch of this.channels.slice(0, this.displayChannelCount())) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = ch.enabled;
+        input.onchange = () => { this.setChannelEnabled(ch.index, input.checked); input.checked = ch.enabled; };
+        label.append(input, 'D' + ch.index);
+        channels.append(label);
+      }
+      panel.replaceChildren(rateLabel, channels, profile);
       if (navigator.usb) {
         const record = document.createElement('button');
         record.className = 'mini';
@@ -7561,7 +7588,10 @@ export class App {
     // the one already set aside, never the previous file's rows.
     if (!this.loadedCapture()) this.deviceLayout = { channels: this.channels, order: this.order };
     if (!sameRecording) {
+      const enabled = label.kind === 'esk' && this.displayChannelCount() === ESK_CHANNELS
+        ? this.channels.slice(0, ESK_CHANNELS).map(channel => channel.enabled) : [];
       this.channels = defaultChannels(store.channelCount);
+      if (enabled.some(Boolean)) this.channels.forEach((channel, index) => { channel.enabled = enabled[index]!; });
       this.order = this.channels.map((c) => c.index);
     }
     for (let i = 0; i < names.length && i < this.channels.length; i++) {
@@ -7625,10 +7655,11 @@ export class App {
       if (!(await this.confirmDiscardCapture())) return;
       if (previous !== this.captureSessionId || this.running || this.stopping) return;
       this.endPendingRepeatSession();
-      const { samples, ticks } = device ? { samples: await captureEsk(device), ticks: undefined } : await captureEskLan();
+      const rate = device ? this.eskFiniteRate : ESK_RATE;
+      const { samples, ticks } = device ? { samples: await captureEsk(device, rate), ticks: undefined } : await captureEskLan();
       // Another open or acquisition can replace the display while the capture is in progress.
       if (previous !== this.captureSessionId || this.running || this.stopping) return;
-      const store = createSampleStore(8, ESK_RATE);
+      const store = createSampleStore(ESK_CHANNELS, rate);
       store.append(samples);
       this.statusError = null;
       this.renderErrorBanner();

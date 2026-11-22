@@ -229,7 +229,15 @@ html, body {
 .esk-device header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .esk-device pre { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
 .esk-device summary { cursor: pointer; }
-.esk-device li { margin-block: .35rem; }
+#esk-features tbody tr { border-top: 1px solid var(--border); }
+#esk-features th, #esk-features td { font-variant-numeric: tabular-nums; }
+#esk-features tbody tr:nth-child(even) { background: var(--background); }
+#btn-bridge-panel[hidden], #bridge-dock[hidden] { display: none; }
+#bridge-dock { padding: .4rem .75rem; border-bottom: 1px solid var(--border); }
+#bridge-dock .esk-device { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 0; padding: .5rem; }
+#bridge-dock h2, #bridge-dock p { font-size: inherit; margin: 0; }
+.esk-channel-picker { display: flex; flex-wrap: wrap; gap: .4rem .7rem; margin-block: .6rem; }
+.esk-channel-picker label { white-space: nowrap; }
 .esk-instrument { display: grid; gap: .45rem; text-align: left; width: 100%; margin-top: .7rem; padding: 1.2rem; cursor: pointer;
   color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-inline-start: 3px solid var(--primary); border-radius: 6px; }
 .esk-instrument:hover, .esk-instrument:focus-visible { background: var(--popover-hover); }
