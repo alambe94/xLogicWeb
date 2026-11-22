@@ -58,6 +58,8 @@ export const fr: Messages = {
   'save.srType': 'Session sigrok (PulseView)',
   'open.file': 'Ouvrir un fichier…',
   'open.fileHint': '.sr ou .lwcap',
+  'rec.live': 'Enregistrer xLOGIC en USB (41,67 Méch/s)',
+  'rec.tail': '{samples} échantillons hors enregistrement à l’arrêt',
   'rec.title': 'Enregistrement depuis une session sauvegardée',
   'rec.source': 'Source (.sr, 8 voies numériques)',
   'rec.limit': 'Limite (Mio, facultative)',
