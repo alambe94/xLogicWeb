@@ -88,6 +88,21 @@
       <button id="esk-logic" class="esk-instrument" type="button">
         <strong>xLogicWeb</strong><span data-i18n="home.logic">Capture waveforms and decode protocols</span>
       </button>
+      <button id="esk-bridge" class="esk-instrument" type="button" hidden>
+        <strong>xBridgeWeb</strong><span data-i18n="bridge.description">Bridge · I²C board identification</span>
+      </button>
+    </div>
+  </main>
+  <main id="esk-bridge-page" hidden aria-labelledby="bridge-title">
+    <div class="esk-home-content">
+      <button class="mini" id="bridge-home" type="button" data-i18n="home.button">Home</button>
+      <h1 id="bridge-title" tabindex="-1">xBridgeWeb</h1>
+      <section class="esk-device">
+        <h2>I²C</h2>
+        <p data-i18n="bridge.eeprom">Board identification EEPROM · address 0x51</p>
+        <button class="mini" id="bridge-read" type="button" data-i18n="bridge.read" disabled>Read board ID</button>
+        <output id="bridge-result" aria-live="polite"></output>
+      </section>
     </div>
   </main>
   <div id="app">

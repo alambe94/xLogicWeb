@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { announceBoardView, fromBoard, needsBoardConsent, readBoardStatus } from '../device/eskPairedBoard.js';
+import { requestEskDevice, selectEskUsbDevice } from '../device/eskCapture.js';
+import { readUsbBoardStatus, readUsbBoardId } from '../device/eskUsbHome.js';
+import type { BoardStatus } from '../device/eskPairedBoard.js';
 import { t } from './i18n.js';
 
 function showRows(body: HTMLTableSectionElement, rows: string[][]): void {
@@ -29,25 +32,52 @@ export function initEskHome(): void {
   const services = document.querySelector<HTMLTableSectionElement>('#esk-services')!;
   const resources = document.querySelector<HTMLTableSectionElement>('#esk-resources')!;
 
+  const bridge = document.querySelector<HTMLElement>('#esk-bridge-page')!;
+  const openBridge = document.querySelector<HTMLButtonElement>('#esk-bridge')!;
+  const boardId = document.querySelector<HTMLButtonElement>('#bridge-read')!;
+  const result = document.querySelector<HTMLOutputElement>('#bridge-result')!;
+  let usbDevice: USBDevice | undefined, usbStatus: BoardStatus | undefined;
+  let generation = 0, disconnected = false;
+
+  function enableBridge(available: boolean) {
+    openBridge.hidden = !available;
+    boardId.disabled = !available;
+  }
+
   async function updateStatus(userRequested = false): Promise<void> {
     if (refresh.disabled) return;
+    const lan = fromBoard();
+    if (!lan && usbStatus && !userRequested) return;
     identity.hidden = features.hidden = details.hidden = true;
-    refresh.hidden = !fromBoard();
-    if (refresh.hidden) {
-      connection.textContent = t('home.unpaired');
-      return;
-    }
-    const label = needsBoardConsent() ? 'toolbar.connect' : 'capturePanel.tempRate';
+    refresh.hidden = !lan && !navigator.usb;
+    const label = lan ? (needsBoardConsent() ? 'toolbar.connect' : 'capturePanel.tempRate')
+      : usbDevice ? 'capturePanel.tempRate' : 'home.connectUsb';
     refresh.dataset.i18n = label;
     refresh.textContent = t(label);
-    if (needsBoardConsent() && !userRequested) {
-      connection.textContent = '';
+    if ((lan && needsBoardConsent() && !userRequested) || (!lan && (!navigator.usb || (!usbDevice && !userRequested)))) {
+      connection.textContent = lan ? '' : t(disconnected ? 'home.usbGone' : 'home.unpaired');
       return;
     }
     refresh.disabled = true;
     connection.textContent = t('esk.reading');
+    const token = ++generation;
+    openLogic.disabled = !lan;
+    enableBridge(false);
     try {
-      const board = await readBoardStatus();
+      if (!lan && !usbDevice) {
+        const device = await requestEskDevice();
+        if (token !== generation) return;
+        usbDevice = device;
+      }
+      const board = lan ? await readBoardStatus() : await readUsbBoardStatus(usbDevice!);
+      if (token !== generation) return;
+      if (!lan) {
+        if (usbStatus?.boot !== board.boot) result.value = '';
+        disconnected = false;
+        usbStatus = board;
+        selectEskUsbDevice(usbDevice);
+        enableBridge(board.features.some(f => f.name === 'I2C' && f.instance === 0 && f.enabled));
+      }
       refresh.dataset.i18n = 'capturePanel.tempRate';
       refresh.textContent = t('capturePanel.tempRate');
       connection.textContent = '';
@@ -66,33 +96,70 @@ export function initEskHome(): void {
         details.hidden = false;
       }
     } catch (error) {
-      connection.textContent = error instanceof Error ? error.message : String(error);
-    } finally { refresh.disabled = false; }
+      if (token !== generation) return;
+      if (!lan) {
+        usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
+        result.value = '';
+        refresh.dataset.i18n = 'home.connectUsb'; refresh.textContent = t('home.connectUsb');
+      }
+      connection.textContent = error instanceof DOMException && error.name === 'NotFoundError' ? t('home.unpaired') :
+        error instanceof Error ? error.message : String(error);
+    } finally {
+      if (token === generation) { refresh.disabled = false; openLogic.disabled = false; }
+    }
   }
 
-  let portableView: 'home' | 'logic' = 'logic';
+  boardId.onclick = async () => {
+    if (!usbDevice || !usbStatus || boardId.disabled) return;
+    const token = generation;
+    boardId.disabled = true;
+    result.value = t('esk.reading');
+    try {
+      const value = await readUsbBoardId(usbDevice, usbStatus);
+      if (token === generation) result.value = value;
+    } catch (error) {
+      if (token === generation) result.value = error instanceof Error ? error.message : String(error);
+    } finally { if (token === generation) boardId.disabled = false; }
+  };
+  navigator.usb?.addEventListener('disconnect', event => {
+    if (event.device !== usbDevice) return;
+    generation++;
+    disconnected = true;
+    usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
+    enableBridge(false);
+    result.value = t('home.usbGone');
+    identity.hidden = features.hidden = details.hidden = true;
+    refresh.disabled = openLogic.disabled = false;
+    refresh.dataset.i18n = 'home.connectUsb'; refresh.textContent = t('home.connectUsb');
+    connection.textContent = t('home.usbGone');
+  });
+
+  let portableView: 'home' | 'logic' | 'bridge' = 'logic';
   function display(focus: boolean): void {
     const params = new URL(location.href).searchParams;
     const view = location.protocol === 'file:' ? portableView : params.get('view');
     // Existing portable, bridge and diagnostic entry points open the analyzer.
-    const atHome = view === 'home' || (view === null && location.protocol !== 'file:' &&
+    const atBridge = view === 'bridge' && !!usbStatus;
+    const atHome = view === 'home' || (view === 'bridge' && !atBridge) || (view === null && location.protocol !== 'file:' &&
       !params.size && !location.pathname.endsWith('/esk.html'));
     home.hidden = !atHome;
-    logic.hidden = atHome;
-    logic.inert = atHome;
-    document.title = atHome ? 'xEskWeb' : t('app.title');
+    bridge.hidden = !atBridge;
+    logic.hidden = logic.inert = atHome || atBridge;
+    document.title = atHome ? 'xEskWeb' : atBridge ? 'xBridgeWeb' : t('app.title');
     if (atHome) {
       if (focus) document.getElementById('esk-home-title')!.focus();
       void updateStatus();
-    } else if (focus) { goHome.focus(); }
+    } else if (focus) { (atBridge ? document.getElementById('bridge-title')! : goHome).focus(); }
   }
-  function navigate(view: 'home' | 'logic'): void {
+  function navigate(view: 'home' | 'logic' | 'bridge'): void {
     const url = new URL(location.href);
     url.searchParams.set('view', view);
     if (location.protocol === 'file:') portableView = view;
     else history.pushState(null, '', url);
     display(true);
   }
+  openBridge.onclick = () => navigate('bridge');
+  document.querySelector<HTMLButtonElement>('#bridge-home')!.onclick = () => navigate('home');
   openLogic.onclick = () => navigate('logic');
   goHome.onclick = () => navigate('home');
   refresh.onclick = () => void updateStatus(true);

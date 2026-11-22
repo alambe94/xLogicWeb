@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { decodeBoardId } from './eskUsbHome.js';
 import { captureEsk, recordEskUsb, ESK_RATE, ESK_SAMPLES, ESK_STREAM_RATE } from './eskCapture.js';
 import { createSampleStore } from '../data/index.js';
 
@@ -176,3 +177,14 @@ for (const scenario of ['stop', 'storage', 'short', 'clear']) {
     'stop, reap and close on every started stream');
 }
 console.log('ESK continuous USB ordered delivery, renewal, Stop and error cleanup passed');
+
+const header = new Uint8Array(28);
+header.set([0xaa, 0x55, 0x33, 0xee, 1, 21, 0, 0x10, 18, 0]);
+header.set(new TextEncoder().encode('TEST-BOARD'), 10);
+header[26] = 65;
+expect(decodeBoardId(header) === 'TEST-BOARD · A', 'TI board information record');
+for (const invalid of [header.slice(0, 12), new Uint8Array(128)]) {
+  let rejected = false;
+  try { decodeBoardId(invalid); } catch { rejected = true; }
+  expect(rejected, 'reject damaged or unknown EEPROM records');
+}
