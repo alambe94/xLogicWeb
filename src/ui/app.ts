@@ -152,6 +152,7 @@ import { showEskStatus } from './eskStatusDialog.js';
 import { boardCaptureMaximum, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
 import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_PACKED_RATE, type EskBank, requestEskDevice } from '../device/eskCapture.js';
+import { capturePackedEdge } from './eskPackedCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
 import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';
@@ -506,6 +507,7 @@ export class App {
   private eskCapturePending = false;
   private eskEdge: 'none' | 'rising' | 'falling' = 'none';
   private eskTriggerChannel = 0;
+  private eskPrePercent = 50;
   private eskArmed: AbortController | null = null;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
@@ -6946,7 +6948,10 @@ export class App {
       rates.disabled = lan || this.eskCapturePending;
       rates.onchange = () => {
         this.eskRate = Number(rates.value);
-        if (this.eskRate === ESK_PACKED_RATE) this.eskBank = 'lower';
+        if (this.eskRate === ESK_PACKED_RATE) {
+          this.eskBank = 'lower';
+          this.eskTriggerChannel %= 4;
+        }
         this.renderSidebarContent();
       };
       rateLabel.append(rates);
@@ -6964,11 +6969,13 @@ export class App {
       const edge = document.createElement('select');
       const channel = document.createElement('select');
       const channelLabel = document.createElement('label');
+      const preLabel = document.createElement('label');
       const syncTrigger = (n: number | undefined) => {
-        const available = !this.eskUntilStop && n !== undefined && n <= ESK_SAMPLES && rate !== ESK_PACKED_RATE;
+        const available = !this.eskUntilStop && n !== undefined && n <= ESK_SAMPLES;
         edge.disabled = this.eskCapturePending || !available;
         edge.value = available ? this.eskEdge : 'none';
         channelLabel.hidden = edge.value === 'none';
+        preLabel.hidden = channelLabel.hidden || rate !== ESK_PACKED_RATE;
         channel.disabled = this.eskCapturePending;
       };
       const updateEstimate = () => {
@@ -7016,10 +7023,19 @@ export class App {
         edgeLabel.append(edge);
         channelLabel.textContent = t('esk.triggerChannel');
         channel.id = 'esk-trigger-channel';
-        for (let i = 0; i < ESK_CHANNELS; i++) channel.add(new Option('D' + i, String(i), false, this.eskTriggerChannel === i));
+        const packed = rate === ESK_PACKED_RATE;
+        const base = packed && this.eskBank === 'upper' ? 4 : 0;
+        for (let i = base; i < base + (packed ? 4 : ESK_CHANNELS); i++) channel.add(new Option('D' + i, String(i), false, this.eskTriggerChannel === i));
         channel.onchange = () => { this.eskTriggerChannel = Number(channel.value); };
         channelLabel.append(channel);
-        fields.append(edgeLabel, channelLabel);
+        const position = document.createElement('select');
+        position.id = 'esk-pre-trigger';
+        position.disabled = this.eskCapturePending;
+        for (const percent of [0, 25, 50, 75]) position.add(new Option(percent + '%', String(percent), false, percent === this.eskPrePercent));
+        position.onchange = () => { this.eskPrePercent = Number(position.value); };
+        preLabel.textContent = t('capturePanel.preTriggerBuffer');
+        preLabel.append(position);
+        fields.append(edgeLabel, channelLabel, preLabel);
       }
       updateEstimate();
       const channels = document.createElement('fieldset');
@@ -7036,7 +7052,13 @@ export class App {
           input.name = 'esk-bank';
           input.value = bank;
           input.checked = this.eskBank === bank;
-          input.onchange = () => { if (input.checked) this.eskBank = bank; };
+          input.disabled = this.eskCapturePending;
+          input.onchange = () => {
+            if (!input.checked) return;
+            this.eskBank = bank;
+            this.eskTriggerChannel = this.eskTriggerChannel % 4 + (bank === 'upper' ? 4 : 0);
+            this.renderSidebarContent();
+          };
           label.append(input, bank === 'lower' ? 'D0–D3' : 'D4–D7');
           channels.append(label);
         }
@@ -7771,8 +7793,9 @@ export class App {
       const bank = this.eskBank;
       const packed = rate === ESK_PACKED_RATE;
       let samples: Uint8Array, ticks: string | undefined;
+      let triggerIndex: number | undefined;
       if (device) {
-        const trigger = !packed && this.eskEdge !== 'none' ? {
+        const trigger = this.eskEdge !== 'none' ? {
           channel: this.eskTriggerChannel, edge: this.eskEdge, signal: controller.signal,
           onArmed: () => {
             this.eskArmed = controller;
@@ -7780,7 +7803,10 @@ export class App {
             this.renderToolbarState();
           },
         } : undefined;
-        samples = await captureEsk(device, rate, bank, n, trigger);
+        if (packed && trigger) {
+          triggerIndex = Math.floor(n * this.eskPrePercent / 100);
+          samples = await capturePackedEdge(device, bank, n, triggerIndex, trigger);
+        } else samples = await captureEsk(device, rate, bank, n, trigger);
         controller.signal.throwIfAborted();
       }
       else if (max) {
@@ -7796,6 +7822,7 @@ export class App {
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: null };
       const names = packed && bank === 'upper' ? ['D4', 'D5', 'D6', 'D7'] : [];
       this.adoptCapture(store, names, { kind: 'esk', samples: store.length, rate: store.samplerate, ticks }, false, !packed);
+      if (triggerIndex !== undefined) this.triggerSampleIndex = triggerIndex;
       const vars = { samples: formatCount(store.length), rate: formatRate(store.samplerate) };
       this.setFileNotice(ticks === undefined ? { key: 'capture.esk', vars } :
         { key: 'capture.eskLan', vars: { ...vars, ticks } });
