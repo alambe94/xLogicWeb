@@ -118,6 +118,8 @@ export const zhCN: Messages = {
   'home.instance': '实例',
   'home.state': '状态',
   'esk.visibleChannels': '可见通道',
+  'esk.triggerChannel': '触发通道',
+  'esk.waitingForTrigger': '正在等待 D{channel} 触发…',
   'home.features': '功能',
   'home.logic': '采集波形并解码协议',
   'home.connectUsb': '通过 USB 连接',

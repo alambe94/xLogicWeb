@@ -120,6 +120,8 @@ export const fr: Messages = {
   'home.instance': 'Instance',
   'home.state': 'État',
   'esk.visibleChannels': 'Voies visibles',
+  'esk.triggerChannel': 'Voie de déclenchement',
+  'esk.waitingForTrigger': 'En attente du déclenchement sur D{channel}…',
   'home.features': 'Fonctions',
   'home.logic': 'Acquérir des signaux et décoder des protocoles',
   'home.connectUsb': 'Connecter en USB',

@@ -124,6 +124,8 @@ export const en = {
   'home.instance': 'Instance',
   'home.state': 'State',
   'esk.visibleChannels': 'Visible channels',
+  'esk.triggerChannel': 'Trigger channel',
+  'esk.waitingForTrigger': 'Waiting for trigger on D{channel}…',
   'home.features': 'Features',
   'home.logic': 'Capture waveforms and decode protocols',
   'home.connectUsb': 'Connect via USB',
