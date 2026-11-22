@@ -34,6 +34,7 @@ class Board {
   short = false;
   badCount = false;
   failClear = false;
+  overruns = 0;
   clears = 0;
   statusRead = false;
   edge?: {channel: number; falling: boolean};
@@ -133,6 +134,7 @@ class Board {
           data.setUint32(60, this.bankMask === 255 ? 0 : 3, true);
         }
         data.setUint32(48, this.wireRate, true); data.setUint32(56, 5, true);
+        data.setUint32(32, this.overruns, true);
         if (this.holdEdge && this.commands.at(-1) === 2) {
           data.setBigUint64(16, 0n, true); data.setUint32(12, 1, true);
         }
@@ -242,11 +244,12 @@ for (const failure of ['short', 'badCount'] as const) {
 }
 console.log('ESK raw8 capture, channel mapping, release and error cleanup passed');
 
-for (const scenario of ['stop', 'storage', 'short', 'clear']) {
+for (const scenario of ['stop', 'storage', 'short', 'clear', 'overrun']) {
   const board = new Board();
   board.live = true;
   board.short = scenario === 'short';
   board.failClear = scenario === 'clear';
+  board.overruns = Number(scenario === 'overrun');
   const stop = new AbortController();
   const order: number[] = [];
   let failure = '';
@@ -259,6 +262,7 @@ for (const scenario of ['stop', 'storage', 'short', 'clear']) {
     expect(wire === 8388608n, 'terminal wire count');
   } catch (error) { failure = String(error); }
   if (scenario === 'stop') expect(!failure && String(order) === '1,2' && board.controls.includes(3), 'ordered live blocks and renewal');
+  else if (scenario === 'overrun') expect(failure.includes('overruns 1'), 'report an integrity failure after retiring the input pipe');
   else expect(failure.includes(scenario === 'short' ? 'Incomplete' : scenario === 'clear' ? 'pipe reset failed' : 'backlog'), 'surface the causal failure');
   expect(board.clears === 1, 'retire the live pipe once');
   expect(String(board.commands) === '1,2,3' && board.controls.includes(6) && board.closedSession && !board.opened,
