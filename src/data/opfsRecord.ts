@@ -226,8 +226,8 @@ const CRC_TABLE = (() => {
 })();
 
 /** CRC32 (IEEE), used for chunk headers, chunk payloads and manifest envelopes. */
-export function recordCrc32(bytes: Uint8Array): number {
-  let crc = 0xffffffff;
+export function recordCrc32(bytes: Uint8Array, previous = 0): number {
+  let crc = previous ^ 0xffffffff;
   for (let i = 0; i < bytes.length; i++) {
     crc = CRC_TABLE[(crc ^ bytes[i]!) & 0xff]! ^ (crc >>> 8);
   }

@@ -41,6 +41,12 @@ On current firmware, open the board IP to see xEskWeb Home in one tab. Select **
 
 When the full viewer files are served at the board's numeric HTTP origin, open the viewer with `?esk=board` and choose **Open → Capture from ESK Ethernet…**. It uses the board's existing `/control.mjs` and `/finite.mjs` and its same-origin `/api/capture` WebSocket. Each capture acquires and releases LOGIC/0. The current small firmware dashboard does not include the full viewer files. Opening the public Pages site alone does not enable Ethernet capture against a board IP.
 
+## Record and reopen an ESK replay
+
+Open the HTTPS viewer directly, enter Logic and select **Open → Recording from a saved session**. Choose an eight-channel sigrok `.sr` file, optionally set a recording limit in MiB, and select **Record**. Replay follows the file's sample rate and can slow down while browser storage drains. The Logic display shows up to the latest 65,536 samples. **Stop** finishes pending writes.
+
+To inspect saved data, choose the recording, enter a zero-based first sample and select **Reopen**. Close the recording controls to inspect that window in Logic. Recordings occupy local browser storage for this site and profile until you delete them or clear site data. Live USB and Ethernet capture use their existing menu actions.
+
 ## Features
 
 - Single, Repeat and Loop capture with digital and qualified analog triggers, pre-trigger

@@ -342,5 +342,18 @@
   <input id="file-input" type="file" multiple hidden
          accept=".sr,.lwcap" />
   <script type="module" src="/src/ui/main.ts"></script>
+  <dialog id="esk-recorder" class="shortcuts-dialog" aria-labelledby="rec-heading">
+    <div class="esk-record-controls">
+      <h2 id="rec-heading" data-i18n="rec.title">Recording from a saved session</h2>
+      <label><span data-i18n="rec.source">Source (.sr, 8 digital channels)</span><input type="file" id="rec-source" accept=".sr"></label>
+      <label><span data-i18n="rec.limit">Recording limit (MiB, optional)</span><input type="number" min="1" step="1" id="rec-limit"></label>
+      <div><button id="rec-record" data-i18n="rec.record">Record</button> <button id="rec-stop" data-i18n="rec.stop">Stop</button></div>
+      <label><span data-i18n="rec.archive">Saved recording</span><select id="rec-archive"></select></label>
+      <label><span data-i18n="rec.first">First sample</span><input id="rec-first" type="number" value="0" min="0" step="1" required></label>
+      <div><button id="rec-reopen" data-i18n="rec.reopen">Reopen</button> <button id="rec-delete" data-i18n="rec.delete">Delete</button></div>
+      <output id="rec-status" role="status"></output>
+      <button id="rec-close" data-i18n="settings.close">Close</button>
+    </div>
+  </dialog>
 </body>
 </html>

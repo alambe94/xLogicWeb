@@ -21,6 +21,7 @@
  * is ever marked missing here.
  */
 
+import { recordCrc32 } from '../data/opfsRecord.js';
 import { createEdgeStore } from '../data/index.js';
 import type { SampleStore } from '../data/types.js';
 import { DiagnosticError } from '../diagnostics.js';
@@ -37,6 +38,7 @@ const METHOD_DEFLATE = 8;
 interface ZipMember {
   name: string;
   method: number;
+  crc: number;
   compressedSize: number;
   uncompressedSize: number;
   /** Offset of the local header. */
@@ -55,7 +57,7 @@ function u32(dv: DataView, o: number): number {
  * The central directory, straight from the end-of-central-directory record. Only
  * single-disk, no-ZIP64 archives pass.
  */
-function readCentralDirectory(buf: ArrayBuffer): Map<string, ZipMember> {
+function directoryLocation(buf: ArrayBuffer, base = 0) {
   const dv = new DataView(buf);
   if (buf.byteLength < 22) throw new DiagnosticError('file.sr.notZip');
   const maxComment = Math.min(0xffff, buf.byteLength - 22);
@@ -71,11 +73,16 @@ function readCentralDirectory(buf: ArrayBuffer): Map<string, ZipMember> {
   const count = u16(dv, eocd + 10);
   const cdSize = u32(dv, eocd + 12);
   const cdOffset = u32(dv, eocd + 16);
-  if (cdOffset + cdSize > eocd) throw new DiagnosticError('file.sr.corruptDirectory');
+  if (cdOffset + cdSize > base + eocd) throw new DiagnosticError('file.sr.corruptDirectory');
   if (count === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
     throw new DiagnosticError('file.sr.zip64');
   }
 
+  return { cdOffset, cdSize, count };
+}
+
+function directoryMembers(buf: ArrayBuffer, cdOffset: number, cdSize: number, count: number): Map<string, ZipMember> {
+  const dv = new DataView(buf);
   const members = new Map<string, ZipMember>();
   const cdEnd = cdOffset + cdSize;
   let o = cdOffset;
@@ -105,7 +112,7 @@ function readCentralDirectory(buf: ArrayBuffer): Map<string, ZipMember> {
     if (method !== METHOD_STORED && method !== METHOD_DEFLATE) {
       throw new DiagnosticError('file.sr.compression', { member: name, method });
     }
-    members.set(name, { name, method, compressedSize, uncompressedSize, localOffset });
+    members.set(name, { name, method, crc: u32(dv, o + 16), compressedSize, uncompressedSize, localOffset });
     o += 46 + nameLen + extraLen + commentLen;
   }
   return members;
@@ -312,20 +319,7 @@ function samplesToChannels(
   return out;
 }
 
-// ---------------------------------------------------------------- entry
-
-/**
- * Parse a sigrok .sr session file into a transition-backed store.
- *
- * `source` is a display name for error messages. Only the first logic device of the
- * session is loaded; sessions with analog channels are refused.
- */
-export async function parseSr(buf: ArrayBuffer, source: string): Promise<LoadedCapture> {
-  const members = readCentralDirectory(buf);
-  const metadata = members.get('metadata');
-  if (!metadata) throw new DiagnosticError('file.sr.noMetadata', { source });
-  const dev = parseMetadata(new TextDecoder().decode(await inflate(buf, metadata)));
-
+function orderedPacks(members: Map<string, ZipMember>, dev: SrDevice, source: string) {
   // v1: the member is named exactly `capturefile`; v2: `capturefile-1`, `-2`, ... in
   // pack order. Accept both; sort packs numerically.
   const packNames: Array<{ n: number; name: string }> = [];
@@ -339,6 +333,26 @@ export async function parseSr(buf: ArrayBuffer, source: string): Promise<LoadedC
     throw new DiagnosticError('file.sr.noData', { source, capturefile: dev.capturefile });
   }
   packNames.sort((a, b) => a.n - b.n);
+
+  return packNames;
+}
+
+// ---------------------------------------------------------------- entry
+
+/**
+ * Parse a sigrok .sr session file into a transition-backed store.
+ *
+ * `source` is a display name for error messages. Only the first logic device of the
+ * session is loaded; sessions with analog channels are refused.
+ */
+export async function parseSr(buf: ArrayBuffer, source: string): Promise<LoadedCapture> {
+  const { cdOffset, cdSize, count } = directoryLocation(buf);
+  const members = directoryMembers(buf, cdOffset, cdSize, count);
+  const metadata = members.get('metadata');
+  if (!metadata) throw new DiagnosticError('file.sr.noMetadata', { source });
+  const dev = parseMetadata(new TextDecoder().decode(await inflate(buf, metadata)));
+
+  const packNames = orderedPacks(members, dev, source);
 
   const packs: Uint8Array[] = [];
   let bytes = 0;
@@ -371,4 +385,63 @@ export async function parseSr(buf: ArrayBuffer, source: string): Promise<LoadedC
     ...(dev.declaredProbes > dev.probes
       ? { droppedProbes: { declared: dev.declaredProbes, loaded: dev.probes } } : {}),
   };
+}
+
+// Read only the ZIP index and one bounded part of each member at a time during replay.
+async function* memberBytes(file: Blob, member: ZipMember): AsyncGenerator<Uint8Array> {
+  const header = new DataView(await file.slice(member.localOffset, member.localOffset + 30).arrayBuffer());
+  if (header.byteLength !== 30 || u32(header, 0) !== LOCAL_SIG) throw new Error('Invalid local ZIP header');
+  const start = member.localOffset + 30 + u16(header, 26) + u16(header, 28);
+  if (start + member.compressedSize > file.size) throw new Error('Truncated ZIP member');
+  let stream = file.slice(start, start + member.compressedSize).stream();
+  if (member.method === METHOD_DEFLATE) stream = stream.pipeThrough(new DecompressionStream('deflate-raw'));
+  const reader = stream.getReader();
+  let length = 0, crc = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.length;
+      if (length > member.uncompressedSize) throw new Error('Inflated member exceeds its declared size');
+      crc = recordCrc32(value, crc);
+      yield value;
+    }
+    if (length !== member.uncompressedSize || crc !== member.crc) throw new Error('ZIP member size or checksum mismatch');
+  } finally {
+    await reader.cancel();
+    reader.releaseLock();
+  }
+}
+
+export async function openEskReplay(file: File) {
+  const tailStart = Math.max(0, file.size - 65557);
+  const { cdOffset, cdSize, count } = directoryLocation(await file.slice(tailStart).arrayBuffer(), tailStart);
+  if (cdSize > 16 * 1024 * 1024) throw new Error('Replay ZIP directory exceeds 16 MiB');
+  const members = directoryMembers(await file.slice(cdOffset, cdOffset + cdSize).arrayBuffer(), 0, cdSize, count);
+  const meta = members.get('metadata');
+  if (!meta || meta.uncompressedSize > 65536) throw new Error('Missing or oversized session metadata');
+  const text = new Uint8Array(meta.uncompressedSize);
+  let offset = 0;
+  for await (const part of memberBytes(file, meta)) { text.set(part, offset); offset += part.length; }
+  const device = parseMetadata(new TextDecoder().decode(text));
+  if (device.unitsize !== 1 || device.declaredProbes !== 8) throw new Error('Replay requires eight digital channels, one byte per sample');
+  const packs = orderedPacks(members, device, file.name);
+  const size = packs.reduce((n, pack) => n + members.get(pack.name)!.uncompressedSize, 0);
+  if (!size) throw new Error('Empty logic capture');
+  async function* blocks(): AsyncGenerator<Uint8Array> {
+    const buffer = new Uint8Array(4 * 1024 * 1024);
+    let used = 0;
+    for (const pack of packs) {
+      for await (const part of memberBytes(file, members.get(pack.name)!)) {
+        for (let i = 0; i < part.length;) {
+          const n = Math.min(buffer.length - used, part.length - i);
+          buffer.set(part.subarray(i, i + n), used);
+          i += n; used += n;
+          if (used === buffer.length) { yield buffer; used = 0; }
+        }
+      }
+    }
+    if (used) yield buffer.subarray(0, used);
+  }
+  return { rate: device.samplerate, size, blocks };
 }

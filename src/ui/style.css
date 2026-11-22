@@ -1016,6 +1016,14 @@ html[data-theme="light"] .channel-color-custom { background: var(--bg30); }
   box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
   animation: motion-pop var(--motion-fast) var(--motion-ease);
 }
+#esk-recorder { margin: auto 1rem 1rem auto; width: min(34rem, calc(100vw - 2rem)); }
+#esk-recorder::backdrop { background: transparent; }
+.esk-record-controls { display: grid; gap: .55rem; padding: 1rem; }
+.esk-record-controls h2 { font-size: 1rem; margin: 0; }
+.esk-record-controls label { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: .5rem; }
+.esk-record-controls input, .esk-record-controls select { min-width: 0; width: 100%; }
+.esk-record-controls output { overflow-wrap: anywhere; }
+.esk-record-controls button { justify-self: start; }
 .shortcuts-dialog::backdrop {
   background: rgb(0 0 0 / 60%);
   animation: motion-fade var(--motion-fast) var(--motion-ease);
