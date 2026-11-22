@@ -28,6 +28,9 @@ application USB cable, open **xLogicWeb**, press **Capture**, and select the boa
 Open the **Capture** panel by clicking the capture summary above the channel labels.
 Choose a **Sample rate** and enter the number of **Samples** to retain. The default is
 65,536. After each capture you can change either field and capture again in the same tab.
+On USB and Ethernet, enter a whole number or use decimal K, M and G suffixes.
+For example, `100K` means 100,000 samples and `5G` means 5,000,000,000 samples.
+Ethernet counts must fit the capacity advertised by the board.
 The viewer remembers your USB selection until the device disconnects or you change it on Home.
 
 At 41.67, 83.33, 166.67 and 333.33 MS/s the board samples all eight inputs.

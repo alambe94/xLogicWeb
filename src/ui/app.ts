@@ -164,6 +164,7 @@ import {
 } from './deviceChrome.js';
 import { DeviceTabPresence } from './deviceTabPresence.js';
 import { detectCapabilities, type PlatformNavigatorLike } from '../platform/capabilities.js';
+import { parseSampleCount } from './sampleCount.js';
 import { formatCount, formatDuration, formatFreq, formatRate,
   formatAnalyzerNote, formatCaptureLabel, formatStatusError,
   formatStatusErrorDebug, statusDetailOf } from './format.js';
@@ -6949,18 +6950,19 @@ export class App {
       const samplesLabel = document.createElement('label');
       samplesLabel.textContent = t('esk.samples');
       const count = document.createElement('input');
-      count.type = 'number';
-      count.min = count.step = '1';
-      count.max = String(lan ? max ?? ESK_SAMPLES : Number.MAX_SAFE_INTEGER);
+      count.type = 'text';
+      count.spellcheck = false;
+      const maximum = lan ? max ?? ESK_SAMPLES : Number.MAX_SAFE_INTEGER;
       count.id = 'esk-sample-count';
       count.required = true;
       count.value = lan ? (max === undefined ? String(ESK_SAMPLES) : this.eskLanCount) : this.eskCountText;
       count.disabled = this.eskCapturePending || (lan ? !max : this.eskUntilStop);
       samplesLabel.append(count);
       const updateEstimate = () => {
-        const n = count.valueAsNumber;
+        const n = parseSampleCount(count.value, maximum);
+        count.setCustomValidity(n === undefined ? t('esk.invalidSamples', {max: formatCount(maximum)}) : '');
         profile.textContent = !lan && this.eskUntilStop ? t('esk.diskRecording') :
-          count.validity.valid && n > 0 ? formatDuration(n / rate) + ' · ' + formatCount(n) + ' B' : '';
+          n !== undefined ? formatDuration(n / rate) + ' · ' + formatCount(n) + ' B' : '';
       };
       count.oninput = () => {
         if (lan) this.eskLanCount = count.value;
@@ -7708,8 +7710,9 @@ export class App {
     const lan = transport === 'ethernet';
     const max = lan ? boardCaptureMaximum() : undefined;
     const untilStop = !lan && this.eskUntilStop;
-    const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity : Number(lan ? this.eskLanCount : this.eskCountText);
-    if (!untilStop && !(Number.isSafeInteger(n) && n > 0 && n <= (max ?? Number.MAX_SAFE_INTEGER))) {
+    const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity
+      : parseSampleCount(lan ? this.eskLanCount : this.eskCountText, max);
+    if (n === undefined) {
       this.selectPage('capture');
       document.querySelector<HTMLInputElement>('#esk-sample-count')?.reportValidity();
       return;
