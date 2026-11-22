@@ -120,6 +120,8 @@ export const ru: Messages = {
   'home.instance': 'Экземпляр',
   'home.state': 'Состояние',
   'esk.visibleChannels': 'Видимые каналы',
+  'esk.triggerChannel': 'Канал запуска',
+  'esk.waitingForTrigger': 'Ожидание запуска по D{channel}…',
   'home.features': 'Функции',
   'home.logic': 'Захват сигналов и декодирование протоколов',
   'home.connectUsb': 'Подключить по USB',

@@ -36,6 +36,8 @@ class Board {
   failClear = false;
   clears = 0;
   statusRead = false;
+  edge?: {channel: number; falling: boolean};
+  holdEdge = false;
   private stall = true;
   private control = new DataView(new ArrayBuffer(0));
   private command = new DataView(new ArrayBuffer(0));
@@ -70,7 +72,12 @@ class Board {
           v.getUint32(44, true) === (this.live ? 0 : this.finiteSize) && v.getUint32(48, true) === this.bankMask &&
           v.getUint32(72, true) === (this.bankMask === 255 ? 0 : 3), 'capture configuration');
       }
-      if (op === 2) expect(this.readQueued, 'read must be queued before START');
+      if (op === 1) {
+        expect(v.getUint32(52, true) === (this.edge ? 2 : 0) &&
+          v.getUint32(64, true) === (this.edge?.channel ?? 0) &&
+          v.getUint32(68, true) === Number(this.edge?.falling ?? false), 'edge trigger configuration');
+      }
+      if (op === 2) expect(this.readQueued === !this.edge, 'bulk read ordering at START');
     } else if (setup.request === 0x75) {
       this.closedSession = true;
     } else {
@@ -126,6 +133,9 @@ class Board {
           data.setUint32(60, this.bankMask === 255 ? 0 : 3, true);
         }
         data.setUint32(48, this.wireRate, true); data.setUint32(56, 5, true);
+        if (this.holdEdge && this.commands.at(-1) === 2) {
+          data.setBigUint64(16, 0n, true); data.setUint32(12, 1, true);
+        }
         break;
       default: throw new Error('unexpected control read');
     }
@@ -191,6 +201,26 @@ for (const bank of ['lower', 'upper'] as const) {
     board.closedSession && !board.opened, 'packed bank, nibble order, length and retirement');
 }
 const odd = new Board();
+for (const mode of ['cancel', 'falling', 'rising'] as const) {
+  const board = new Board();
+  const controller = new AbortController();
+  board.edge = {channel: 5, falling: mode !== 'rising'};
+  board.holdEdge = true;
+  const onArmed = () => setTimeout(() => {
+    if (mode === 'cancel') controller.abort();
+    else board.holdEdge = false;
+  }, 260);
+  try {
+    await captureEsk(board as unknown as USBDevice, ESK_RATE, 'lower', ESK_SAMPLES,
+      {channel: 5, edge: board.edge.falling ? 'falling' : 'rising', signal: controller.signal, onArmed});
+    expect(mode !== 'cancel', 'cancelled edge must not publish a capture');
+  } catch (error) {
+    expect(mode === 'cancel' && error === controller.signal.reason, 'unexpected edge capture failure');
+  }
+  expect(board.controls.includes(3) && board.controls.includes(6) &&
+    String(board.commands) === '1,2,3' && board.readQueued === (mode !== 'cancel') && !board.opened,
+    'edge wait renews, stops and releases without a stale bulk read');
+}
 odd.finiteSize = 12352;
 const prefix = await captureEsk(odd as unknown as USBDevice, ESK_RATE, 'lower', 12345);
 expect(prefix.length === 12345 && odd.closedSession, 'trim transport padding after verified retirement');

@@ -504,6 +504,9 @@ export class App {
   private eskUntilStop = false;
   private eskLanCount = String(ESK_SAMPLES);
   private eskCapturePending = false;
+  private eskEdge: 'none' | 'rising' | 'falling' = 'none';
+  private eskTriggerChannel = 0;
+  private eskArmed: AbortController | null = null;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
   /**
@@ -6958,8 +6961,19 @@ export class App {
       count.value = lan ? (max === undefined ? String(ESK_SAMPLES) : this.eskLanCount) : this.eskCountText;
       count.disabled = this.eskCapturePending || (lan ? !max : this.eskUntilStop);
       samplesLabel.append(count);
+      const edge = document.createElement('select');
+      const channel = document.createElement('select');
+      const channelLabel = document.createElement('label');
+      const syncTrigger = (n: number | undefined) => {
+        const available = !this.eskUntilStop && n !== undefined && n <= ESK_SAMPLES && rate !== ESK_PACKED_RATE;
+        edge.disabled = this.eskCapturePending || !available;
+        edge.value = available ? this.eskEdge : 'none';
+        channelLabel.hidden = edge.value === 'none';
+        channel.disabled = this.eskCapturePending;
+      };
       const updateEstimate = () => {
         const n = parseSampleCount(count.value, maximum);
+        if (!lan) syncTrigger(n);
         count.setCustomValidity(n === undefined ? t('esk.invalidSamples', {max: formatCount(maximum)}) : '');
         profile.textContent = !lan && this.eskUntilStop ? t('esk.diskRecording') :
           n !== undefined ? formatDuration(n / rate) + ' · ' + formatCount(n) + ' B' : '';
@@ -6989,6 +7003,23 @@ export class App {
         checkbox.onchange = () => { this.eskUntilStop = checkbox.checked; this.renderSidebarContent(); };
         until.append(document.createTextNode(t('esk.untilStop')), checkbox);
         fields.append(until);
+        const edgeLabel = document.createElement('label');
+        edgeLabel.textContent = t('overview.originTrigger');
+        edge.id = 'esk-trigger-edge';
+        for (const kind of ['none', 'rising', 'falling'] as const) {
+          edge.add(new Option(t(kind === 'none' ? 'trigger.off' : kind === 'rising' ? 'trigger.rising' : 'trigger.falling'), kind));
+        }
+        edge.onchange = () => {
+          this.eskEdge = edge.value as typeof this.eskEdge;
+          updateEstimate();
+        };
+        edgeLabel.append(edge);
+        channelLabel.textContent = t('esk.triggerChannel');
+        channel.id = 'esk-trigger-channel';
+        for (let i = 0; i < ESK_CHANNELS; i++) channel.add(new Option('D' + i, String(i), false, this.eskTriggerChannel === i));
+        channel.onchange = () => { this.eskTriggerChannel = Number(channel.value); };
+        channelLabel.append(channel);
+        fields.append(edgeLabel, channelLabel);
       }
       updateEstimate();
       const channels = document.createElement('fieldset');
@@ -7101,6 +7132,11 @@ export class App {
 
 
   private primaryAction(): void {
+    if (this.eskArmed) {
+      this.eskArmed.abort();
+      this.renderToolbarState();
+      return;
+    }
     if (this.stopping) {
       // An automatic trigger restart is waiting for this stop; cancel its start so the
       // user's Stop is not overridden by a capture they did not ask for.
@@ -7138,7 +7174,7 @@ export class App {
     // Start/stop, open and save all re-render the toolbar: the unload guard follows them.
     this.syncUnloadGuard();
     const repeatPending = this.repeatTimer.pending;
-    const showStop = this.running || repeatPending;
+    const showStop = this.running || repeatPending || !!this.eskArmed;
     this.renderDeviceCommand();
     this.el.open.setAttribute('aria-label', t('toolbar.open'));
     this.el.save.setAttribute('aria-label', t('toolbar.save'));
@@ -7157,19 +7193,19 @@ export class App {
     this.el.theme.setAttribute('aria-label', t('toolbar.themeTitle'));
 
     const btn = this.el.transport;
-    btn.setAttribute('aria-label', this.stopping ? t('toolbar.stopping')
+    btn.setAttribute('aria-label', this.eskArmed ? t('unsaved.cancel') : this.stopping ? t('toolbar.stopping')
       : showStop ? t('toolbar.stop') : t('toolbar.start'));
     const label = btn.querySelector<HTMLElement>('.toolbar-item-label');
     if (label) {
-      label.textContent = this.stopping ? t('toolbar.shortStopping')
+      label.textContent = this.eskArmed ? t('unsaved.cancel') : this.stopping ? t('toolbar.shortStopping')
         : showStop ? t('toolbar.shortStop') : t('toolbar.shortStart');
     }
     const eskTransport = eskLanMode() ? 'open.eskLan' : navigator.usb ? 'open.esk' : undefined;
     btn.classList.toggle('primary', !showStop && (!!this.device || !!eskTransport));
     btn.classList.toggle('danger', showStop);
-    btn.disabled = (this.stopping && !this.triggerRestartPending) ||
+    btn.disabled = !!this.eskArmed?.signal.aborted || (this.stopping && !this.triggerRestartPending) ||
       (this.device === null && !showStop && (!eskTransport || this.eskCapturePending));
-    btn.title = this.stopping ? t('toolbar.stoppingTitle')
+    btn.title = this.eskArmed ? t('unsaved.cancel') : this.stopping ? t('toolbar.stoppingTitle')
       : showStop ? t('toolbar.stopTitle')
         : this.device ? t('toolbar.startTitle') : t(eskTransport ?? 'toolbar.noWebusb');
     applyToolbarHints(document, this.detailedLabels);
@@ -7722,6 +7758,7 @@ export class App {
       return;
     }
     this.eskCapturePending = true;
+    const controller = new AbortController();
     this.renderToolbarState();
     this.renderSidebarContent();
     const previous = this.captureSessionId;
@@ -7734,7 +7771,18 @@ export class App {
       const bank = this.eskBank;
       const packed = rate === ESK_PACKED_RATE;
       let samples: Uint8Array, ticks: string | undefined;
-      if (device) samples = await captureEsk(device, rate, bank, n);
+      if (device) {
+        const trigger = !packed && this.eskEdge !== 'none' ? {
+          channel: this.eskTriggerChannel, edge: this.eskEdge, signal: controller.signal,
+          onArmed: () => {
+            this.eskArmed = controller;
+            this.setFileNotice({key: 'esk.waitingForTrigger', vars: {channel: this.eskTriggerChannel}});
+            this.renderToolbarState();
+          },
+        } : undefined;
+        samples = await captureEsk(device, rate, bank, n, trigger);
+        controller.signal.throwIfAborted();
+      }
       else if (max) {
         samples = new Uint8Array(n);
         ticks = await receiveBoardCapture(n, new AbortController().signal, async (block, offset) => { samples.set(block, offset); });
@@ -7753,11 +7801,13 @@ export class App {
         { key: 'capture.eskLan', vars: { ...vars, ticks } });
       this.syncUnloadGuard();
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'NotFoundError')) {
+      if (!(controller.signal.aborted && error === controller.signal.reason) && !(error instanceof DOMException && error.name === 'NotFoundError')) {
         this.fail(transport === 'ethernet' ? 'error.eskEthernet' : 'error.eskUsb', error);
       }
     } finally {
       this.eskCapturePending = false;
+      this.eskArmed = null;
+      if (this.fileNotice?.key === 'esk.waitingForTrigger') this.setFileNotice(null);
       this.renderToolbarState();
       this.renderSidebarContent();
     }
