@@ -9,6 +9,11 @@
  *
  * Device px at dpr 2 in the comments, CSS px in the rules.
  */
+#bridge-controls fieldset { display: grid; gap: .65rem; margin: .8rem 0; padding: .8rem; min-width: 0; }
+#bridge-controls fieldset[hidden] { display: none; }
+#bridge-controls label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+#bridge-controls input, #bridge-controls select { max-width: 100%; min-width: 0; }
+#bridge-controls output { display: block; overflow-wrap: anywhere; white-space: pre-wrap; }
 
 :root {
   --bg00: #141415;

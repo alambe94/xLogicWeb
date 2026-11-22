@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { EskUsbSession, requireField, withUsbInterface, within } from './eskUsbSession.js';
+import { eskBusInterface, EskUsbSession, requireField, withUsbInterface } from './eskUsbSession.js';
+import { bulkCommand, i2cCommand, type BridgeCommand } from './eskBridgeFrames.js';
 import type { BoardStatus } from './eskPairedBoard.js';
 
 const names = ['', 'Device', 'Logic', 'DAP', 'UART', 'I2C', 'SPI', 'GPIO', 'USB analyzer',
@@ -52,34 +53,20 @@ class HomeSession extends EskUsbSession {
     return {...identity, features};
   }
 
-  async boardId(intf: USBAlternateInterface, expected: BoardStatus) {
+  async transactions(intf: USBAlternateInterface, expected: BoardStatus, service: 'I2C' | 'SPI', commands: BridgeCommand[]) {
     const identity = await this.identity();
     requireField(identity.boot === expected.boot && identity.deviceId === expected.deviceId,
-      'Board identity or boot changed. Refresh Home before reading.');
+      'Board identity or boot changed. Refresh Home.');
     const ep = (dir: USBDirection) => intf.endpoints.find(e => e.type === 'bulk' && e.direction === dir)?.endpointNumber;
     const input = ep('in'), output = ep('out');
-    requireField(input && output, 'Missing I²C USB endpoints');
+    requireField(input && output, 'Missing bridge USB endpoints.');
     await this.control(2);
     try {
-      // One combined transfer: the two outbound bytes select EEPROM offset zero.
-      const request = new Uint8Array(48);
-      const h = new DataView(request.buffer);
-      request.set([0x78, 0x45, 0x49, 0x32, 1]); // xEI2
-      h.setUint16(6, this.connection, true);
-      h.setBigUint64(8, this.boot, true);
-      h.setBigUint64(16, this.session, true);
-      h.setBigUint64(24, 1n, true);
-      request.set([1, 3, 8, 0, 1, 0, 0, 0, 0x51, 0, 2, 0, 128, 0, 0, 0], 32);
-      const sent = await within(this.usb.transferOut(output, request), 1000);
-      requireField(sent.status === 'ok' && sent.bytesWritten === request.length, 'I²C request delivery uncertain');
-      const reply = await within(this.usb.transferIn(input, 1068), 1000);
-      const r = reply.data;
-      requireField(reply.status === 'ok' && r && r.byteLength >= 32 &&
-        request.subarray(0, 32).every((byte, i) => i === 5 || r.getUint8(i) === byte), 'Mismatched I²C reply');
-      requireField(r.getUint8(5) === 0 && r.byteLength >= 44 && r.getUint8(32) === 1 &&
-        r.getUint32(36, true) === 1 && r.getUint8(33) === 0 && r.getUint32(40, true) === 0, 'Board-ID read failed');
-      requireField(r.byteLength === 172 && r.getUint16(34, true) === 128, 'Incomplete board-ID read');
-      return decodeBoardId(new Uint8Array(r.buffer, r.byteOffset + 44, 128));
+      let result: Uint8Array = new Uint8Array();
+      for (const [index, command] of commands.entries()) {
+        result = await bulkCommand(this.usb,input,output,service,this.connection,this.boot,this.session,index+1,command);
+      }
+      return result;
     } finally { await this.release(); }
   }
 }
@@ -108,7 +95,14 @@ export function readUsbBoardStatus(device: USBDevice): Promise<BoardStatus> {
   return withUsbInterface(device, session, async () => { await session.openConnection(); return session.status(); });
 }
 
-export function readUsbBoardId(device: USBDevice, expected: BoardStatus): Promise<string> {
-  const session = new HomeSession(device, 1, 0x60, 5);
-  return withUsbInterface(device, session, async intf => { await session.openConnection(); return session.boardId(intf, expected); });
+export function runUsbBridge(device: USBDevice, expected: BoardStatus, service: 'I2C' | 'SPI', commands: BridgeCommand[]): Promise<Uint8Array> {
+  const intf = service === 'I2C' ? 1 : eskBusInterface(device, 'SPI');
+  const session = new HomeSession(device,intf,0x60,service === 'I2C' ? 5 : 6);
+  return withUsbInterface(device,session,async alt => {
+    await session.openConnection();
+    return session.transactions(alt,expected,service,commands);
+  });
+}
+export async function readUsbBoardId(device: USBDevice, expected: BoardStatus): Promise<string> {
+  return decodeBoardId(await runUsbBridge(device,expected,'I2C',[i2cCommand(0x51,Uint8Array.of(0,0),128)]));
 }

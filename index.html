@@ -101,7 +101,7 @@
       </button>
       <a id="esk-logic-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newLogic" hidden>Open Logic in a new tab</a>
       <button id="esk-bridge" class="esk-instrument" type="button" hidden>
-        <strong>xBridgeWeb</strong><span data-i18n="bridge.description">Bridge · I²C board identification</span>
+        <strong>xBridgeWeb</strong><span data-i18n="bridge.description">I²C, UART, SPI and CAN transactions</span>
       </button>
       <a id="esk-bridge-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newBridge" hidden>Open Bridge in a new tab</a>
     </div>
@@ -111,8 +111,41 @@
       <button class="mini" id="bridge-home" type="button" data-i18n="home.button">Home</button>
       <h1 id="bridge-title" tabindex="-1">xBridgeWeb</h1>
       <section id="bridge-controls" class="esk-device">
-        <h2>I²C</h2>
-        <p data-i18n="bridge.eeprom">Board identification EEPROM · address 0x51</p>
+        <label>Protocol <select id="bridge-protocol"><option value="I2C">I²C</option><option>UART</option><option>SPI</option><option>CAN</option></select></label>
+        <form id="bridge-form">
+          <fieldset data-bus="I2C">
+            <legend>I²C transaction</legend>
+            <label>7-bit address (hex) <input id="bus-address" value="51" maxlength="4" required></label>
+            <label>Operation <select id="bus-operation"><option value="combined">Write then read</option><option value="read">Read</option><option value="write">Write</option></select></label>
+            <label>Write bytes (hex) <input id="bus-write" value="00 00" required></label>
+            <label>Read bytes <input id="bus-count" type="number" min="1" max="1024" value="16" required></label>
+          </fieldset>
+          <fieldset data-bus="UART" hidden disabled>
+            <legend>UART serial port</legend>
+            <p>Select this board’s ESK serial port in the browser picker.</p>
+            <label>Baud <input id="bus-baud" type="number" min="9600" max="115200" value="115200" required></label>
+            <label>Data bits <select id="bus-bits"><option>8</option><option>7</option></select></label>
+            <label>Parity <select id="bus-parity"><option>none</option><option>odd</option><option>even</option></select></label>
+            <label>Stop bits <select id="bus-stop"><option>1</option><option>2</option></select></label>
+            <button type="button" class="mini" id="bus-port">Open UART port</button>
+            <label>Transmit bytes (hex) <input id="bus-uart-tx" maxlength="3071"></label>
+            <label>Received bytes (latest 256) <output id="bus-uart-rx"></output></label>
+          </fieldset>
+          <fieldset data-bus="SPI" hidden disabled>
+            <legend>SPI transfer · CS0</legend>
+            <label>Mode <select id="bus-mode"><option>0</option><option>1</option><option>2</option><option>3</option></select></label>
+            <label>Clock (Hz) <input id="bus-clock" type="number" min="100000" max="24000000" value="1000000" required></label>
+            <label>Transmit bytes (hex) <input id="bus-spi-tx" required></label>
+          </fieldset>
+          <fieldset data-bus="CAN" hidden disabled>
+            <legend>Classical CAN · standard ID</legend>
+            <label>Operation <select id="bus-can-action"><option value="loopback">Internal loopback</option><option value="listen">Listen for one frame</option><option value="send">Send frame</option></select></label>
+            <label>Bitrate (bit/s) <select id="bus-bitrate"><option>125000</option><option>250000</option><option selected>500000</option><option>1000000</option></select></label>
+            <label>Identifier (hex) <input id="bus-can-id" value="123" required></label>
+            <label>Data bytes (hex) <input id="bus-can-tx" maxlength="23"></label>
+          </fieldset>
+          <button type="submit" class="mini" id="bus-run">Run transaction</button>
+        </form>
         <button class="mini" id="bridge-read" type="button" data-i18n="bridge.read" disabled>Read board ID</button>
         <output id="bridge-result" aria-live="polite"></output>
       </section>

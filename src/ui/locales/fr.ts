@@ -123,7 +123,7 @@ export const fr: Messages = {
   'home.logic': 'Acquérir des signaux et décoder des protocoles',
   'home.connectUsb': 'Connecter en USB',
   'home.usbGone': 'USB déconnecté',
-  'bridge.description': 'Pont · identification de la carte par I²C',
+  'bridge.description': 'Transactions I²C, UART, SPI et CAN',
   'bridge.eeprom': 'EEPROM d’identification · adresse 0x51',
   'bridge.read': 'Lire l’identifiant de la carte',
   'home.unpaired': 'Pour Ethernet, ouvrez l’adresse IP de la carte. Pour un fichier de capture, ouvrez l’analyseur logique.',

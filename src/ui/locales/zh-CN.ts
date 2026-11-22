@@ -121,7 +121,7 @@ export const zhCN: Messages = {
   'home.logic': '采集波形并解码协议',
   'home.connectUsb': '通过 USB 连接',
   'home.usbGone': 'USB 已断开',
-  'bridge.description': '总线桥 · I²C 板卡识别',
+  'bridge.description': 'I²C、UART、SPI 和 CAN 总线操作',
   'bridge.eeprom': '板卡识别 EEPROM · 地址 0x51',
   'bridge.read': '读取板卡标识',
   'home.unpaired': '通过以太网连接时，请打开板卡 IP 地址。要查看已保存的采集，请打开逻辑分析仪。',

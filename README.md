@@ -21,6 +21,22 @@ In xBridgeWeb, **I²C → Read board ID** reads the TI identification record fro
 the SK-AM64B EEPROM at address 0x51 and displays its board name and revision.
 The transfer sets the EEPROM word address to zero and reads 128 bytes.
 
+The protocol selector follows the connected device's feature list.
+
+| Tool | Operation |
+| --- | --- |
+| I²C | Enter a 7-bit address in hex. **Write then read** sends a repeated START between the write and read. For a short board-ID check, use address `51`, write `00 00`, and read four bytes. The expected reply is `AA 55 33 EE`. |
+| UART | Choose baud, data bits, parity and stop bits, then **Open UART port** and select the serial port belonging to the same board. Enter hex bytes to transmit. The receive display retains the latest 256 bytes. Close the port to release it or change framing. |
+| SPI | Select mode and clock, then enter hex bytes for one full-duplex CS0 transfer. The result shows the bytes received from the attached target. |
+| CAN | Select a nominal bitrate. **Internal loopback** verifies a standard classical CAN frame and its controller echo. **Send frame** and **Listen for one frame** use the external bus and require a transceiver and an active peer. On this USB profile, stop Logic capture before using CAN because channel control also claims interface zero. |
+
+To inspect the EEPROM read on the wires, attach two Logic inputs to SDA and SCL
+on that bus and record the channel assignments. Start USB recording in Logic,
+run the four-byte combined read in Bridge, then stop and inspect the transaction
+with the I²C decoder. Select the assigned channels and check the address,
+repeated START and four returned bytes. The seven-bit address is `51` in both
+directions. The controller ends the last read byte with a NACK and STOP.
+
 ## ESK xLOGIC over USB
 
 Open xEskWeb directly in Chrome or Edge using HTTPS or localhost. Connect the ESK

@@ -31,6 +31,7 @@ const entries = [
   'src/platform/capabilitiesSelftest.ts',
   'src/device/profileSelftest.ts',
   'src/device/eskCaptureSelftest.ts',
+  'src/device/eskBridgeSelftest.mjs',
   'src/device/simDriverSelftest.ts',
   'src/device/simDriverStoreIntegrationSelftest.ts',
   'src/device/softwareTestSourceSelftest.ts',

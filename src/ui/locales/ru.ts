@@ -123,7 +123,7 @@ export const ru: Messages = {
   'home.logic': 'Захват сигналов и декодирование протоколов',
   'home.connectUsb': 'Подключить по USB',
   'home.usbGone': 'USB отключён',
-  'bridge.description': 'Мост · идентификация платы по I²C',
+  'bridge.description': 'Обмен по I²C, UART, SPI и CAN',
   'bridge.eeprom': 'EEPROM идентификации платы · адрес 0x51',
   'bridge.read': 'Прочитать ID платы',
   'home.unpaired': 'Для Ethernet откройте IP-адрес платы. Для просмотра файла захвата откройте логический анализатор.',

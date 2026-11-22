@@ -127,7 +127,7 @@ export const en = {
   'home.logic': 'Capture waveforms and decode protocols',
   'home.connectUsb': 'Connect via USB',
   'home.usbGone': 'USB disconnected',
-  'bridge.description': 'Bridge · I²C board identification',
+  'bridge.description': 'I²C, UART, SPI and CAN transactions',
   'bridge.eeprom': 'Board identification EEPROM · address 0x51',
   'bridge.read': 'Read board ID',
   'home.unpaired': 'Open the board IP for Ethernet. Open Logic to view a saved capture.',
