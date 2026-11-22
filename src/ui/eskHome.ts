@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { fromBoard, readBoardStatus } from '../device/eskPairedBoard.js';
+import { announceBoardView, fromBoard, needsBoardConsent, readBoardStatus } from '../device/eskPairedBoard.js';
 import { t } from './i18n.js';
 
 function showRows(body: HTMLTableSectionElement, rows: string[][]): void {
@@ -29,7 +29,7 @@ export function initEskHome(): void {
   const services = document.querySelector<HTMLTableSectionElement>('#esk-services')!;
   const resources = document.querySelector<HTMLTableSectionElement>('#esk-resources')!;
 
-  async function updateStatus(): Promise<void> {
+  async function updateStatus(userRequested = false): Promise<void> {
     if (refresh.disabled) return;
     identity.hidden = features.hidden = details.hidden = true;
     refresh.hidden = !fromBoard();
@@ -37,10 +37,19 @@ export function initEskHome(): void {
       connection.textContent = t('home.unpaired');
       return;
     }
+    const label = needsBoardConsent() ? 'toolbar.connect' : 'capturePanel.tempRate';
+    refresh.dataset.i18n = label;
+    refresh.textContent = t(label);
+    if (needsBoardConsent() && !userRequested) {
+      connection.textContent = '';
+      return;
+    }
     refresh.disabled = true;
     connection.textContent = t('esk.reading');
     try {
       const board = await readBoardStatus();
+      refresh.dataset.i18n = 'capturePanel.tempRate';
+      refresh.textContent = t('capturePanel.tempRate');
       connection.textContent = '';
       identity.textContent = t('esk.identity', {id: board.deviceId, boot: board.boot, firmware: board.firmware.toString(16)});
       identity.hidden = false;
@@ -86,7 +95,8 @@ export function initEskHome(): void {
   }
   openLogic.onclick = () => navigate('logic');
   goHome.onclick = () => navigate('home');
-  refresh.onclick = () => void updateStatus();
+  refresh.onclick = () => void updateStatus(true);
   window.addEventListener('popstate', () => display(true));
   display(false);
+  announceBoardView();
 }

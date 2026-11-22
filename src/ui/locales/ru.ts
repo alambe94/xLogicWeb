@@ -206,6 +206,8 @@ export const ru: Messages = {
   // ------------------------------------- error prefixes (App.fail sites)
   'error.render': 'отрисовка',
   'error.device': 'устройство',
+  'error.eskEthernet': 'Не удалось завершить захват по Ethernet',
+  'error.eskUsb': 'Не удалось завершить захват по USB',
   'error.openCapture': 'открытие захвата',
   'error.save': 'сохранение',
   'error.reconnect': 'переподключение',

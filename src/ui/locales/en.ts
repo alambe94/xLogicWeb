@@ -210,6 +210,8 @@ export const en = {
   // ------------------------------------- error prefixes (App.fail sites)
   'error.render': 'render',
   'error.device': 'device',
+  'error.eskEthernet': 'Ethernet capture did not complete',
+  'error.eskUsb': 'USB capture did not complete',
   'error.openCapture': 'open capture',
   'error.save': 'save',
   'error.reconnect': 'reconnect',

@@ -204,6 +204,8 @@ export const zhCN: Messages = {
   // ------------------------------------- error prefixes (App.fail sites)
   'error.render': '渲染',
   'error.device': '设备',
+  'error.eskEthernet': '以太网采集未完成',
+  'error.eskUsb': 'USB 采集未完成',
   'error.openCapture': '打开采集',
   'error.save': '保存',
   'error.reconnect': '重新连接',
