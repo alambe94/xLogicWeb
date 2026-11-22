@@ -150,7 +150,7 @@ import { RecordingTimeline } from './recordingTimeline.js';
 import { showEskRecorder } from './eskRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
-import { captureEsk, ESK_RATE, requestEskDevice } from '../device/eskCapture.js';
+import { captureEsk, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, requestEskDevice } from '../device/eskCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
 import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';
@@ -604,9 +604,9 @@ export class App {
     decodersURL: new URL(`./${__SLOGICWEB_RUNTIME_PATHS__.decoders}`, document.baseURI).href,
   });
 
-  private channels: ChannelState[] = defaultChannels(16);
+  private channels: ChannelState[] = defaultChannels(ESK_CHANNELS);
   /** Display order, holding capture channel indices. */
-  private order: number[] = Array.from({ length: 16 }, (_, i) => i);
+  private order: number[] = this.channels.map(channel => channel.index);
   private analyzers: AnalyzerState[] = [];
   private lanes: Lane[] = [];
   private nextAnalyzer = 0;
@@ -879,7 +879,7 @@ export class App {
       this.platformNoticeDismissed = sessionStorage.getItem(PLATFORM_NOTICE_DISMISSED_KEY) === '1';
     } catch { /* storage blocked: the notice simply shows */ }
     this.renderPlatformNotice();
-    const workspace = readWorkspaceSnapshot();
+    const workspace = readWorkspaceSnapshot(ESK_CHANNELS);
     if (workspace) {
       this.detailedLabels = workspace.detailedLabels;
       this.wheelZooms = workspace.wheelZooms === true;
@@ -889,7 +889,7 @@ export class App {
       this.quickScroll = workspace.quickScroll !== false;
       this.analogLayout = workspace.analogLayout === 'merged' ? 'merged' : 'stacked';
       this.developerTools = workspace.developerTools === true;
-      this.channels = (workspace.channels ?? defaultChannels(16)).map((channel, index) => ({ ...channel, index }));
+      this.channels = (workspace.channels ?? defaultChannels(ESK_CHANNELS)).map((channel, index) => ({ ...channel, index }));
       this.order = workspace.order ?? this.channels.map((channel) => channel.index);
       this.busViews = (workspace.busViews ?? []).map((config, id) => ({
         ...cloneBusConfig(config), id: `bus-${id}`, builder: null, builtFor: null, cache: null,
@@ -900,7 +900,7 @@ export class App {
     this.nextAnalyzer = nextAnalyzerSequence(this.analyzers);
     this.samplerateExplicit = workspace?.capture?.samplerateExplicit === true;
     this.widthExplicit = workspace?.capture?.widthExplicit === true;
-    const initialWidth = workspace?.capture?.channels ?? channelWidthForProbes(this.channels.length);
+    const initialWidth = (this.widthExplicit && workspace?.capture?.channels) || ESK_CHANNELS;
     const triggerModes = workspace?.capture?.triggerModes ?? {};
     const triggerConditions = modesToConditions(triggerModes);
     const first = triggerConditions[0];
@@ -6918,6 +6918,24 @@ export class App {
       this.busPanel.render(this.busPanelView());
     }
     if (!this.sidebar.visible) return;
+    if (this.sidebar.page === 'capture' && !this.device && !this.running) {
+      const panel = this.sidebarHost.containerFor('capture');
+      const profile = document.createElement('p');
+      profile.className = 'panel-note';
+      profile.textContent = t('esk.finiteProfile', {
+        channels: ESK_CHANNELS, samples: formatCount(ESK_SAMPLES), rate: formatRate(ESK_RATE),
+      });
+      panel.replaceChildren(profile);
+      if (navigator.usb) {
+        const record = document.createElement('button');
+        record.className = 'mini';
+        record.textContent = t('rec.live');
+        record.disabled = this.eskCapturePending || this.stopping;
+        record.onclick = () => this.openEskRecorder(true);
+        panel.appendChild(record);
+      }
+      return;
+    }
     if (this.sidebar.page === 'capture' || this.sidebar.page === 'measure') {
       this.capturePanel.render(this.capturePanelView());
       return;
@@ -7003,7 +7021,9 @@ export class App {
       return;
     }
     if (this.running || this.repeatTimer.pending) void this.stopCapture();
-    else void this.startCapture();
+    else if (this.device) void this.startCapture();
+    else if (eskLanMode()) void this.openEskCapture('ethernet');
+    else if (navigator.usb) void this.openEskCapture('usb');
   }
 
   /** A Stop during an automatic trigger restart cancels the pending start. */
@@ -7057,14 +7077,14 @@ export class App {
       label.textContent = this.stopping ? t('toolbar.shortStopping')
         : showStop ? t('toolbar.shortStop') : t('toolbar.shortStart');
     }
-    // Disconnected, the Device command is the highlighted call to action instead.
-    btn.classList.toggle('primary', !showStop && this.device !== null);
+    const eskTransport = eskLanMode() ? 'open.eskLan' : navigator.usb ? 'open.esk' : undefined;
+    btn.classList.toggle('primary', !showStop && (!!this.device || !!eskTransport));
     btn.classList.toggle('danger', showStop);
     btn.disabled = (this.stopping && !this.triggerRestartPending) ||
-      (this.device === null && !showStop);
+      (this.device === null && !showStop && (!eskTransport || this.eskCapturePending));
     btn.title = this.stopping ? t('toolbar.stoppingTitle')
       : showStop ? t('toolbar.stopTitle')
-        : this.device ? t('toolbar.startTitle') : t('toolbar.connectHint');
+        : this.device ? t('toolbar.startTitle') : t(eskTransport ?? 'toolbar.noWebusb');
     applyToolbarHints(document, this.detailedLabels);
   }
 
@@ -7598,6 +7618,7 @@ export class App {
   private async openEskCapture(transport: 'usb' | 'ethernet'): Promise<void> {
     if (this.eskCapturePending || this.running || this.stopping) return;
     this.eskCapturePending = true;
+    this.renderToolbarState();
     const previous = this.captureSessionId;
     try {
       const device = transport === 'usb' ? await requestEskDevice() : null;
@@ -7623,10 +7644,12 @@ export class App {
       }
     } finally {
       this.eskCapturePending = false;
+      this.renderToolbarState();
     }
   }
 
   private openEskRecorder(live: boolean): void {
+    if (this.eskCapturePending || this.running || this.stopping) return;
     const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false) => {
       this.endPendingRepeatSession();
       const store = createSampleStore(8, rate);

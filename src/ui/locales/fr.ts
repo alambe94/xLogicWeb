@@ -14,7 +14,7 @@ import type { Messages } from './en.js';
 
 export const fr: Messages = {
   // ------------------------------------------------------------ document
-  'app.title': 'Analyseur logique SLogic',
+  'app.title': 'xLogicWeb · xEskWeb',
 
   // ------------------------------------------------------------- toolbar
   'toolbar.device': 'Appareil',
@@ -22,7 +22,8 @@ export const fr: Messages = {
   'toolbar.deviceConnected': 'Connecté',
   'toolbar.deviceMenuTitle': '{device} est connecté',
   'toolbar.webusbUnavailable': 'WebUSB indisponible',
-  'toolbar.connectHint': 'Cliquez sur « Connecter l’appareil » et choisissez un SLogic16/32 U3',
+  'toolbar.otherAnalyzer': 'Autre analyseur',
+  'toolbar.connectHint': 'Connecter un analyseur logique USB compatible',
   'toolbar.noWebusb': 'Ce navigateur ne prend pas en charge WebUSB. Utilisez Chrome ou Edge',
   'toolbar.noWebusbInsecure': 'La connexion d’un appareil exige une page sécurisée (HTTPS ou localhost)',
   'toolbar.start': 'Capturer',
@@ -51,10 +52,10 @@ export const fr: Messages = {
   'toolbar.openTitle': 'Charger un fichier .sr ou .lwcap',
   'toolbar.saveTitle': 'Enregistrer cette capture',
   'save.lwcap': 'Enregistrer en .lwcap',
-  'save.lwcapHint': 'slogicweb, conserve les trous',
+  'save.lwcapHint': 'xLogicWeb, conserve les trous',
   'save.sr': 'Exporter en .sr',
   'save.srHint': 'PulseView, numérique uniquement',
-  'save.lwcapType': 'Capture slogicweb',
+  'save.lwcapType': 'Capture xLogicWeb',
   'save.srType': 'Session sigrok (PulseView)',
   'open.file': 'Ouvrir un fichier…',
   'open.fileHint': '.sr ou .lwcap',
@@ -100,13 +101,14 @@ export const fr: Messages = {
   'home.empty': 'Aucun élément annoncé',
   'home.features': 'Fonctions',
   'home.logic': 'Acquérir des signaux et décoder des protocoles',
-  'home.unpaired': 'Pour Ethernet, ouvrez xLogicWeb depuis la carte. Pour une capture USB ou un fichier, ouvrez l’analyseur logique.',
+  'home.unpaired': 'Pour Ethernet, ouvrez xEskWeb depuis la carte. Pour une capture USB ou un fichier, ouvrez l’analyseur logique.',
   'open.eskStatus': 'État de la carte ESK',
   'esk.reading': 'Lecture de l’état de la carte…',
   'esk.identity': 'Carte {id}\nDémarrage {boot}\nFirmware 0x{firmware}',
   'open.eskLan': 'Capturer depuis ESK Ethernet…',
   'capture.eskLan': 'ESK Ethernet · {samples} échantillons à {rate} · horloge carte {ticks}',
   'open.esk': 'Capturer depuis ESK USB…',
+  'esk.finiteProfile': 'Capture finie · {channels} voies numériques · {samples} échantillons à {rate} · déclenchement immédiat',
   'open.eskHint': '8 voies · 65 536 échantillons',
   'capture.esk': 'ESK xLOGIC · {samples} échantillons à {rate}',
   'open.example': 'Ouvrir l’exemple',
@@ -202,9 +204,9 @@ export const fr: Messages = {
 
   // -------------------------------------------------------- empty hint
   'emptyHint.line1': 'Aucune capture chargée',
-  'emptyHint.line2': 'Ouvrez un fichier .sr ou .lwcap (ou glissez-le ici), ou connectez un SLogic16/32 U3',
+  'emptyHint.line2': 'Cliquez sur Capturer pour acquérir un signal ESK, ou ouvrez un fichier .sr ou .lwcap.',
   'emptyHint.line2Connected': 'Appuyez sur Capturer pour enregistrer depuis {device}, ou ouvrez un fichier .sr ou .lwcap (ou glissez-le ici)',
-  'emptyHint.line2NoUsb': 'Ouvrez un fichier .sr ou .lwcap (ou glissez-le ici) pour l’afficher et le décoder',
+  'emptyHint.line2NoUsb': 'Ouvrez un fichier de capture ou accédez à l’adresse IP de la carte pour une acquisition Ethernet.',
   'drop.overlay': 'Déposez un fichier .sr / .lwcap pour l’ouvrir',
 
   // ---------------------------------------------------- browser notice
@@ -250,9 +252,9 @@ export const fr: Messages = {
   'error.captureMemory': 'mémoire de capture',
   'error.captureMemoryNotice': 'Capture arrêtée : mémoire insuffisante. Les échantillons déjà enregistrés sont conservés. Baissez la fréquence d’échantillonnage ou le nombre de voies, ou capturez moins longtemps',
   'error.saveOutOfMemory': 'Échec de l’enregistrement : mémoire insuffisante. Fermez d’autres onglets et réessayez, ou enregistrez une capture plus courte.',
-  'error.clearCacheNotice': 'L’effacement est incomplet : certaines données enregistrées ou ressources en cache peuvent subsister. Vérifiez que le navigateur autorise le stockage de site pour SLogic Web, puis réessayez.',
-  'error.notice.fileType': 'Ce fichier n’est pas une capture que slogicweb sait ouvrir. Choisissez une session sigrok .sr ou un fichier .lwcap.',
-  'error.notice.fileUnsupported': 'Cette capture contient un élément que slogicweb ne sait pas encore ouvrir, par exemple des voies analogiques ou un nombre de voies inhabituel.',
+  'error.clearCacheNotice': 'L’effacement est incomplet : certaines données enregistrées ou ressources en cache peuvent subsister. Vérifiez que le navigateur autorise le stockage de site pour xLogicWeb, puis réessayez.',
+  'error.notice.fileType': 'Ce fichier n’est pas une capture que xLogicWeb sait ouvrir. Choisissez une session sigrok .sr ou un fichier .lwcap.',
+  'error.notice.fileUnsupported': 'Cette capture contient un élément que xLogicWeb ne sait pas encore ouvrir, par exemple des voies analogiques ou un nombre de voies inhabituel.',
   'error.notice.fileTooLong': 'Cette capture est trop longue pour être ouverte ici.',
   'error.notice.fileDamaged': 'Impossible d’ouvrir ce fichier : il semble endommagé ou incomplet.',
   'error.notice.decodeTooLarge': 'Décodage {id} arrêté : la capture est trop grande pour être décodée d’un coup. Décodez une plage plus courte ou capturez moins.',
@@ -264,7 +266,7 @@ export const fr: Messages = {
 
   // ---------------------------- connect failure guidance (error banner)
   'connectHelp.busy': 'L’appareil est utilisé par un autre onglet ou programme (comme PulseView/DSView). Fermez-le et réessayez.',
-  'connectHelp.busyTab': 'L’appareil est utilisé en exclusivité par un autre onglet slogicweb.',
+  'connectHelp.busyTab': 'L’appareil est utilisé en exclusivité par un autre onglet xLogicWeb.',
   'connectHelp.permission': 'Accès USB restreint. Sous Linux, installez la règle udev et rebranchez le câble USB ; sous Windows, fermez le processus qui détient le pilote en exclusivité, puis réessayez.',
   'connectHelp.lost': 'Connexion USB interrompue. Débranchez et rebranchez le câble de l’appareil, puis réessayez.',
   'connectHelp.unsupported': 'Ce navigateur ne peut pas connecter d’appareil. Utilisez Chrome ou Edge.',
@@ -1091,7 +1093,7 @@ export const fr: Messages = {
   'agent.timeout': 'Délai dépassé',
   'agent.howTo': 'Copiez ce prompt dans votre agent IA. L’agent démarre le navigateur et fait le reste lui-même ; il utilise son propre compte et cette page ne stocke aucune clé API.',
   'agent.setupTitle': 'Connecter un agent',
-  'agent.askPrompt': 'Pilote l’analyseur logique slogicweb à l’adresse {origin}.\n\n1. Si aucun navigateur Chromium avec débogage distant ne tourne, lance-le toi-même :\n   {launch}\n   Attends que window.slogicweb existe, puis connecte-toi via CDP (Runtime.evaluate avec awaitPromise et returnByValue).\n2. Présente-toi avec window.slogicweb.debug.agentHello(\'ai-agent\') et appelle agentPing() toutes les quelques secondes.\n3. Lis l’état avec window.slogicweb.debug.snapshot(). Pour agir, utilise window.slogicweb.debug.agentHost() : applySettings(), startAndWait(), stop(), attach(), setViewportSeconds(), zoomToAnnotation(), addBus(), updateBus(), removeBus(). Utilise des résumés ; ne vide jamais les échantillons bruts.\n4. Les captures et les actions de décodeur passent par le menu Agent de la page. Si un appel attend, demande-moi de l’approuver là-bas. Le sélecteur USB exige mon clic : demande-moi de cliquer sur Connecter et de choisir la carte, et ne la revendique jamais automatiquement. Ne réinitialise jamais une carte bloquée.\n5. Si une skill slogicweb est installée dans ton environnement, suis-la pour le workflow complet.',
+  'agent.askPrompt': 'Pilote l’analyseur logique xLogicWeb à l’adresse {origin}.\n\n1. Si aucun navigateur Chromium avec débogage distant ne tourne, lance-le toi-même :\n   {launch}\n   Attends que window.slogicweb existe, puis connecte-toi via CDP (Runtime.evaluate avec awaitPromise et returnByValue).\n2. Présente-toi avec window.slogicweb.debug.agentHello(\'ai-agent\') et appelle agentPing() toutes les quelques secondes.\n3. Lis l’état avec window.slogicweb.debug.snapshot(). Pour agir, utilise window.slogicweb.debug.agentHost() : applySettings(), startAndWait(), stop(), attach(), setViewportSeconds(), zoomToAnnotation(), addBus(), updateBus(), removeBus(). Utilise des résumés ; ne vide jamais les échantillons bruts.\n4. Les captures et les actions de décodeur passent par le menu Agent de la page. Si un appel attend, demande-moi de l’approuver là-bas. Le sélecteur USB exige mon clic : demande-moi de cliquer sur Connecter et de choisir la carte, et ne la revendique jamais automatiquement. Ne réinitialise jamais une carte bloquée.\n5. Si une skill slogicweb est installée dans ton environnement, suis-la pour le workflow complet.',
   'agent.copyPrompt': 'Copier le prompt',
   'agent.copied': 'Copié',
   'agent.actionStart': 'Démarrer une capture',

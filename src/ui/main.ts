@@ -50,7 +50,7 @@ async function boot(): Promise<void> {
     const pre = document.createElement('pre');
     pre.style.cssText = 'position:fixed;inset:0;margin:0;padding:24px;background:#1B1B1C;'
       + 'color:#f52a66;font:13px ui-monospace,monospace;white-space:pre-wrap;z-index:99';
-    pre.textContent = `slogicweb failed to start\n\n${e instanceof Error ? (e.stack ?? e.message) : String(e)}`;
+    pre.textContent = `xEskWeb failed to start\n\n${e instanceof Error ? (e.stack ?? e.message) : String(e)}`;
     document.body.appendChild(pre);
     throw e;
   }

@@ -60,13 +60,13 @@ export function deviceToolbarView(deviceName: string | null, support: DeviceSupp
   }
   if (deviceName === null) {
     return {
-      label: t('toolbar.connect'),
+      label: t('toolbar.otherAnalyzer'),
       state: null,
       title: t('toolbar.connectHint'),
-      ariaLabel: t('toolbar.connect'),
+      ariaLabel: t('toolbar.otherAnalyzer'),
       disabled: false,
       connected: false,
-      primary: true,
+      primary: false,
     };
   }
   return {

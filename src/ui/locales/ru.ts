@@ -14,7 +14,7 @@ import type { Messages } from './en.js';
 
 export const ru: Messages = {
   // ------------------------------------------------------------ document
-  'app.title': 'Логический анализатор SLogic',
+  'app.title': 'xLogicWeb · xEskWeb',
 
   // ------------------------------------------------------------- toolbar
   'toolbar.device': 'Устройство',
@@ -22,7 +22,8 @@ export const ru: Messages = {
   'toolbar.deviceConnected': 'Подключено',
   'toolbar.deviceMenuTitle': '{device} подключено',
   'toolbar.webusbUnavailable': 'WebUSB недоступен',
-  'toolbar.connectHint': 'Нажмите «Подключить устройство» и выберите SLogic16/32 U3',
+  'toolbar.otherAnalyzer': 'Другой анализатор',
+  'toolbar.connectHint': 'Подключить совместимый логический анализатор USB',
   'toolbar.noWebusb': 'Этот браузер не поддерживает WebUSB. Используйте Chrome или Edge',
   'toolbar.noWebusbInsecure': 'Для подключения устройства нужна защищённая страница (HTTPS или localhost)',
   'toolbar.start': 'Захват',
@@ -51,10 +52,10 @@ export const ru: Messages = {
   'toolbar.openTitle': 'Загрузить файл .sr или .lwcap',
   'toolbar.saveTitle': 'Сохранить этот захват',
   'save.lwcap': 'Сохранить как .lwcap',
-  'save.lwcapHint': 'slogicweb, с пропусками',
+  'save.lwcapHint': 'xLogicWeb, с пропусками',
   'save.sr': 'Экспорт в .sr',
   'save.srHint': 'PulseView, только цифровые',
-  'save.lwcapType': 'Захват slogicweb',
+  'save.lwcapType': 'Захват xLogicWeb',
   'save.srType': 'Сеанс sigrok (PulseView)',
   'open.file': 'Открыть файл…',
   'open.fileHint': '.sr или .lwcap',
@@ -100,13 +101,14 @@ export const ru: Messages = {
   'home.empty': 'Нет записей',
   'home.features': 'Функции',
   'home.logic': 'Захват сигналов и декодирование протоколов',
-  'home.unpaired': 'Для Ethernet откройте xLogicWeb со страницы платы. Для USB или файла откройте логический анализатор.',
+  'home.unpaired': 'Для Ethernet откройте xEskWeb со страницы платы. Для USB или файла откройте логический анализатор.',
   'open.eskStatus': 'Состояние устройства ESK',
   'esk.reading': 'Чтение состояния платы…',
   'esk.identity': 'Устройство {id}\nЗагрузка {boot}\nПрошивка 0x{firmware}',
   'open.eskLan': 'Захват с ESK Ethernet…',
   'capture.eskLan': 'ESK Ethernet · {samples} отсчётов при {rate} · такты платы {ticks}',
   'open.esk': 'Захват с ESK USB…',
+  'esk.finiteProfile': 'Конечный захват · цифровых каналов: {channels} · отсчётов: {samples} при {rate} · немедленный запуск',
   'open.eskHint': '8 каналов · 65 536 отсчётов',
   'capture.esk': 'ESK xLOGIC · {samples} отсчётов при {rate}',
   'open.example': 'Открыть пример',
@@ -202,9 +204,9 @@ export const ru: Messages = {
 
   // -------------------------------------------------------- empty hint
   'emptyHint.line1': 'Захват не загружен',
-  'emptyHint.line2': 'Откройте файл .sr или .lwcap (или перетащите его сюда) или подключите SLogic16/32 U3',
+  'emptyHint.line2': 'Нажмите кнопку захвата для записи с ESK или откройте файл .sr или .lwcap.',
   'emptyHint.line2Connected': 'Нажмите «Захват», чтобы записать данные с {device}, или откройте файл .sr или .lwcap (или перетащите его сюда)',
-  'emptyHint.line2NoUsb': 'Откройте файл .sr или .lwcap (или перетащите его сюда), чтобы просмотреть и декодировать его',
+  'emptyHint.line2NoUsb': 'Откройте файл захвата или перейдите по IP-адресу платы для захвата через Ethernet.',
   'drop.overlay': 'Отпустите, чтобы открыть файл .sr / .lwcap',
 
   // ---------------------------------------------------- browser notice
@@ -250,9 +252,9 @@ export const ru: Messages = {
   'error.captureMemory': 'память захвата',
   'error.captureMemoryNotice': 'Захват остановлен: недостаточно памяти. Уже записанные отсчёты сохранены. Снизьте частоту дискретизации или число каналов либо сократите длительность захвата',
   'error.saveOutOfMemory': 'Не удалось сохранить: недостаточно памяти. Закройте другие вкладки и повторите попытку или сохраните более короткий захват.',
-  'error.clearCacheNotice': 'Очистка выполнена не полностью: часть сохранённых данных или кэшированных ресурсов могла остаться. Проверьте, что браузер разрешает сайту SLogic Web использовать хранилище, и повторите попытку.',
-  'error.notice.fileType': 'Этот файл не является захватом, который может открыть slogicweb. Выберите сессию sigrok .sr или файл .lwcap.',
-  'error.notice.fileUnsupported': 'В этом захвате есть то, что slogicweb пока не открывает, например аналоговые каналы или необычное число каналов.',
+  'error.clearCacheNotice': 'Очистка выполнена не полностью: часть сохранённых данных или кэшированных ресурсов могла остаться. Проверьте, что браузер разрешает сайту xLogicWeb использовать хранилище, и повторите попытку.',
+  'error.notice.fileType': 'Этот файл не является захватом, который может открыть xLogicWeb. Выберите сессию sigrok .sr или файл .lwcap.',
+  'error.notice.fileUnsupported': 'В этом захвате есть то, что xLogicWeb пока не открывает, например аналоговые каналы или необычное число каналов.',
   'error.notice.fileTooLong': 'Этот захват слишком длинный, чтобы открыть его здесь.',
   'error.notice.fileDamaged': 'Не удалось открыть файл: похоже, он повреждён или неполон.',
   'error.notice.decodeTooLarge': 'Декодирование {id} остановлено: захват слишком велик для одного прохода. Декодируйте более короткий участок или захватите меньше.',
@@ -264,7 +266,7 @@ export const ru: Messages = {
 
   // ---------------------------- connect failure guidance (error banner)
   'connectHelp.busy': 'Устройство занято другой вкладкой или программой (например, PulseView/DSView). Закройте её и повторите попытку.',
-  'connectHelp.busyTab': 'Устройство монопольно занято другой вкладкой slogicweb.',
+  'connectHelp.busyTab': 'Устройство монопольно занято другой вкладкой xLogicWeb.',
   'connectHelp.permission': 'Доступ к USB ограничен. В Linux установите правило udev и переподключите USB-кабель; в Windows закройте процесс, монопольно занявший драйвер, и повторите попытку.',
   'connectHelp.lost': 'USB-соединение прервано. Отключите и снова подключите кабель устройства, затем повторите попытку.',
   'connectHelp.unsupported': 'Этот браузер не может подключать устройства. Используйте Chrome или Edge.',
@@ -1082,7 +1084,7 @@ export const ru: Messages = {
   'agent.timeout': 'Время истекло',
   'agent.howTo': 'Скопируйте этот запрос в своего ИИ-агента. Браузер и остальную настройку агент выполнит сам; он использует свою учётную запись, а страница не хранит ключи API.',
   'agent.setupTitle': 'Подключить агента',
-  'agent.askPrompt': 'Управляй логическим анализатором slogicweb по адресу {origin}.\n\n1. Если Chromium с удалённой отладкой не запущен, запусти его сам:\n   {launch}\n   Дождись появления window.slogicweb и подключись по CDP (Runtime.evaluate с awaitPromise и returnByValue).\n2. Представься через window.slogicweb.debug.agentHello(\'ai-agent\') и вызывай agentPing() каждые несколько секунд.\n3. Читай состояние через window.slogicweb.debug.snapshot(). Для действий используй window.slogicweb.debug.agentHost(): applySettings(), startAndWait(), stop(), attach(), setViewportSeconds(), zoomToAnnotation(), addBus(), updateBus(), removeBus(). Используй сводки; никогда не выгружай сырые отсчёты.\n4. Захват и действия декодера проходят через меню Agent на странице. Если вызов ждёт, попроси меня одобрить его там. Выбор USB требует моего клика: попроси меня нажать «Подключить» и выбрать плату, никогда не занимай её автоматически. Никогда не сбрасывай зависшую плату.\n5. Если в твоей среде установлен навык slogicweb, следуй ему для полного сценария.',
+  'agent.askPrompt': 'Управляй логическим анализатором xLogicWeb по адресу {origin}.\n\n1. Если Chromium с удалённой отладкой не запущен, запусти его сам:\n   {launch}\n   Дождись появления window.slogicweb и подключись по CDP (Runtime.evaluate с awaitPromise и returnByValue).\n2. Представься через window.slogicweb.debug.agentHello(\'ai-agent\') и вызывай agentPing() каждые несколько секунд.\n3. Читай состояние через window.slogicweb.debug.snapshot(). Для действий используй window.slogicweb.debug.agentHost(): applySettings(), startAndWait(), stop(), attach(), setViewportSeconds(), zoomToAnnotation(), addBus(), updateBus(), removeBus(). Используй сводки; никогда не выгружай сырые отсчёты.\n4. Захват и действия декодера проходят через меню Agent на странице. Если вызов ждёт, попроси меня одобрить его там. Выбор USB требует моего клика: попроси меня нажать «Подключить» и выбрать плату, никогда не занимай её автоматически. Никогда не сбрасывай зависшую плату.\n5. Если в твоей среде установлен навык slogicweb, следуй ему для полного сценария.',
   'agent.copyPrompt': 'Копировать запрос',
   'agent.copied': 'Скопировано',
   'agent.actionStart': 'Начать захват',

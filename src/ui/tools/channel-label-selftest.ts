@@ -124,7 +124,7 @@ const fixture: ChannelState[] = defaultChannels(8).map((c) => ({
   const adoptBody = bodyBetween('private adoptCapture(', 'private saveItems(');
 
   const sanctioned = [
-    'this.channels = (workspace.channels ?? defaultChannels(16)).map((channel, index) => ({ ...channel, index }));',
+    'this.channels = (workspace.channels ?? defaultChannels(ESK_CHANNELS)).map((channel, index) => ({ ...channel, index }));',
     'this.channels = defaultChannels(store.channelCount);',
     'this.channels = carryChannelState(this.channels, max);',
     'this.channels = carryChannelState(this.channels, model);',
@@ -135,8 +135,8 @@ const fixture: ChannelState[] = defaultChannels(8).map((c) => ({
   const siteCount = app.split('this.channels = ').length - 1;
 
   const defaultSites = [
-    'private channels: ChannelState[] = defaultChannels(16);',
-    '(workspace.channels ?? defaultChannels(16)).map(',
+    'private channels: ChannelState[] = defaultChannels(ESK_CHANNELS);',
+    '(workspace.channels ?? defaultChannels(ESK_CHANNELS)).map(',
     'this.channels = defaultChannels(store.channelCount);',
   ];
   const strayDefaults = defaultSites.filter((site) => !occursOnce(site));
