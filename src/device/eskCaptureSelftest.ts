@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { EskUsbSession, withUsbInterface } from './eskUsbSession.js';
 import { decodeBoardId } from './eskUsbHome.js';
-import { captureEsk, recordEskUsb, ESK_RATE, ESK_SAMPLES, ESK_STREAM_RATE } from './eskCapture.js';
+import { captureEsk, recordEskUsb, ESK_PACKED_RATE, ESK_RATE, ESK_SAMPLES, ESK_STREAM_RATE } from './eskCapture.js';
 import { createSampleStore } from '../data/index.js';
 
 function expect(ok: unknown, detail: string): asserts ok {
@@ -19,6 +19,8 @@ function native(length: number): DataView<ArrayBuffer> {
 class Board {
   live = false;
   finiteRate = ESK_RATE;
+  bankMask = 255;
+  get wireRate() { return this.live && this.bankMask === 255 ? ESK_STREAM_RATE : this.finiteRate; }
   readCount = 0;
   opened = false;
   configuration = { interfaces: [{ interfaceNumber: 0, alternate: {
@@ -63,8 +65,9 @@ class Board {
       const op = v.getUint8(5);
       this.commands.push(op);
       if (op === 1) {
-        expect(v.byteLength === 76 && v.getUint32(40, true) === (this.live ? ESK_STREAM_RATE : this.finiteRate) &&
-          v.getUint32(44, true) === (this.live ? 0 : ESK_SAMPLES) && v.getUint32(48, true) === 255, 'finite configuration');
+        expect(v.byteLength === 76 && v.getUint32(40, true) === this.wireRate &&
+          v.getUint32(44, true) === (this.live ? 0 : ESK_SAMPLES) && v.getUint32(48, true) === this.bankMask &&
+          v.getUint32(72, true) === (this.bankMask === 255 ? 0 : 3), 'capture configuration');
       }
       if (op === 2) expect(this.readQueued, 'read must be queued before START');
     } else if (setup.request === 0x75) {
@@ -80,6 +83,9 @@ class Board {
       case 0x60:
         data = native(56);
         for (const [i, n] of [[12, 131072], [20, 262144], [24, ESK_RATE], [28, 8], [32, this.live ? 260 : 256]]) data.setUint32(i, n, true);
+        if (this.bankMask !== 255) {
+          for (const [i, n] of [[32, 407], [40, ESK_PACKED_RATE], [44, 15], [48, 32], [52, 64]]) data.setUint32(i, n, true);
+        }
         break;
       case 0x70:
         data = new DataView(new ArrayBuffer(24));
@@ -115,9 +121,10 @@ class Board {
         data.setBigUint64(24, BigInt(ESK_SAMPLES - Number(this.badCount)), true);
         if (this.live) {
           data.setBigUint64(24, 2n * 4194304n, true);
-          data.setUint32(44, ESK_STREAM_RATE, true);
+          data.setUint32(44, this.wireRate, true);
+          data.setUint32(60, this.bankMask === 255 ? 0 : 3, true);
         }
-        data.setUint32(48, this.live ? ESK_STREAM_RATE : this.finiteRate, true); data.setUint32(56, 5, true);
+        data.setUint32(48, this.wireRate, true); data.setUint32(56, 5, true);
         break;
       default: throw new Error('unexpected control read');
     }
@@ -125,12 +132,12 @@ class Board {
   }
   async transferIn(endpoint: number, size: number) {
     if (this.live) {
-      expect(endpoint === 1 && size === 4194304, 'live read size');
+      expect(endpoint === 1 && size === (this.bankMask === 255 ? 4194304 : 2097152), 'live read size');
       this.readQueued = true;
       const seq = ++this.readCount;
       if (seq === 1) await new Promise(done => setTimeout(done, 230));
       const data = new Uint8Array(size - Number(this.short));
-      data[0] = seq;
+      data[0] = this.bankMask === 255 ? seq : 0xb2;
       return { status: 'ok', data: new DataView(data.buffer) };
     }
     expect(endpoint === 1 && size === ESK_SAMPLES, 'finite endpoint and size');
@@ -172,6 +179,15 @@ for (const hz of [166_666_666, 83_333_333, ESK_STREAM_RATE]) {
     expect(device.opened && held.has(0) && !held.has(1), 'one interface can retire independently');
   } finally { stop(); await capture; }
   expect(opens === 1 && closes === 1 && held.size === 0, 'one shared open and final close');
+}
+for (const bank of ['lower', 'upper'] as const) {
+  const board = new Board();
+  board.live = true;
+  board.finiteRate = ESK_PACKED_RATE;
+  board.bankMask = bank === 'lower' ? 0x0f : 0xf0;
+  const record = await captureEsk(board as unknown as USBDevice, ESK_PACKED_RATE, bank);
+  expect(record.length === ESK_SAMPLES && record[0] === 2 && record[1] === 11 &&
+    board.closedSession && !board.opened, 'packed bank, nibble order, length and retirement');
 }
 const good = new Board();
 const data = await captureEsk(good as unknown as USBDevice);

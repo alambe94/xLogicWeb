@@ -14,7 +14,8 @@ application device. Home displays its identity, boot ID, firmware and advertised
 features. Open **xLogicWeb** for capture or **xBridgeWeb** for active bus tools.
 Both use the device selected on Home during this tab session. In Logic, select
 **xBridgeWeb** in the toolbar to keep the I²C controls and waveform visible together.
-You can read the board ID during a finite USB acquisition.
+You can also choose **Open Logic in a new tab** or **Open Bridge in a new tab** on Home.
+Each tab uses its own USB connection. Choose the same board in both tabs.
 
 In xBridgeWeb, **I²C → Read board ID** reads the TI identification record from
 the SK-AM64B EEPROM at address 0x51 and displays its board name and revision.
@@ -25,15 +26,21 @@ The transfer sets the EEPROM word address to zero and reads 128 bytes.
 Open xEskWeb directly in Chrome or Edge using HTTPS or localhost. Connect the ESK
 application USB cable, open **xLogicWeb**, press **Capture**, and select the board.
 Open the **Capture** panel by clicking the capture summary above the channel labels.
-Choose the finite USB sample rate (41.67, 83.33, 166.67 or 333.33 MS/s) and the
-visible channels (D0–D7). Each acquisition retains all eight inputs for 65,536 samples. Zoom, add decoders or save the trace using the usual viewer controls.
-The board can be released or unplugged after the waveform appears.
+Choose **Sample rate**, then **Mode**. Finite captures retain 65,536 samples.
+At 41.67, 83.33, 166.67 and 333.33 MS/s, all eight inputs are acquired.
+At 500 MS/s, select one four-channel bank. D0–D3 is selected initially.
+Selecting D4–D7 switches the hardware mask and the trace labels together.
+The viewer takes the first 65,536 samples from the board's packed stream and
+checks the final USB, timing and overrun counters before displaying them.
+
+Choose **41.67 MS/s → Continuous → Capture** to record all eight inputs to disk.
 
 ## ESK xLOGIC over Ethernet
 
-Open the board IP on port 5555, approve the connection on Home, open **xLogicWeb**
-and press **Capture**. Each press retrieves a finite Ethernet capture at 333.33 MS/s. For long
-USB recordings, open the HTTPS viewer directly and choose **Open → Record live ESK USB**.
+On Home, choose **Connect via Ethernet** and enter the board IP, or open the
+board IP directly on port 5555. Connect to the board, open **xLogicWeb**, and
+press **Capture**. The current board launcher supplies finite captures at 333.33 MS/s.
+For continuous recording use the USB connection on the hosted viewer.
 After Stop, use the time slider to browse the disk recording.
 
 For the development bridge on a trusted LAN, run the bridge on a computer with the built viewer, Python
