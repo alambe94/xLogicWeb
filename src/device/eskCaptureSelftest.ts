@@ -27,6 +27,9 @@ class Board {
   readQueued = false;
   short = false;
   badCount = false;
+  failClear = false;
+  clears = 0;
+  statusRead = false;
   private stall = true;
   private control = new DataView(new ArrayBuffer(0));
   private command = new DataView(new ArrayBuffer(0));
@@ -35,6 +38,13 @@ class Board {
   async open(): Promise<void> { this.opened = true; }
   async close(): Promise<void> { this.opened = false; }
   async claimInterface(n: number): Promise<void> { expect(n === 0, 'only claim MI0'); }
+
+  async clearHalt(direction: USBDirection, endpoint: number): Promise<void> {
+    expect(this.live && direction === 'in' && endpoint === 1, 'clear only the live sample pipe');
+    expect(this.commands.at(-1) === 3 && this.statusRead && !this.controls.includes(4), 'clear after quiescence and before release');
+    this.clears++;
+    if (this.failClear) throw Error('pipe reset failed');
+  }
 
   async controlTransferOut(setup: USBControlTransferParameters, data: ArrayBuffer) {
     expect(setup.index === 0 && setup.value === 17, 'incorrect control route');
@@ -94,6 +104,7 @@ class Board {
         new Uint8Array(data.buffer).set(new Uint8Array(native(64).buffer), 32);
         break;
       case 0x64:
+        this.statusRead = true;
         data = native(64);
         data.setUint32(8, 1, true); data.setBigUint64(16, BigInt(ESK_SAMPLES), true);
         data.setBigUint64(24, BigInt(ESK_SAMPLES - Number(this.badCount)), true);
@@ -142,10 +153,11 @@ for (const failure of ['short', 'badCount'] as const) {
 }
 console.log('ESK raw8 capture, channel mapping, release and error cleanup passed');
 
-for (const scenario of ['stop', 'storage', 'short']) {
+for (const scenario of ['stop', 'storage', 'short', 'clear']) {
   const board = new Board();
   board.live = true;
   board.short = scenario === 'short';
+  board.failClear = scenario === 'clear';
   const stop = new AbortController();
   const order: number[] = [];
   let failure = '';
@@ -158,7 +170,8 @@ for (const scenario of ['stop', 'storage', 'short']) {
     expect(wire === 8388608n, 'terminal wire count');
   } catch (error) { failure = String(error); }
   if (scenario === 'stop') expect(!failure && String(order) === '1,2' && board.controls.includes(3), 'ordered live blocks and renewal');
-  else expect(failure.includes(scenario === 'short' ? 'Incomplete' : 'backlog'), 'surface the causal failure');
+  else expect(failure.includes(scenario === 'short' ? 'Incomplete' : scenario === 'clear' ? 'pipe reset failed' : 'backlog'), 'surface the causal failure');
+  expect(board.clears === 1, 'retire the live pipe once');
   expect(String(board.commands) === '1,2,3' && board.controls.includes(6) && board.closedSession && !board.opened,
     'stop, reap and close on every started stream');
 }
