@@ -16,9 +16,22 @@ const ABI_MAGIC = 0x584c4f47;
 const SCOPED_MAGIC = new TextEncoder().encode('xELG');
 
 let selected: USBDevice | undefined;
+export function selectedEskUsbDevice(): USBDevice | undefined { return selected; }
 export function selectEskUsbDevice(device?: USBDevice): void { selected = device; }
-export function requestEskDevice(): Promise<USBDevice> {
-  return selected ? Promise.resolve(selected) : navigator.usb.requestDevice({ filters: [{ vendorId: 0x1209, productId: 3 }] });
+export async function requestEskDevice(change = false): Promise<USBDevice> {
+  if (selected && !change) return selected;
+  const device = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x1209, productId: 3 }] });
+  selected = device;
+  return device;
+}
+if (typeof navigator !== 'undefined') navigator.usb?.addEventListener('disconnect', event => {
+  if (event.device === selected) selected = undefined;
+});
+
+export function unpackEsk(bytes: Uint8Array, count: number): Uint8Array {
+  const samples = new Uint8Array(count);
+  for (let i = 0; i < count; i++) samples[i] = (bytes[Math.floor(i / 2)]! >>> ((i % 2) * 4)) & 15;
+  return samples;
 }
 
 function abi(view: DataView, length: number): void {
@@ -46,7 +59,7 @@ class LogicSession extends EskUsbSession {
     requireField(reply.getUint8(6) === 0, 'ESK rejected capture command ' + opcode);
     abi(new DataView(reply.buffer, reply.byteOffset + 32, 64), 64);
   }
-  private async configure(stream: boolean, rate: number, bank: EskBank = 'lower'): Promise<void> {
+  private async configure(stream: boolean, rate: number, bank: EskBank = 'lower', count = ESK_SAMPLES): Promise<void> {
     const caps = await this.input(0x60, 56, 0);
     abi(caps, 56);
     const flags = caps.getUint32(32, true);
@@ -62,7 +75,7 @@ class LogicSession extends EskUsbSession {
         'This ESK does not advertise 500 MS/s on the selected four channels');
     } else {
       const supported = stream ? (flags & 4) && !(flags & 512) :
-        caps.getUint32(12, true) >= ESK_SAMPLES && caps.getUint32(20, true) >= ESK_SAMPLES;
+        caps.getUint32(12, true) >= count && caps.getUint32(20, true) >= count;
       requireField(supported && caps.getUint32(24, true) === ESK_RATE && ESK_FINITE_RATES.includes(rate) &&
         (!uniformMax || rate <= uniformMax) && (!(flags & 512) || rate === ESK_RATE),
         'ESK firmware does not support the requested raw8 profile');
@@ -74,23 +87,24 @@ class LogicSession extends EskUsbSession {
     config.setUint16(4, 3, true);
     config.setUint16(6, 44, true);
     config.setUint32(8, rate, true);
-    config.setUint32(12, stream ? 0 : ESK_SAMPLES, true);
+    config.setUint32(12, stream ? 0 : count, true);
     config.setUint32(16, mask, true);
     config.setUint32(40, packed ? 3 : 0, true);
     await this.command(1, config.buffer);
   }
-  async capture(rate: number): Promise<Uint8Array> {
-    await this.configure(false, rate);
+  async capture(rate: number, count: number): Promise<Uint8Array> {
+    const aligned = Math.ceil(count / 64) * 64;
+    await this.configure(false, rate, 'lower', aligned);
     // Queue the exact-length read before START. A packet-aligned finite record has no trailing ZLP.
-    const read = this.usb.transferIn(1, ESK_SAMPLES);
+    const read = this.usb.transferIn(1, aligned);
     void read.catch(() => {}); // START can fail before we await the pending read.
     await this.command(2);
     const data = await within(read, 700);
-    requireField(data.status === 'ok' && data.data?.byteLength === ESK_SAMPLES, 'Incomplete xLOGIC sample record');
+    requireField(data.status === 'ok' && data.data?.byteLength === aligned, 'Incomplete xLOGIC sample record');
     await this.command(3);
-    await this.checkFinalStatus(false, rate);
+    await this.checkFinalStatus(false, rate, aligned);
     await this.release();
-    return new Uint8Array(data.data.buffer, data.data.byteOffset, data.data.byteLength);
+    return new Uint8Array(data.data.buffer, data.data.byteOffset, count);
   }
 
   async stream(signal: AbortSignal, accept: (bytes: Uint8Array) => void, rate = ESK_STREAM_RATE, bank: EskBank = 'lower'): Promise<bigint> {
@@ -136,7 +150,7 @@ class LogicSession extends EskUsbSession {
     return transmitted;
   }
 
-  private async checkFinalStatus(stream: boolean, rate: number): Promise<bigint> {
+  private async checkFinalStatus(stream: boolean, rate: number, count = ESK_SAMPLES): Promise<bigint> {
     const end = performance.now() + 400;
     do {
       const s = await this.input(0x64, 64, 0);
@@ -145,7 +159,7 @@ class LogicSession extends EskUsbSession {
       requireField(!(flags & 32), 'ESK capture session fault');
       if (!s.getUint32(12, true) && (flags & 28) === 4) {
         const sent = s.getBigUint64(24, true);
-        requireField((stream ? s.getUint32(8, true) === 1 && s.getUint32(44, true) === rate : (s.getBigUint64(16, true) === BigInt(ESK_SAMPLES) && sent === BigInt(ESK_SAMPLES))) &&
+        requireField((stream ? s.getUint32(8, true) === 1 && s.getUint32(44, true) === rate : (s.getBigUint64(16, true) === BigInt(count) && sent === BigInt(count))) &&
           [32, 36, 40, 52].every(i => !s.getUint32(i, true)) && s.getUint32(60, true) === (rate === ESK_PACKED_RATE ? 3 : 0) && (flags & 1) &&
           s.getUint32(48, true) === rate, 'xLOGIC sample counts, rate or error counters differ');
         return sent;
@@ -165,23 +179,22 @@ async function withLogic<T>(device: USBDevice, run: (session: LogicSession) => P
   });
 }
 
-export function captureEsk(device: USBDevice, rate = ESK_RATE, bank: EskBank = 'lower'): Promise<Uint8Array> {
-  if (rate !== ESK_PACKED_RATE) return withLogic(device, session => session.capture(rate));
+export function captureEsk(device: USBDevice, rate = ESK_RATE, bank: EskBank = 'lower', count = ESK_SAMPLES): Promise<Uint8Array> {
+  requireField(Number.isSafeInteger(count) && count > 0 && count <= ESK_SAMPLES, 'Invalid short capture size');
+  if (rate !== ESK_PACKED_RATE) return withLogic(device, session => session.capture(rate, count));
   // The packed producer streams. Retain a bounded prefix and run the normal Stop/retirement checks.
   return withLogic(device, async session => {
     const stop = new AbortController();
-    const samples = new Uint8Array(ESK_SAMPLES);
+    let samples: Uint8Array = new Uint8Array(0);
     await session.stream(stop.signal, block => {
-      for (let i = 0; i < samples.length / 2; i++) {
-        samples[2 * i] = block[i]! & 15;
-        samples[2 * i + 1] = block[i]! >>> 4;
-      }
+      samples = unpackEsk(block, count);
       stop.abort();
     }, rate, bank);
     return samples;
   });
 }
 
-export function recordEskUsb(device: USBDevice, signal: AbortSignal, accept: (bytes: Uint8Array) => void): Promise<bigint> {
-  return withLogic(device, session => session.stream(signal, accept));
+export function recordEskUsb(device: USBDevice, signal: AbortSignal, accept: (bytes: Uint8Array) => void,
+    rate = ESK_STREAM_RATE, bank: EskBank = 'lower'): Promise<bigint> {
+  return withLogic(device, session => session.stream(signal, accept, rate, bank));
 }

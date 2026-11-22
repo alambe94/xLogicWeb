@@ -149,8 +149,9 @@ import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
 import { showEskRecorder } from './eskRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
+import { boardCaptureMaximum, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
-import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_STREAM_RATE, ESK_PACKED_RATE, type EskBank, requestEskDevice } from '../device/eskCapture.js';
+import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_PACKED_RATE, type EskBank, requestEskDevice } from '../device/eskCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
 import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';
@@ -498,7 +499,9 @@ export class App {
   private recordingTimeline = new RecordingTimeline();
   private eskRate = ESK_RATE;
   private eskBank: EskBank = 'lower';
-  private eskContinuous = false;
+  private eskCountText = String(ESK_SAMPLES);
+  private eskUntilStop = false;
+  private eskLanCount = String(ESK_SAMPLES);
   private eskCapturePending = false;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
@@ -6285,6 +6288,7 @@ export class App {
   }
 
   private wireToolbar(): void {
+    window.addEventListener('esk-capture-capacity', () => this.renderSidebarContent());
     this.el.connect.addEventListener('click', () => {
       // Connected: a device-info menu, not a second chooser. Idle: the WebUSB chooser.
       if (!this.device) { void this.connect(); return; }
@@ -6926,11 +6930,8 @@ export class App {
       const profile = document.createElement('p');
       profile.className = 'panel-note';
       const lan = !!eskLanMode();
+      const max = lan ? boardCaptureMaximum() : undefined;
       const rate = lan ? ESK_RATE : this.eskRate;
-      const canStream = !lan && !!navigator.usb && rate === ESK_STREAM_RATE;
-      profile.textContent = this.eskContinuous && canStream ? t('esk.diskRecording') : t('esk.finiteProfile', {
-        channels: rate === ESK_PACKED_RATE ? 4 : ESK_CHANNELS, samples: formatCount(ESK_SAMPLES), rate: formatRate(rate),
-      });
       const rateLabel = document.createElement('label');
       rateLabel.textContent = (lan ? 'Ethernet' : 'USB') + ' · ' + t('capturePanel.sampleRate') + ' ';
       const rates = document.createElement('select');
@@ -6942,29 +6943,52 @@ export class App {
       rates.onchange = () => {
         this.eskRate = Number(rates.value);
         if (this.eskRate === ESK_PACKED_RATE) this.eskBank = 'lower';
-        if (this.eskRate !== ESK_STREAM_RATE) this.eskContinuous = false;
         this.renderSidebarContent();
       };
       rateLabel.append(rates);
-      const modeLabel = document.createElement('label');
-      modeLabel.textContent = t('esk.mode') + ' ';
-      const modes = document.createElement('select');
-      modes.id = 'esk-capture-mode';
-      modes.add(new Option(t('esk.finite'), 'finite'));
-      if (!lan && navigator.usb) {
-        const continuous = new Option(t('esk.continuous'), 'continuous', false, canStream && this.eskContinuous);
-        continuous.disabled = !canStream;
-        modes.add(continuous);
-      }
-      modes.disabled = modes.length === 1 || this.eskCapturePending;
-      modes.onchange = () => {
-        this.eskContinuous = canStream && modes.value === 'continuous';
-        this.renderSidebarContent();
+      const samplesLabel = document.createElement('label');
+      samplesLabel.textContent = t('esk.samples');
+      const count = document.createElement('input');
+      count.type = 'number';
+      count.min = count.step = '1';
+      count.max = String(lan ? max ?? ESK_SAMPLES : Number.MAX_SAFE_INTEGER);
+      count.id = 'esk-sample-count';
+      count.required = true;
+      count.value = lan ? (max === undefined ? String(ESK_SAMPLES) : this.eskLanCount) : this.eskCountText;
+      count.disabled = this.eskCapturePending || (lan ? !max : this.eskUntilStop);
+      samplesLabel.append(count);
+      const updateEstimate = () => {
+        const n = count.valueAsNumber;
+        profile.textContent = !lan && this.eskUntilStop ? t('esk.diskRecording') :
+          count.validity.valid && n > 0 ? formatDuration(n / rate) + ' · ' + formatCount(n) + ' B' : '';
       };
-      modeLabel.append(modes);
+      count.oninput = () => {
+        if (lan) this.eskLanCount = count.value;
+        else this.eskCountText = count.value;
+        updateEstimate();
+      };
       const fields = document.createElement('div');
       fields.className = 'esk-capture-fields';
-      fields.append(rateLabel, modeLabel);
+      fields.append(rateLabel, samplesLabel);
+      if (lan && max) {
+        const useMax = document.createElement('button');
+        useMax.type = 'button';
+        useMax.textContent = t('esk.boardMaximum');
+        useMax.disabled = this.eskCapturePending;
+        useMax.onclick = () => { this.eskLanCount = count.value = String(max); updateEstimate(); };
+        fields.append(useMax);
+      }
+      if (!lan) {
+        const until = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = this.eskUntilStop;
+        checkbox.disabled = this.eskCapturePending;
+        checkbox.onchange = () => { this.eskUntilStop = checkbox.checked; this.renderSidebarContent(); };
+        until.append(document.createTextNode(t('esk.untilStop')), checkbox);
+        fields.append(until);
+      }
+      updateEstimate();
       const channels = document.createElement('fieldset');
       channels.className = 'esk-channel-picker';
       const legend = document.createElement('legend');
@@ -6995,11 +7019,6 @@ export class App {
         }
       }
       panel.replaceChildren(fields, channels, profile);
-      if (!lan && navigator.usb && !canStream) {
-        const hint = document.createElement('small');
-        hint.textContent = t('rec.fixedRate');
-        fields.append(hint);
-      }
       return;
     }
     if (this.sidebar.page === 'capture' || this.sidebar.page === 'measure') {
@@ -7089,7 +7108,6 @@ export class App {
     if (this.running || this.repeatTimer.pending) void this.stopCapture();
     else if (this.device) void this.startCapture();
     else if (eskLanMode()) void this.openEskCapture('ethernet');
-    else if (navigator.usb && this.eskContinuous && this.eskRate === ESK_STREAM_RATE) this.openEskRecorder(true);
     else if (navigator.usb) void this.openEskCapture('usb');
   }
 
@@ -7687,8 +7705,22 @@ export class App {
 
   private async openEskCapture(transport: 'usb' | 'ethernet'): Promise<void> {
     if (this.eskCapturePending || this.running || this.stopping) return;
+    const lan = transport === 'ethernet';
+    const max = lan ? boardCaptureMaximum() : undefined;
+    const untilStop = !lan && this.eskUntilStop;
+    const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity : Number(lan ? this.eskLanCount : this.eskCountText);
+    if (!untilStop && !(Number.isSafeInteger(n) && n > 0 && n <= (max ?? Number.MAX_SAFE_INTEGER))) {
+      this.selectPage('capture');
+      document.querySelector<HTMLInputElement>('#esk-sample-count')?.reportValidity();
+      return;
+    }
+    if (n > ESK_SAMPLES) {
+      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan});
+      return;
+    }
     this.eskCapturePending = true;
     this.renderToolbarState();
+    this.renderSidebarContent();
     const previous = this.captureSessionId;
     try {
       const device = transport === 'usb' ? await requestEskDevice() : null;
@@ -7698,7 +7730,12 @@ export class App {
       const rate = device ? this.eskRate : ESK_RATE;
       const bank = this.eskBank;
       const packed = rate === ESK_PACKED_RATE;
-      const { samples, ticks } = device ? { samples: await captureEsk(device, rate, bank), ticks: undefined } : await captureEskLan();
+      let samples: Uint8Array, ticks: string | undefined;
+      if (device) samples = await captureEsk(device, rate, bank, n);
+      else if (max) {
+        samples = new Uint8Array(n);
+        ticks = await receiveBoardCapture(n, new AbortController().signal, async (block, offset) => { samples.set(block, offset); });
+      } else ({samples, ticks} = await captureEskLan());
       // Another open or acquisition can replace the display while the capture is in progress.
       if (previous !== this.captureSessionId || this.running || this.stopping) return;
       const store = createSampleStore(packed ? 4 : ESK_CHANNELS, rate);
@@ -7719,24 +7756,27 @@ export class App {
     } finally {
       this.eskCapturePending = false;
       this.renderToolbarState();
+      this.renderSidebarContent();
     }
   }
 
-  private openEskRecorder(live: boolean): void {
+  private openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions): void {
     if (this.eskCapturePending || this.running || this.stopping) return;
     const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false) => {
       this.endPendingRepeatSession();
-      const store = createSampleStore(8, rate);
+      const packed = rate === ESK_PACKED_RATE && (name === 'xLOGIC USB D4–D7' || name === 'xLOGIC USB D0–D3');
+      const store = createSampleStore(packed ? 4 : 8, rate);
       store.append(bytes);
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };
-      this.adoptCapture(store, [], { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording, true);
+      this.adoptCapture(store, packed && name.endsWith('D4–D7') ? ['D4', 'D5', 'D6', 'D7'] : [],
+        { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording, !packed);
       this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
       this.syncUnloadGuard();
     };
     showEskRecorder(live, (bytes, rate, start, name, saved) => {
       showWindow(bytes, rate, start, name);
       if (saved) this.recordingTimeline.open(saved, rate, start, (data, offset) => showWindow(data, rate, offset, name, true));
-    }, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key));
+    }, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
   }
 
   /** Open a file, a finite ESK USB capture, or the bundled example. */
@@ -7744,15 +7784,14 @@ export class App {
     return [
       { label: t('open.file'), hint: t('open.fileHint'), onPick: () => void this.pickFiles() },
       ...(!eskLanMode() && navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
-        label: t('open.esk'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('usb'),
+        label: t('open.esk'), onPick: () => void this.openEskCapture('usb'),
       }] : []),
       ...(eskLanMode() === 'paired' ? [{ label: t('open.eskStatus'), onPick: () => void showEskStatus() }] : []),
       ...(eskLanMode() &&
           !this.running && !this.stopping && !this.eskCapturePending ? [{
-        label: t('open.eskLan'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('ethernet'),
+        label: t('open.eskLan'), onPick: () => void this.openEskCapture('ethernet'),
       }] : []),
       ...(!this.running && !this.stopping && !this.eskCapturePending ? [
-        ...(!eskLanMode() && navigator.usb ? [{ label: t('rec.live'), onPick: () => this.openEskRecorder(true) }] : []),
         { label: t('rec.title'), onPick: () => this.openEskRecorder(false) },
       ] : []),
       { label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openExample() },

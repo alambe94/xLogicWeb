@@ -26,20 +26,24 @@ The transfer sets the EEPROM word address to zero and reads 128 bytes.
 Open xEskWeb directly in Chrome or Edge using HTTPS or localhost. Connect the ESK
 application USB cable, open **xLogicWeb**, press **Capture**, and select the board.
 Open the **Capture** panel by clicking the capture summary above the channel labels.
-Choose **Sample rate**, then **Mode**. Finite captures retain 65,536 samples.
-At 41.67, 83.33, 166.67 and 333.33 MS/s, all eight inputs are acquired.
-At 500 MS/s, select one four-channel bank. D0–D3 is selected initially.
-Selecting D4–D7 switches the hardware mask and the trace labels together.
-The viewer takes the first 65,536 samples from the board's packed stream and
-checks the final USB, timing and overrun counters before displaying them.
+Choose a **Sample rate** and enter the number of **Samples** to retain. The default is
+65,536. After each capture you can change either field and capture again in the same tab.
+The viewer remembers your USB selection until the device disconnects or you change it on Home.
 
-Choose **41.67 MS/s → Continuous → Capture** to record all eight inputs to disk.
+At 41.67, 83.33, 166.67 and 333.33 MS/s the board samples all eight inputs.
+At 500 MS/s choose D0–D3 (the default) or D4–D7. For longer captures the viewer
+saves samples to browser storage and displays a window of the recording. Select
+**Until stopped** for an open-ended USB recording. The sustainable rate depends
+on the board, USB link and host storage. After Stop, use the slider to browse the trace.
 
 ## ESK xLOGIC over Ethernet
 
 On Home, choose **Connect via Ethernet** and enter the board IP, or open the
 board IP directly on port 5555. Connect to the board, open **xLogicWeb**, and
-press **Capture**. The current board launcher supplies finite captures at 333.33 MS/s.
+press **Capture**. Ethernet acquires a finite record at 333.33 MS/s. When the board
+advertises a capture capacity, enter a sample count or choose **Use board maximum**.
+Earlier launchers provide 65,536 samples per capture. Longer records download to
+browser storage in blocks.
 For continuous recording use the USB connection on the hosted viewer.
 After Stop, use the time slider to browse the disk recording.
 

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { OpfsRecordController, RecordArchive } from '../data/recordController.js';
 import { createOpfsRecordStorage } from '../data/opfsStorage.js';
-import { ESK_STREAM_RATE, requestEskDevice } from '../device/eskCapture.js';
+import { ESK_STREAM_RATE, ESK_PACKED_RATE, requestEskDevice, type EskBank } from '../device/eskCapture.js';
+import { downloadBoardTrace } from '../device/eskLanRecording.js';
 import { openEskReplay } from './srLoad.js';
 import { t } from './i18n.js';
 
@@ -14,6 +15,7 @@ export interface SavedRecording {
   samples: number;
   summary?: string;
   read(start: number, end: number): Promise<Uint8Array>;
+  dispose?(): void;
 }
 type Display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: SavedRecording) => void;
 
@@ -42,7 +44,8 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export function showEskRecorder(live: boolean, display: Display, confirmReplace: () => Promise<boolean>, removed: (key: string) => void): void {
+export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean }
+export function showEskRecorder(live: boolean, display: Display, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
   if (dialog.open) return;
   const get = <T extends HTMLElement>(id: string) => dialog.querySelector<T>('#rec-' + id)!;
@@ -55,7 +58,9 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
   heading.dataset.i18n = live ? 'rec.live' : 'rec.title';
   heading.textContent = live ? t('rec.live') : t('rec.title');
   source.parentElement!.hidden = live;
-  get<HTMLElement>('rate').hidden = !live;
+  get<HTMLElement>('rate').hidden = !live || !!options;
+  limit.parentElement!.hidden = !!options;
+  record.hidden = !!options;
   let busy = false, abort: AbortController | null = null, ready = false;
   function update() {
     record.disabled = busy || !ready || (!live && !source.files?.length) || !limit.validity.valid;
@@ -87,16 +92,37 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
   }
   const progress = (accepted: number, saved: number, queued: number) =>
     t('rec.progress', { accepted: accepted.toLocaleString(), saved: saved.toLocaleString(), queue: (queued / MiB).toFixed(1) });
-  record.onclick = () => void run(async () => {
+  const startRecording = () => void run(async () => {
     const file = source.files?.[0];
     if (!live && !file) return;
-    const device = live ? await requestEskDevice() : null;
-    if (!(await confirmReplace())) return;
+    const device = live && !options?.ethernet ? await requestEskDevice() : null;
+    if (!(await confirmReplace())) { if (options) dialog.close(); return; }
     const replay = live ? null : await openEskReplay(file!);
-    const rate = replay?.rate ?? ESK_STREAM_RATE;
-    const title = live ? 'xLOGIC USB' : file!.name;
-    const budget = limit.value ? limit.valueAsNumber * MiB : Infinity;
+    const rate = replay?.rate ?? options?.rate ?? ESK_STREAM_RATE;
+    const bank = options?.bank ?? 'lower';
+    const title = options?.ethernet ? 'xLOGIC Ethernet' : live ? (rate === ESK_PACKED_RATE ? 'xLOGIC USB ' + (bank === 'upper' ? 'D4–D7' : 'D0–D3') : 'xLOGIC USB') : file!.name;
+    const budget = options?.count ?? (limit.value ? limit.valueAsNumber * MiB : Infinity);
     if (budget !== Infinity && !Number.isSafeInteger(budget)) throw new Error(t('rec.invalidLimit'));
+    if (live && Number.isFinite(budget) && navigator.storage?.estimate) {
+      const {quota, usage} = await navigator.storage.estimate();
+      if (quota !== undefined && usage !== undefined && budget > quota - usage) throw new Error(t('esk.storageFull'));
+    }
+    if (options?.ethernet) {
+      abort = new AbortController();
+      update();
+      const saved = await downloadBoardTrace(budget, abort.signal, bytes => {
+        status.value = progress(bytes, bytes, 0);
+      });
+      if (saved.samples) {
+        const start = Math.max(0, saved.samples - displaySamples);
+        try {
+          const data = await saved.read(start, saved.samples);
+          display(data, rate, start, title, {...saved, summary: status.value});
+        } catch (error) { saved.dispose(); throw error; }
+      } else saved.dispose();
+      dialog.close();
+      return;
+    }
     const root = await recordingRoot();
     const name = new Date().toISOString().replace(/:/g, '-') + ' ' +
       title.replace(/[^\p{L}\p{N} ._-]/gu, '_').slice(0, 48) + ' ' + crypto.randomUUID().slice(0, 8);
@@ -121,7 +147,7 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
                 status.value = progress(data.accepted, data.saved, data.queue);
               } finally { send({ type: 'displayed' }); }
             };
-            send({ type: 'start', directory: dir, serial: device.serialNumber ?? '', limit: budget });
+            send({ type: 'start', directory: dir, serial: device.serialNumber ?? '', limit: budget, rate, bank, title });
           });
           first.value = String(Math.max(0, result.saved - displaySamples));
           status.value = progress(result.accepted, result.saved, 0);
@@ -204,6 +230,7 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
       }
     });
   });
+  record.onclick = startRecording;
   stop.onclick = () => { abort?.abort(); update(); };
   reopen.onclick = () => void run(async () => {
     if (!(await confirmReplace())) return;
@@ -235,6 +262,11 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
   dialog.oncancel = event => { if (busy) { event.preventDefault(); abort?.abort(); update(); } };
   status.value = '';
   dialog.showModal();
+  if (options) {
+    ready = true;
+    startRecording();
+    return;
+  }
   void run(async () => {
     if (!window.isSecureContext || !navigator.storage?.getDirectory || !navigator.locks) throw new Error(t('rec.unavailable'));
     await list(); ready = true;

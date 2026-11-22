@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { ESK_STREAM_RATE, recordEskUsb } from './eskCapture.js';
+import { ESK_PACKED_RATE, recordEskUsb, unpackEsk, type EskBank } from './eskCapture.js';
 import { OpfsRecordController } from '../data/recordController.js';
 import { createOpfsRecordStorage } from '../data/opfsStorage.js';
 
-export type LiveRequest = { type: 'start'; directory: FileSystemDirectoryHandle; serial: string; limit: number } |
+export type LiveRequest = { type: 'start'; directory: FileSystemDirectoryHandle; serial: string; limit: number; rate: number; bank: EskBank; title: string } |
   { type: 'stop' | 'displayed' };
 export type LiveReply = { type: 'preview'; data: Uint8Array; accepted: number; saved: number; queue: number } |
   { type: 'end'; accepted: number; saved: number; wire: bigint | undefined; error: string | undefined };
@@ -24,7 +24,7 @@ async function record(request: Extract<LiveRequest, { type: 'start' }>) {
       d.vendorId === 0x1209 && d.productId === 3 && (d.serialNumber ?? '') === request.serial);
     if (devices.length !== 1) throw new Error('Selected xESK device is unavailable or ambiguous');
     writer = new OpfsRecordController(await createOpfsRecordStorage(request.directory), {
-      profile: { profileId: 'xLOGIC USB', calibrationId: null, channels: 8, sampleRateHz: ESK_STREAM_RATE, bytesPerSample: 1 },
+      profile: { profileId: request.title, calibrationId: null, channels: request.rate === ESK_PACKED_RATE ? 4 : 8, sampleRateHz: request.rate, bytesPerSample: 1 },
       maxBytes: request.limit,
     });
     writer.arm();
@@ -33,9 +33,11 @@ async function record(request: Extract<LiveRequest, { type: 'start' }>) {
     const recording = writer;
     wire = await recordEskUsb(devices[0], stop.signal, bytes => {
       if (recording.lastError) throw new Error(recording.lastError);
-      const block = bytes.subarray(0, Math.min(bytes.length, request.limit - accepted));
+      const packed = request.rate === ESK_PACKED_RATE;
+      const count = Math.min(bytes.length * (packed ? 2 : 1), request.limit - accepted);
+      const block = packed ? unpackEsk(bytes, count) : bytes.subarray(0, count);
       const end = accepted + block.length;
-      recording.capture(block, { startSeconds: accepted / ESK_STREAM_RATE, endSeconds: end / ESK_STREAM_RATE });
+      recording.capture(block, { startSeconds: accepted / request.rate, endSeconds: end / request.rate });
       if (recording.lastError) throw new Error(recording.lastError);
       accepted = end;
       if (!displaying) {
@@ -45,7 +47,8 @@ async function record(request: Extract<LiveRequest, { type: 'start' }>) {
           queue: recording.queuedBytes } satisfies LiveReply, { transfer: [preview.buffer] });
       }
       if (accepted === request.limit) stop.abort();
-    });
+    }, request.rate, request.bank);
+    if (request.rate === ESK_PACKED_RATE) wire *= 2n;
   } catch (e) { error = e instanceof Error ? e.message : String(e); }
   finally {
     await writer?.close();

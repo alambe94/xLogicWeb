@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { announceBoardView, fromBoard, needsBoardConsent, readBoardStatus } from '../device/eskPairedBoard.js';
-import { requestEskDevice, selectEskUsbDevice } from '../device/eskCapture.js';
+import { requestEskDevice, selectedEskUsbDevice, selectEskUsbDevice } from '../device/eskCapture.js';
 import { readUsbBoardStatus, readUsbBoardId } from '../device/eskUsbHome.js';
 import type { BoardStatus } from '../device/eskPairedBoard.js';
 import { t } from './i18n.js';
@@ -24,6 +24,7 @@ export function initEskHome(): void {
   const openLogic = document.querySelector<HTMLButtonElement>('#esk-logic')!;
   const goHome = document.querySelector<HTMLButtonElement>('#btn-esk-home')!;
   const refresh = document.querySelector<HTMLButtonElement>('#esk-refresh')!;
+  const change = document.querySelector<HTMLButtonElement>('#esk-change')!;
   const identity = document.querySelector<HTMLElement>('#esk-identity')!;
   const connection = document.querySelector<HTMLElement>('#esk-connection')!;
   const features = document.querySelector<HTMLDetailsElement>('#esk-features')!;
@@ -93,6 +94,7 @@ export function initEskHome(): void {
   async function updateStatus(userRequested = false): Promise<void> {
     if (refresh.disabled) return;
     const lan = fromBoard();
+    if (!lan && !usbDevice) usbDevice = selectedEskUsbDevice();
     if (!lan && usbStatus && !userRequested) return;
     identity.hidden = features.hidden = details.hidden = true;
     refresh.hidden = !lan && !navigator.usb;
@@ -104,6 +106,7 @@ export function initEskHome(): void {
       connection.textContent = lan ? '' : t(disconnected ? 'home.usbGone' : 'home.unpaired');
       return;
     }
+    change.hidden = true;
     refresh.disabled = true;
     connection.textContent = t('esk.reading');
     const token = ++generation;
@@ -122,6 +125,7 @@ export function initEskHome(): void {
         disconnected = false;
         usbStatus = board;
         selectEskUsbDevice(usbDevice);
+        change.hidden = false;
         enableBridge(board.features.some(f => f.name === 'I2C' && f.instance === 0 && f.enabled));
       }
       refresh.dataset.i18n = 'capturePanel.tempRate';
@@ -167,6 +171,7 @@ export function initEskHome(): void {
   navigator.usb?.addEventListener('disconnect', event => {
     if (event.device !== usbDevice) return;
     generation++;
+    change.hidden = true;
     disconnected = true;
     usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
     enableBridge(false);
@@ -207,6 +212,22 @@ export function initEskHome(): void {
   document.querySelector<HTMLButtonElement>('#bridge-home')!.onclick = () => navigate('home');
   openLogic.onclick = () => navigate('logic');
   goHome.onclick = () => navigate('home');
+  change.onclick = async () => {
+    if (change.disabled || refresh.disabled) return;
+    change.disabled = refresh.disabled = true;
+    try {
+      const device = await requestEskDevice(true);
+      if (device !== usbDevice) {
+        usbStatus = undefined;
+        result.value = '';
+      }
+      usbDevice = device;
+      refresh.disabled = false;
+      await updateStatus(true);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'NotFoundError')) connection.textContent = String(error);
+    } finally { change.disabled = refresh.disabled = false; }
+  };
   refresh.onclick = () => void updateStatus(true);
   window.addEventListener('popstate', () => display(true));
   display(false);

@@ -19,6 +19,7 @@ function native(length: number): DataView<ArrayBuffer> {
 class Board {
   live = false;
   finiteRate = ESK_RATE;
+  finiteSize = ESK_SAMPLES;
   bankMask = 255;
   get wireRate() { return this.live && this.bankMask === 255 ? ESK_STREAM_RATE : this.finiteRate; }
   readCount = 0;
@@ -66,7 +67,7 @@ class Board {
       this.commands.push(op);
       if (op === 1) {
         expect(v.byteLength === 76 && v.getUint32(40, true) === this.wireRate &&
-          v.getUint32(44, true) === (this.live ? 0 : ESK_SAMPLES) && v.getUint32(48, true) === this.bankMask &&
+          v.getUint32(44, true) === (this.live ? 0 : this.finiteSize) && v.getUint32(48, true) === this.bankMask &&
           v.getUint32(72, true) === (this.bankMask === 255 ? 0 : 3), 'capture configuration');
       }
       if (op === 2) expect(this.readQueued, 'read must be queued before START');
@@ -117,8 +118,8 @@ class Board {
       case 0x64:
         this.statusRead = true;
         data = native(64);
-        data.setUint32(8, 1, true); data.setBigUint64(16, BigInt(ESK_SAMPLES), true);
-        data.setBigUint64(24, BigInt(ESK_SAMPLES - Number(this.badCount)), true);
+        data.setUint32(8, 1, true); data.setBigUint64(16, BigInt(this.finiteSize), true);
+        data.setBigUint64(24, BigInt(this.finiteSize - Number(this.badCount)), true);
         if (this.live) {
           data.setBigUint64(24, 2n * 4194304n, true);
           data.setUint32(44, this.wireRate, true);
@@ -140,7 +141,7 @@ class Board {
       data[0] = this.bankMask === 255 ? seq : 0xb2;
       return { status: 'ok', data: new DataView(data.buffer) };
     }
-    expect(endpoint === 1 && size === ESK_SAMPLES, 'finite endpoint and size');
+    expect(endpoint === 1 && size === this.finiteSize, 'finite endpoint and size');
     this.readQueued = true;
     const data = new Uint8Array(size - Number(this.short));
     data[0] = 0x81; data[1] = 0x02;
@@ -189,6 +190,10 @@ for (const bank of ['lower', 'upper'] as const) {
   expect(record.length === ESK_SAMPLES && record[0] === 2 && record[1] === 11 &&
     board.closedSession && !board.opened, 'packed bank, nibble order, length and retirement');
 }
+const odd = new Board();
+odd.finiteSize = 12352;
+const prefix = await captureEsk(odd as unknown as USBDevice, ESK_RATE, 'lower', 12345);
+expect(prefix.length === 12345 && odd.closedSession, 'trim transport padding after verified retirement');
 const good = new Board();
 const data = await captureEsk(good as unknown as USBDevice);
 const store = createSampleStore(8, ESK_RATE);
