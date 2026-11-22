@@ -177,9 +177,6 @@ class LogicSession extends EskUsbSession {
       await this.command(3);
       try {
         transmitted = await this.checkFinalStatus(true, rate);
-        // Queued IN reads can outlive Stop. Reset this pipe while LOGIC is
-        // still ours so the next client can receive its first finite record.
-        await this.usb.clearHalt('in', 1);
       } finally { await this.release(); }
     }
     requireField(transmitted >= received, 'ESK transmitted fewer bytes than the host received');
@@ -194,10 +191,18 @@ class LogicSession extends EskUsbSession {
       const flags = s.getUint32(56, true);
       requireField(!(flags & 32), 'ESK capture session fault');
       if (!s.getUint32(12, true) && (flags & 28) === 4) {
+        // Retire queued IN reads after physical Stop even when the counters
+        // reject this stream. A failed acquisition must also allow a fresh arm.
+        if (stream) await this.usb.clearHalt('in', 1);
         const sent = s.getBigUint64(24, true);
+        const counters = [32, 36, 40, 52].map(offset => s.getUint32(offset, true));
+        if (counters.some(value => value !== 0)) {
+          const [overruns, usb, ownership, timing] = counters;
+          throw new Error(`xLOGIC capture lost integrity (overruns ${overruns}, USB errors ${usb}, ownership errors ${ownership}, timing errors ${timing}, bytes sent ${sent})`);
+        }
         requireField((stream ? s.getUint32(8, true) === 1 && s.getUint32(44, true) === rate : (s.getBigUint64(16, true) === BigInt(count) && sent === BigInt(count))) &&
-          [32, 36, 40, 52].every(i => !s.getUint32(i, true)) && s.getUint32(60, true) === (rate === ESK_PACKED_RATE ? 3 : 0) && (flags & 1) &&
-          s.getUint32(48, true) === rate, 'xLOGIC sample counts, rate or error counters differ');
+          s.getUint32(60, true) === (rate === ESK_PACKED_RATE ? 3 : 0) && (flags & 1) &&
+          s.getUint32(48, true) === rate, 'xLOGIC sample counts, format or rate differ');
         return sent;
       }
       await delay();
