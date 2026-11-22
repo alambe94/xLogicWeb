@@ -72,6 +72,14 @@
       <section class="esk-device" aria-labelledby="esk-device-title">
         <header><h2 id="esk-device-title" data-i18n="open.eskStatus">ESK device status</h2>
           <button class="mini" id="esk-refresh" type="button" data-i18n="capturePanel.tempRate" hidden>Refresh</button></header>
+        <div class="esk-connections">
+          <a id="esk-usb-site" class="mini" target="_blank" rel="noopener noreferrer" data-i18n="home.connectUsb" hidden>Connect via USB</a>
+          <details id="esk-lan-choice"><summary data-i18n="home.connectLan">Connect via Ethernet</summary>
+            <form id="esk-board-form"><label><span data-i18n="home.boardAddress">Board IP address</span>
+              <input id="esk-board-address" required autocomplete="off" spellcheck="false" placeholder="192.168.0.103"></label>
+              <button class="mini" type="submit" data-i18n="toolbar.connect">Connect</button></form>
+          </details>
+        </div>
         <p id="esk-connection" role="status"></p>
         <pre id="esk-identity" hidden></pre>
         <details id="esk-features" hidden><summary id="esk-feature-label" data-i18n="home.features">Features</summary><div class="esk-catalog-scroll"><table aria-labelledby="esk-feature-label">
@@ -90,9 +98,11 @@
       <button id="esk-logic" class="esk-instrument" type="button">
         <strong>xLogicWeb</strong><span data-i18n="home.logic">Capture waveforms and decode protocols</span>
       </button>
+      <a id="esk-logic-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newLogic" hidden>Open Logic in a new tab</a>
       <button id="esk-bridge" class="esk-instrument" type="button" hidden>
         <strong>xBridgeWeb</strong><span data-i18n="bridge.description">Bridge · I²C board identification</span>
       </button>
+      <a id="esk-bridge-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newBridge" hidden>Open Bridge in a new tab</a>
     </div>
   </main>
   <main id="esk-bridge-page" hidden aria-labelledby="bridge-title">
@@ -373,6 +383,7 @@
     <div class="esk-record-controls">
       <h2 id="rec-heading" data-i18n="rec.title">Recording from a saved session</h2>
       <label><span data-i18n="rec.source">Source (.sr, 8 digital channels)</span><input type="file" id="rec-source" accept=".sr"></label>
+      <p id="rec-rate" data-i18n="rec.fixedRate" hidden>Continuous USB sample rate · 41.67 MS/s</p>
       <label><span data-i18n="rec.limit">Recording limit (MiB, optional)</span><input type="number" min="1" step="1" id="rec-limit"></label>
       <div><button id="rec-record" data-i18n="rec.record">Record</button> <button id="rec-stop" data-i18n="rec.stop">Stop</button></div>
       <label><span data-i18n="rec.archive">Saved recording</span><select id="rec-archive"></select></label>

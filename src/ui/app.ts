@@ -150,7 +150,7 @@ import { RecordingTimeline } from './recordingTimeline.js';
 import { showEskRecorder } from './eskRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
-import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, requestEskDevice } from '../device/eskCapture.js';
+import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_STREAM_RATE, ESK_PACKED_RATE, type EskBank, requestEskDevice } from '../device/eskCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
 import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';
@@ -496,7 +496,9 @@ export class App {
   } | null = null;
   private captureSessionId = 0;
   private recordingTimeline = new RecordingTimeline();
-  private eskFiniteRate = ESK_RATE;
+  private eskRate = ESK_RATE;
+  private eskBank: EskBank = 'lower';
+  private eskContinuous = false;
   private eskCapturePending = false;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
@@ -6924,42 +6926,79 @@ export class App {
       const profile = document.createElement('p');
       profile.className = 'panel-note';
       const lan = !!eskLanMode();
-      const rate = lan ? ESK_RATE : this.eskFiniteRate;
-      profile.textContent = t('esk.finiteProfile', {
-        channels: ESK_CHANNELS, samples: formatCount(ESK_SAMPLES), rate: formatRate(rate),
+      const rate = lan ? ESK_RATE : this.eskRate;
+      const canStream = !lan && !!navigator.usb && rate === ESK_STREAM_RATE;
+      profile.textContent = this.eskContinuous && canStream ? t('esk.diskRecording') : t('esk.finiteProfile', {
+        channels: rate === ESK_PACKED_RATE ? 4 : ESK_CHANNELS, samples: formatCount(ESK_SAMPLES), rate: formatRate(rate),
       });
       const rateLabel = document.createElement('label');
-      rateLabel.textContent = t('capturePanel.sampleRate') + ' ';
+      rateLabel.textContent = (lan ? 'Ethernet' : 'USB') + ' · ' + t('capturePanel.sampleRate') + ' ';
       const rates = document.createElement('select');
       rates.id = 'esk-finite-rate';
-      for (const hz of lan ? [ESK_RATE] : ESK_FINITE_RATES) {
+      for (const hz of lan ? [ESK_RATE] : [ESK_PACKED_RATE, ...ESK_FINITE_RATES]) {
         rates.add(new Option(formatRate(hz), String(hz), false, hz === rate));
       }
       rates.disabled = lan || this.eskCapturePending;
-      rates.onchange = () => { this.eskFiniteRate = Number(rates.value); this.renderSidebarContent(); };
+      rates.onchange = () => {
+        this.eskRate = Number(rates.value);
+        if (this.eskRate === ESK_PACKED_RATE) this.eskBank = 'lower';
+        if (this.eskRate !== ESK_STREAM_RATE) this.eskContinuous = false;
+        this.renderSidebarContent();
+      };
       rateLabel.append(rates);
+      const modeLabel = document.createElement('label');
+      modeLabel.textContent = t('esk.mode') + ' ';
+      const modes = document.createElement('select');
+      modes.id = 'esk-capture-mode';
+      modes.add(new Option(t('esk.finite'), 'finite'));
+      if (!lan && navigator.usb) {
+        const continuous = new Option(t('esk.continuous'), 'continuous', false, canStream && this.eskContinuous);
+        continuous.disabled = !canStream;
+        modes.add(continuous);
+      }
+      modes.disabled = modes.length === 1 || this.eskCapturePending;
+      modes.onchange = () => {
+        this.eskContinuous = canStream && modes.value === 'continuous';
+        this.renderSidebarContent();
+      };
+      modeLabel.append(modes);
+      const fields = document.createElement('div');
+      fields.className = 'esk-capture-fields';
+      fields.append(rateLabel, modeLabel);
       const channels = document.createElement('fieldset');
       channels.className = 'esk-channel-picker';
       const legend = document.createElement('legend');
       legend.textContent = t('esk.visibleChannels');
       channels.append(legend);
-      for (const ch of this.channels.slice(0, this.displayChannelCount())) {
-        const label = document.createElement('label');
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.checked = ch.enabled;
-        input.onchange = () => { this.setChannelEnabled(ch.index, input.checked); input.checked = ch.enabled; };
-        label.append(input, 'D' + ch.index);
-        channels.append(label);
+      if (rate === ESK_PACKED_RATE) {
+        legend.textContent = t('esk.captureBank');
+        for (const bank of ['lower', 'upper'] as const) {
+          const label = document.createElement('label');
+          const input = document.createElement('input');
+          input.type = 'radio';
+          input.name = 'esk-bank';
+          input.value = bank;
+          input.checked = this.eskBank === bank;
+          input.onchange = () => { if (input.checked) this.eskBank = bank; };
+          label.append(input, bank === 'lower' ? 'D0–D3' : 'D4–D7');
+          channels.append(label);
+        }
+      } else {
+        for (const ch of this.channels.slice(0, this.displayChannelCount())) {
+          const label = document.createElement('label');
+          const input = document.createElement('input');
+          input.type = 'checkbox';
+          input.checked = ch.enabled;
+          input.onchange = () => { this.setChannelEnabled(ch.index, input.checked); input.checked = ch.enabled; };
+          label.append(input, ch.name || defaultChannelName(ch.index));
+          channels.append(label);
+        }
       }
-      panel.replaceChildren(rateLabel, channels, profile);
-      if (navigator.usb) {
-        const record = document.createElement('button');
-        record.className = 'mini';
-        record.textContent = t('rec.live');
-        record.disabled = this.eskCapturePending || this.stopping;
-        record.onclick = () => this.openEskRecorder(true);
-        panel.appendChild(record);
+      panel.replaceChildren(fields, channels, profile);
+      if (!lan && navigator.usb && !canStream) {
+        const hint = document.createElement('small');
+        hint.textContent = t('rec.fixedRate');
+        fields.append(hint);
       }
       return;
     }
@@ -7050,6 +7089,7 @@ export class App {
     if (this.running || this.repeatTimer.pending) void this.stopCapture();
     else if (this.device) void this.startCapture();
     else if (eskLanMode()) void this.openEskCapture('ethernet');
+    else if (navigator.usb && this.eskContinuous && this.eskRate === ESK_STREAM_RATE) this.openEskRecorder(true);
     else if (navigator.usb) void this.openEskCapture('usb');
   }
 
@@ -7569,7 +7609,7 @@ export class App {
     this.dirty = true;
   }
 
-  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false): void {
+  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false, keepVisibility = label.kind === 'esk'): void {
     if (!sameRecording) this.recordingTimeline.clear();
     this.stopQuickScroll();
     this.repeatTimer.cancel();
@@ -7588,7 +7628,7 @@ export class App {
     // the one already set aside, never the previous file's rows.
     if (!this.loadedCapture()) this.deviceLayout = { channels: this.channels, order: this.order };
     if (!sameRecording) {
-      const enabled = label.kind === 'esk' && this.displayChannelCount() === ESK_CHANNELS
+      const enabled = keepVisibility && this.displayChannelCount() === ESK_CHANNELS
         ? this.channels.slice(0, ESK_CHANNELS).map(channel => channel.enabled) : [];
       this.channels = defaultChannels(store.channelCount);
       if (enabled.some(Boolean)) this.channels.forEach((channel, index) => { channel.enabled = enabled[index]!; });
@@ -7655,16 +7695,19 @@ export class App {
       if (!(await this.confirmDiscardCapture())) return;
       if (previous !== this.captureSessionId || this.running || this.stopping) return;
       this.endPendingRepeatSession();
-      const rate = device ? this.eskFiniteRate : ESK_RATE;
-      const { samples, ticks } = device ? { samples: await captureEsk(device, rate), ticks: undefined } : await captureEskLan();
+      const rate = device ? this.eskRate : ESK_RATE;
+      const bank = this.eskBank;
+      const packed = rate === ESK_PACKED_RATE;
+      const { samples, ticks } = device ? { samples: await captureEsk(device, rate, bank), ticks: undefined } : await captureEskLan();
       // Another open or acquisition can replace the display while the capture is in progress.
       if (previous !== this.captureSessionId || this.running || this.stopping) return;
-      const store = createSampleStore(ESK_CHANNELS, rate);
+      const store = createSampleStore(packed ? 4 : ESK_CHANNELS, rate);
       store.append(samples);
       this.statusError = null;
       this.renderErrorBanner();
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: null };
-      this.adoptCapture(store, [], { kind: 'esk', samples: store.length, rate: store.samplerate, ticks });
+      const names = packed && bank === 'upper' ? ['D4', 'D5', 'D6', 'D7'] : [];
+      this.adoptCapture(store, names, { kind: 'esk', samples: store.length, rate: store.samplerate, ticks }, false, !packed);
       const vars = { samples: formatCount(store.length), rate: formatRate(store.samplerate) };
       this.setFileNotice(ticks === undefined ? { key: 'capture.esk', vars } :
         { key: 'capture.eskLan', vars: { ...vars, ticks } });
@@ -7686,7 +7729,7 @@ export class App {
       const store = createSampleStore(8, rate);
       store.append(bytes);
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };
-      this.adoptCapture(store, [], { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording);
+      this.adoptCapture(store, [], { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording, true);
       this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
       this.syncUnloadGuard();
     };
@@ -7700,7 +7743,7 @@ export class App {
   private openItems(): SettingsMenuItem[] {
     return [
       { label: t('open.file'), hint: t('open.fileHint'), onPick: () => void this.pickFiles() },
-      ...(navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
+      ...(!eskLanMode() && navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
         label: t('open.esk'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('usb'),
       }] : []),
       ...(eskLanMode() === 'paired' ? [{ label: t('open.eskStatus'), onPick: () => void showEskStatus() }] : []),
@@ -7709,7 +7752,7 @@ export class App {
         label: t('open.eskLan'), hint: t('open.eskHint'), onPick: () => void this.openEskCapture('ethernet'),
       }] : []),
       ...(!this.running && !this.stopping && !this.eskCapturePending ? [
-        ...(navigator.usb ? [{ label: t('rec.live'), onPick: () => this.openEskRecorder(true) }] : []),
+        ...(!eskLanMode() && navigator.usb ? [{ label: t('rec.live'), onPick: () => this.openEskRecorder(true) }] : []),
         { label: t('rec.title'), onPick: () => this.openEskRecorder(false) },
       ] : []),
       { label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openExample() },

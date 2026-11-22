@@ -28,6 +28,38 @@ export function initEskHome(): void {
   const connection = document.querySelector<HTMLElement>('#esk-connection')!;
   const features = document.querySelector<HTMLDetailsElement>('#esk-features')!;
 
+  const newLogic = document.querySelector<HTMLAnchorElement>('#esk-logic-tab')!;
+  const newBridge = document.querySelector<HTMLAnchorElement>('#esk-bridge-tab')!;
+  const usbSite = document.querySelector<HTMLAnchorElement>('#esk-usb-site')!;
+  const lanChoice = document.querySelector<HTMLDetailsElement>('#esk-lan-choice')!;
+  const address = document.querySelector<HTMLInputElement>('#esk-board-address')!;
+  const form = document.querySelector<HTMLFormElement>('#esk-board-form')!;
+  const browserSite = new URL(location.href);
+  browserSite.search = browserSite.hash = '';
+  usbSite.href = browserSite.href;
+  const paired = fromBoard();
+  usbSite.hidden = !paired;
+  lanChoice.hidden = paired || location.protocol === 'file:';
+  newLogic.hidden = paired || location.protocol === 'file:';
+  for (const [link, view] of [[newLogic, 'logic'], [newBridge, 'bridge']] as const) {
+    const url = new URL(browserSite);
+    url.searchParams.set('view', view);
+    link.href = url.href;
+  }
+  address.oninput = () => address.setCustomValidity('');
+  form.onsubmit = event => {
+    event.preventDefault();
+    const match = /^(?:http:\/\/)?(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?\/?$/i.exec(address.value.trim());
+    const port = Number(match?.[2] ?? 5555);
+    if (!match || match[1]!.split('.').some(part => String(Number(part)) !== part || Number(part) > 255) ||
+        port < 1 || port > 65535) {
+      address.setCustomValidity(t('home.invalidAddress'));
+      address.reportValidity();
+      return;
+    }
+    location.assign('http://' + match[1] + ':' + port + '/');
+  };
+
   const details = document.querySelector<HTMLDetailsElement>('#esk-details')!;
   const services = document.querySelector<HTMLTableSectionElement>('#esk-services')!;
   const resources = document.querySelector<HTMLTableSectionElement>('#esk-resources')!;
@@ -49,6 +81,7 @@ export function initEskHome(): void {
 
   function enableBridge(available: boolean) {
     openBridge.hidden = !available;
+    newBridge.hidden = !available || location.protocol === 'file:';
     boardId.disabled = !available;
     toggle.hidden = !available;
     if (!available) {
@@ -63,7 +96,7 @@ export function initEskHome(): void {
     if (!lan && usbStatus && !userRequested) return;
     identity.hidden = features.hidden = details.hidden = true;
     refresh.hidden = !lan && !navigator.usb;
-    const label = lan ? (needsBoardConsent() ? 'toolbar.connect' : 'capturePanel.tempRate')
+    const label = lan ? (needsBoardConsent() ? 'home.connectLan' : 'capturePanel.tempRate')
       : usbDevice ? 'capturePanel.tempRate' : 'home.connectUsb';
     refresh.dataset.i18n = label;
     refresh.textContent = t(label);
@@ -104,6 +137,7 @@ export function initEskHome(): void {
         showRows(resources, board.catalog.resources);
         details.hidden = false;
       }
+      if (!openBridge.hidden && new URL(location.href).searchParams.get('view') === 'bridge') display(true);
     } catch (error) {
       if (token !== generation) return;
       if (!lan) {

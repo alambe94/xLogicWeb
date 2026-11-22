@@ -55,6 +55,7 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
   heading.dataset.i18n = live ? 'rec.live' : 'rec.title';
   heading.textContent = live ? t('rec.live') : t('rec.title');
   source.parentElement!.hidden = live;
+  get<HTMLElement>('rate').hidden = !live;
   let busy = false, abort: AbortController | null = null, ready = false;
   function update() {
     record.disabled = busy || !ready || (!live && !source.files?.length) || !limit.validity.valid;
