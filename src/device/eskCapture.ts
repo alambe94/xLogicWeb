@@ -196,8 +196,12 @@ class LogicSession {
       }
     } finally {
       await this.command(3);
-      try { transmitted = await this.checkFinalStatus(true); }
-      finally { await this.release(); }
+      try {
+        transmitted = await this.checkFinalStatus(true);
+        // Queued IN reads can outlive Stop. Reset this pipe while LOGIC is
+        // still ours so the next client can receive its first finite record.
+        await this.usb.clearHalt('in', 1);
+      } finally { await this.release(); }
     }
     requireField(transmitted >= received, 'ESK transmitted fewer bytes than the host received');
     return transmitted;
