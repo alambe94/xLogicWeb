@@ -1521,6 +1521,9 @@ html[data-theme="light"] .settings-dialog::backdrop { background: var(--backdrop
   line-height: 1.45;
 }
 .platform-notice[hidden] { display: none; }
+#rec-timeline:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 5px 12px; background: var(--muted); color: var(--foreground); border-bottom: 1px solid var(--border); font-size: 12px; }
+#rec-slider { flex: 1 1 100px; min-width: 70px; }
+#rec-seconds { width: 9em; }
 .platform-notice-icon { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--warning); }
 .platform-notice-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .platform-notice-dismiss:focus-visible { outline-color: var(--ring); }

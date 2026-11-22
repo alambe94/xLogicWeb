@@ -146,6 +146,7 @@ import {
   type CaptureAbort,
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
+import { RecordingTimeline } from './recordingTimeline.js';
 import { showEskRecorder } from './eskRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
@@ -494,6 +495,7 @@ export class App {
     key: string; store: SampleStore; job: CaptureRangeJob; sources: CaptureJobSource[];
   } | null = null;
   private captureSessionId = 0;
+  private recordingTimeline = new RecordingTimeline();
   private eskCapturePending = false;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
@@ -7520,7 +7522,8 @@ export class App {
     this.dirty = true;
   }
 
-  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel): void {
+  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false): void {
+    if (!sameRecording) this.recordingTimeline.clear();
     this.stopQuickScroll();
     this.repeatTimer.cancel();
     this.settleHeldCaptureStart();
@@ -7537,8 +7540,11 @@ export class App {
     // The first file over device data sets the device layout aside; a second file keeps
     // the one already set aside, never the previous file's rows.
     if (!this.loadedCapture()) this.deviceLayout = { channels: this.channels, order: this.order };
-    this.channels = defaultChannels(store.channelCount);
-    for (let i = 0; i < this.channels.length; i++) {
+    if (!sameRecording) {
+      this.channels = defaultChannels(store.channelCount);
+      this.order = this.channels.map((c) => c.index);
+    }
+    for (let i = 0; i < names.length && i < this.channels.length; i++) {
       // Keep real names ("SDA"); drop auto-generated ones that would just repeat the
       // D-tag next to them ("D3", "Channel 3", "3").
       const n = (names[i] ?? '').trim();
@@ -7546,7 +7552,6 @@ export class App {
         this.channels[i]!.name = n;
       }
     }
-    this.order = this.channels.map((c) => c.index);
     // Annotations belong to a capture; a new one invalidates them. An analyzer that maps a
     // channel this file lacks is dropped and named in the panel; the rest re-decode below.
     for (const a of this.analyzers) {
@@ -7622,15 +7627,19 @@ export class App {
   }
 
   private openEskRecorder(live: boolean): void {
-    showEskRecorder(live, (bytes, rate, start, name) => {
+    const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false) => {
       this.endPendingRepeatSession();
       const store = createSampleStore(8, rate);
       store.append(bytes);
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };
-      this.adoptCapture(store, [], { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 });
+      this.adoptCapture(store, [], { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording);
       this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
       this.syncUnloadGuard();
-    }, () => this.confirmDiscardCapture());
+    };
+    showEskRecorder(live, (bytes, rate, start, name, saved) => {
+      showWindow(bytes, rate, start, name);
+      if (saved) this.recordingTimeline.open(saved, rate, start, (data, offset) => showWindow(data, rate, offset, name, true));
+    }, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key));
   }
 
   /** Open a file, a finite ESK USB capture, or the bundled example. */
@@ -8158,6 +8167,7 @@ export class App {
       this.session = beginSweep(session);
       this.viewIntent = false;
       if (newSession) {
+        this.recordingTimeline.clear();
         this.repeatMissed = false;
         this.captureSessionId += 1;
         this.measurementStats = emptyMeasurementStats();
