@@ -12,7 +12,9 @@ compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWe
 On the hosted xEskWeb Home page, choose **Connect via USB** and select the ESK
 application device. Home displays its identity, boot ID, firmware and advertised
 features. Open **xLogicWeb** for capture or **xBridgeWeb** for active bus tools.
-Both use the device selected on Home during this tab session.
+Both use the device selected on Home during this tab session. In Logic, select
+**xBridgeWeb** in the toolbar to keep the I²C controls and waveform visible together.
+You can read the board ID during a finite USB acquisition.
 
 In xBridgeWeb, **I²C → Read board ID** reads the TI identification record from
 the SK-AM64B EEPROM at address 0x51 and displays its board name and revision.
@@ -22,14 +24,15 @@ The transfer sets the EEPROM word address to zero and reads 128 bytes.
 
 Open xEskWeb directly in Chrome or Edge using HTTPS or localhost. Connect the ESK
 application USB cable, open **xLogicWeb**, press **Capture**, and select the board.
-The viewer displays eight digital channels from one 65,536-sample acquisition at
-333,333,333 Hz. Zoom, add decoders or save the trace using the usual viewer controls.
+Open the **Capture** panel by clicking the capture summary above the channel labels.
+Choose the finite USB sample rate (41.67, 83.33, 166.67 or 333.33 MS/s) and the
+visible channels (D0–D7). Each acquisition retains all eight inputs for 65,536 samples. Zoom, add decoders or save the trace using the usual viewer controls.
 The board can be released or unplugged after the waveform appears.
 
 ## ESK xLOGIC over Ethernet
 
 Open the board IP on port 5555, approve the connection on Home, open **xLogicWeb**
-and press **Capture**. Each press retrieves a finite Ethernet capture. For long
+and press **Capture**. Each press retrieves a finite Ethernet capture at 333.33 MS/s. For long
 USB recordings, open the HTTPS viewer directly and choose **Open → Record live ESK USB**.
 After Stop, use the time slider to browse the disk recording.
 

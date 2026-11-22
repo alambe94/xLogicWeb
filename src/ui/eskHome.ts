@@ -36,12 +36,25 @@ export function initEskHome(): void {
   const openBridge = document.querySelector<HTMLButtonElement>('#esk-bridge')!;
   const boardId = document.querySelector<HTMLButtonElement>('#bridge-read')!;
   const result = document.querySelector<HTMLOutputElement>('#bridge-result')!;
+  const dock = document.querySelector<HTMLElement>('#bridge-dock')!;
+  const toggle = document.querySelector<HTMLButtonElement>('#btn-bridge-panel')!;
+  const controls = document.querySelector<HTMLElement>('#bridge-controls')!;
+  const standalone = controls.parentElement!;
+  toggle.onclick = () => {
+    dock.hidden = !dock.hidden;
+    toggle.setAttribute('aria-expanded', String(!dock.hidden));
+  };
   let usbDevice: USBDevice | undefined, usbStatus: BoardStatus | undefined;
   let generation = 0, disconnected = false;
 
   function enableBridge(available: boolean) {
     openBridge.hidden = !available;
     boardId.disabled = !available;
+    toggle.hidden = !available;
+    if (!available) {
+      dock.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+    }
   }
 
   async function updateStatus(userRequested = false): Promise<void> {
@@ -83,12 +96,8 @@ export function initEskHome(): void {
       connection.textContent = '';
       identity.textContent = t('esk.identity', {id: board.deviceId, boot: board.boot, firmware: board.firmware.toString(16)});
       identity.hidden = false;
-      const rows = board.features.map(feature => {
-        const li = document.createElement('li');
-        li.textContent = `${feature.name}/${feature.instance} · ${feature.enabled ? feature.ownership : t('trigger.off')}`;
-        return li;
-      });
-      features.querySelector('ul')!.replaceChildren(...rows);
+      const rows = board.features.map(f => [f.name, String(f.instance), f.enabled ? f.ownership : t('trigger.off')]);
+      showRows(document.querySelector<HTMLTableSectionElement>('#esk-feature-rows')!, rows);
       features.hidden = !rows.length;
       if (board.catalog) {
         showRows(services, board.catalog.services);
@@ -142,6 +151,8 @@ export function initEskHome(): void {
     const atBridge = view === 'bridge' && !!usbStatus;
     const atHome = view === 'home' || (view === 'bridge' && !atBridge) || (view === null && location.protocol !== 'file:' &&
       !params.size && !location.pathname.endsWith('/esk.html'));
+    const host = atBridge || atHome ? standalone : dock;
+    if (controls.parentElement !== host) host.appendChild(controls);
     home.hidden = !atHome;
     bridge.hidden = !atBridge;
     logic.hidden = logic.inert = atHome || atBridge;

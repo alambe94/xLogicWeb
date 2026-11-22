@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { EskUsbSession, withUsbInterface } from './eskUsbSession.js';
 import { decodeBoardId } from './eskUsbHome.js';
 import { captureEsk, recordEskUsb, ESK_RATE, ESK_SAMPLES, ESK_STREAM_RATE } from './eskCapture.js';
 import { createSampleStore } from '../data/index.js';
@@ -17,6 +18,7 @@ function native(length: number): DataView<ArrayBuffer> {
 /** Model the scoped replies, including the delayed common FETCH and safe-release query. */
 class Board {
   live = false;
+  finiteRate = ESK_RATE;
   readCount = 0;
   opened = false;
   configuration = { interfaces: [{ interfaceNumber: 0, alternate: {
@@ -40,6 +42,8 @@ class Board {
   async close(): Promise<void> { this.opened = false; }
   async claimInterface(n: number): Promise<void> { expect(n === 0, 'only claim MI0'); }
 
+  async releaseInterface(n: number): Promise<void> { expect(n === 0, 'only release MI0'); }
+
   async clearHalt(direction: USBDirection, endpoint: number): Promise<void> {
     expect(this.live && direction === 'in' && endpoint === 1, 'clear only the live sample pipe');
     expect(this.commands.at(-1) === 3 && this.statusRead && !this.controls.includes(4), 'clear after quiescence and before release');
@@ -59,7 +63,7 @@ class Board {
       const op = v.getUint8(5);
       this.commands.push(op);
       if (op === 1) {
-        expect(v.byteLength === 76 && v.getUint32(40, true) === (this.live ? ESK_STREAM_RATE : ESK_RATE) &&
+        expect(v.byteLength === 76 && v.getUint32(40, true) === (this.live ? ESK_STREAM_RATE : this.finiteRate) &&
           v.getUint32(44, true) === (this.live ? 0 : ESK_SAMPLES) && v.getUint32(48, true) === 255, 'finite configuration');
       }
       if (op === 2) expect(this.readQueued, 'read must be queued before START');
@@ -113,7 +117,7 @@ class Board {
           data.setBigUint64(24, 2n * 4194304n, true);
           data.setUint32(44, ESK_STREAM_RATE, true);
         }
-        data.setUint32(48, this.live ? ESK_STREAM_RATE : ESK_RATE, true); data.setUint32(56, 5, true);
+        data.setUint32(48, this.live ? ESK_STREAM_RATE : this.finiteRate, true); data.setUint32(56, 5, true);
         break;
       default: throw new Error('unexpected control read');
     }
@@ -135,6 +139,39 @@ class Board {
     data[0] = 0x81; data[1] = 0x02;
     return { status: 'ok', data: new DataView(data.buffer) };
   }
+}
+for (const hz of [166_666_666, 83_333_333, ESK_STREAM_RATE]) {
+  const board = new Board();
+  board.finiteRate = hz;
+  await captureEsk(board as unknown as USBDevice, hz);
+}
+// Claim the two interfaces concurrently. Retiring Bridge must leave Logic usable.
+{
+  let opens = 0, closes = 0;
+  const held = new Set<number>();
+  const device = {
+    opened: false,
+    configuration: { interfaces: [0, 1].map(interfaceNumber => ({ interfaceNumber, alternate: { interfaceClass: 255 } })) },
+    async open() { opens++; this.opened = true; },
+    async close() { closes++; this.opened = false; },
+    async claimInterface(n: number) { held.add(n); },
+    async releaseInterface(n: number) { held.delete(n); },
+  };
+  const usb = device as unknown as USBDevice;
+  const session = (n: number) => new EskUsbSession(usb, n, 0x60, 0);
+  let ready!: () => void, stop!: () => void;
+  const started = new Promise<void>(resolve => { ready = resolve; });
+  const finish = new Promise<void>(resolve => { stop = resolve; });
+  const capture = withUsbInterface(usb, session(0), async () => { ready(); await finish; });
+  await started;
+  try {
+    let busy = false;
+    try { await withUsbInterface(usb, session(0), async () => {}); } catch { busy = true; }
+    expect(busy, 'same interface must stay exclusive');
+    await withUsbInterface(usb, session(1), async () => { expect(held.size === 2, 'both interfaces claimed'); });
+    expect(device.opened && held.has(0) && !held.has(1), 'one interface can retire independently');
+  } finally { stop(); await capture; }
+  expect(opens === 1 && closes === 1 && held.size === 0, 'one shared open and final close');
 }
 const good = new Board();
 const data = await captureEsk(good as unknown as USBDevice);
