@@ -1403,7 +1403,7 @@ const constructorBody = constructorStart >= 0 && constructorEnd > constructorSta
   ? app.slice(constructorStart, constructorEnd) : '';
 const restoreOrder = [
   'applyStaticI18n(document);',
-  'readWorkspaceSnapshot()',
+  'readWorkspaceSnapshot(ESK_CHANNELS)',
   'channels: initialWidth',
   'this.busViews = this.busViews.filter((bus) => !busOutOfWidth(bus.spec, this.displayChannelCount()));',
   'this.syncBankChannels();',
@@ -1420,7 +1420,7 @@ const bootAnalyzerLine = 'this.analyzers = analyzerStatesFrom(workspace?.analyze
 const bootSequenceLine = 'this.nextAnalyzer = nextAnalyzerSequence(this.analyzers);';
 const bootAnchor = 'this.lastWorkspaceSnapshot = serializeWorkspaceSnapshot(';
 const bootRestoreOrder = [
-  'const workspace = readWorkspaceSnapshot();',
+  'const workspace = readWorkspaceSnapshot(ESK_CHANNELS);',
   bootAnalyzerLine,
   bootSequenceLine,
   bootAnchor,
@@ -1510,7 +1510,7 @@ check('the App snapshot boundary serializes canonical labels/channels/order and 
   persistBody.replace(/\s+/g, ' ').trim());
 
 {
-  const fitReadAt = app.indexOf('const workspace = readWorkspaceSnapshot();');
+  const fitReadAt = app.indexOf('const workspace = readWorkspaceSnapshot(ESK_CHANNELS);');
   const fitRestoreAt = app.indexOf('this.fitRows = workspace.fitRows !== false;');
   const fitBaselineAt = app.indexOf('this.lastWorkspaceSnapshot = serializeWorkspaceSnapshot(');
   const fitCaptureAt = snapshotBody.indexOf('fitRows: this.fitRows,');
@@ -1537,7 +1537,7 @@ check('the App snapshot boundary serializes canonical labels/channels/order and 
 }
 
 {
-  const quickReadAt = app.indexOf('const workspace = readWorkspaceSnapshot();');
+  const quickReadAt = app.indexOf('const workspace = readWorkspaceSnapshot(ESK_CHANNELS);');
   const quickRestoreAt = app.indexOf('this.quickScroll = workspace.quickScroll !== false;');
   const quickBaselineAt = app.indexOf('this.lastWorkspaceSnapshot = serializeWorkspaceSnapshot(');
   const quickCaptureAt = snapshotBody.indexOf('quickScroll: this.quickScroll,');
@@ -1785,7 +1785,7 @@ const widthWiring = app.includes('private widthExplicit = false;') &&
   // Opening a file is the viewed capture: it never rewrites the next capture's width.
   !adoptOnly.includes('this.widthExplicit') && !adoptOnly.includes('this.settings = ') &&
   constructorBody.includes('this.widthExplicit = workspace?.capture?.widthExplicit === true;') &&
-  constructorBody.includes('const initialWidth = workspace?.capture?.channels ?? channelWidthForProbes(this.channels.length);') &&
+  constructorBody.includes('const initialWidth = (this.widthExplicit && workspace?.capture?.channels) || ESK_CHANNELS;') &&
   widthSetterBody.includes('if (channels !== this.settings.channels) this.widthExplicit = true;') &&
   widthSetterBody.includes('this.applySettings({ ...this.settings, channels });') &&
   !widthSetterBody.includes('enabled = i < channels') &&

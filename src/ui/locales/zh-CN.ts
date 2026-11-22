@@ -12,7 +12,7 @@ import type { Messages } from './en.js';
 
 export const zhCN: Messages = {
   // ------------------------------------------------------------ document
-  'app.title': 'SLogic 逻辑分析仪',
+  'app.title': 'xLogicWeb · xEskWeb',
 
   // ------------------------------------------------------------- toolbar
   'toolbar.device': '设备',
@@ -20,7 +20,8 @@ export const zhCN: Messages = {
   'toolbar.deviceConnected': '已连接',
   'toolbar.deviceMenuTitle': '{device} 已连接',
   'toolbar.webusbUnavailable': 'WebUSB 不可用',
-  'toolbar.connectHint': '点击"连接设备"并选择 SLogic16/32 U3',
+  'toolbar.otherAnalyzer': '其他分析仪',
+  'toolbar.connectHint': '连接兼容的 USB 逻辑分析仪',
   'toolbar.noWebusb': '此浏览器不支持 WebUSB。请使用 Chrome 或 Edge',
   'toolbar.noWebusbInsecure': '连接设备需要安全页面（HTTPS 或 localhost）',
   'toolbar.start': '采集',
@@ -49,10 +50,10 @@ export const zhCN: Messages = {
   'toolbar.openTitle': '加载 .sr 或 .lwcap 文件',
   'toolbar.saveTitle': '保存本次采集',
   'save.lwcap': '保存为 .lwcap',
-  'save.lwcapHint': 'slogicweb 格式，保留数据缺口',
+  'save.lwcapHint': 'xLogicWeb 格式，保留数据缺口',
   'save.sr': '导出 .sr',
   'save.srHint': 'PulseView，仅数字通道',
-  'save.lwcapType': 'slogicweb 采集文件',
+  'save.lwcapType': 'xLogicWeb 采集文件',
   'save.srType': 'sigrok 会话（PulseView）',
   'open.file': '打开文件…',
   'open.fileHint': '.sr 或 .lwcap',
@@ -98,13 +99,14 @@ export const zhCN: Messages = {
   'home.empty': '未公布',
   'home.features': '功能',
   'home.logic': '采集波形并解码协议',
-  'home.unpaired': '通过以太网连接时，请从板卡 IP 页面打开 xLogicWeb。要使用 USB 或打开已保存的采集，请打开逻辑分析仪。',
+  'home.unpaired': '通过以太网连接时，请从板卡 IP 页面打开 xEskWeb。要使用 USB 或打开已保存的采集，请打开逻辑分析仪。',
   'open.eskStatus': 'ESK 设备状态',
   'esk.reading': '正在读取设备状态…',
   'esk.identity': '设备 {id}\n启动 {boot}\n固件 0x{firmware}',
   'open.eskLan': '从 ESK 以太网采集…',
   'capture.eskLan': 'ESK 以太网 · {samples} 个采样点，采样率 {rate} · 板卡时钟 {ticks}',
   'open.esk': '从 ESK USB 采集…',
+  'esk.finiteProfile': '有限采集 · {channels} 个数字通道 · {samples} 个采样点 · {rate} · 立即触发',
   'open.eskHint': '8 通道 · 65,536 个采样点',
   'capture.esk': 'ESK xLOGIC · {samples} 个采样点，采样率 {rate}',
   'open.example': '打开示例',
@@ -200,9 +202,9 @@ export const zhCN: Messages = {
 
   // -------------------------------------------------------- empty hint
   'emptyHint.line1': '尚未加载采集数据',
-  'emptyHint.line2': '打开 .sr 或 .lwcap 文件，或拖拽文件到此处，或连接 SLogic16/32 U3',
+  'emptyHint.line2': '点击采集以查看 ESK 波形，或打开 .sr 或 .lwcap 文件。',
   'emptyHint.line2Connected': '按“采集”从 {device} 记录数据，或打开 .sr 或 .lwcap 文件，或拖拽文件到此处',
-  'emptyHint.line2NoUsb': '打开 .sr 或 .lwcap 文件，或拖拽文件到此处，即可查看和解码',
+  'emptyHint.line2NoUsb': '打开采集文件，或访问板卡 IP 地址以通过以太网采集。',
   'drop.overlay': '松开以打开 .sr / .lwcap 文件',
 
   // ---------------------------------------------------- browser notice
@@ -247,9 +249,9 @@ export const zhCN: Messages = {
   'error.captureMemory': '采集内存',
   'error.captureMemoryNotice': '采集已停止：内存不足。已保留目前录到的样本。请降低采样率或通道数，或缩短采集时长',
   'error.saveOutOfMemory': '保存失败：内存不足。请关闭其他标签页后重试，或保存更短的采集。',
-  'error.clearCacheNotice': '清除未完成：部分已保存的数据或缓存资源可能仍然存在。请确认浏览器允许 SLogic Web 使用站点存储，然后重试。',
-  'error.notice.fileType': '无法打开此文件：它不是 slogicweb 支持的采集文件。请选择 sigrok .sr 会话或 .lwcap 文件。',
-  'error.notice.fileUnsupported': '此采集文件包含 slogicweb 暂不支持的内容，例如模拟通道或特殊的通道数。',
+  'error.clearCacheNotice': '清除未完成：部分已保存的数据或缓存资源可能仍然存在。请确认浏览器允许 xLogicWeb 使用站点存储，然后重试。',
+  'error.notice.fileType': '无法打开此文件：它不是 xLogicWeb 支持的采集文件。请选择 sigrok .sr 会话或 .lwcap 文件。',
+  'error.notice.fileUnsupported': '此采集文件包含 xLogicWeb 暂不支持的内容，例如模拟通道或特殊的通道数。',
   'error.notice.fileTooLong': '此采集过长，无法在这里打开。',
   'error.notice.fileDamaged': '无法打开此文件：文件似乎已损坏或不完整。',
   'error.notice.decodeTooLarge': '{id} 解码已停止：采集太大，无法一次解码。请缩短解码范围或减少采集时长。',
@@ -261,7 +263,7 @@ export const zhCN: Messages = {
 
   // ---------------------------- connect failure guidance (error banner)
   'connectHelp.busy': '设备正被其他标签页或程序（如 PulseView/DSView）占用，关闭后重试。',
-  'connectHelp.busyTab': '设备已被另一 slogicweb 标签页独占。',
+  'connectHelp.busyTab': '设备已被另一 xLogicWeb 标签页独占。',
   'connectHelp.permission': 'USB 访问受限。Linux 用户安装 udev 规则并重插 USB 线缆，Windows 用户关闭独占驱动进程后重试。',
   'connectHelp.lost': 'USB 连接中断。拔下并重新插入设备线缆后重试。',
   'connectHelp.unsupported': '此浏览器无法连接设备。请使用 Chrome 或 Edge。',
@@ -1041,7 +1043,7 @@ export const zhCN: Messages = {
   'agent.timeout': '超时',
   'agent.howTo': '把下面的提示词复制到你的 AI 智能体。启动浏览器和其余步骤都由智能体自己完成；它使用自己的账号，本页不保存任何 API KEY。',
   'agent.setupTitle': '接入智能体',
-  'agent.askPrompt': '请操作 {origin} 上的 slogicweb 逻辑分析仪。\n\n1. 如果没有带远程调试的 Chromium，请自行启动：\n   {launch}\n   等到 window.slogicweb 出现后，通过 CDP 连接（Runtime.evaluate，awaitPromise 与 returnByValue）。\n2. 先调用 window.slogicweb.debug.agentHello(\'ai-agent\') 介绍自己，并每隔几秒调用 agentPing()。\n3. 用 window.slogicweb.debug.snapshot() 读取状态。操作使用 window.slogicweb.debug.agentHost()：applySettings()、startAndWait()、stop()、attach()、setViewportSeconds()、zoomToAnnotation()、addBus()、updateBus()、removeBus()。使用摘要，不要导出原始采样。\n4. 采集与解码操作会由页面的 Agent 菜单拦截。如果调用在等待，请让我在那里批准。USB 选择器需要我点击：请让我点击“连接”并选择开发板，绝不要自动占用设备。不要复位卡死的开发板。\n5. 如果你的环境里安装了 slogicweb 技能，请按该技能执行完整流程。',
+  'agent.askPrompt': '请操作 {origin} 上的 xLogicWeb 逻辑分析仪。\n\n1. 如果没有带远程调试的 Chromium，请自行启动：\n   {launch}\n   等到 window.slogicweb 出现后，通过 CDP 连接（Runtime.evaluate，awaitPromise 与 returnByValue）。\n2. 先调用 window.slogicweb.debug.agentHello(\'ai-agent\') 介绍自己，并每隔几秒调用 agentPing()。\n3. 用 window.slogicweb.debug.snapshot() 读取状态。操作使用 window.slogicweb.debug.agentHost()：applySettings()、startAndWait()、stop()、attach()、setViewportSeconds()、zoomToAnnotation()、addBus()、updateBus()、removeBus()。使用摘要，不要导出原始采样。\n4. 采集与解码操作会由页面的 Agent 菜单拦截。如果调用在等待，请让我在那里批准。USB 选择器需要我点击：请让我点击“连接”并选择开发板，绝不要自动占用设备。不要复位卡死的开发板。\n5. 如果你的环境里安装了 slogicweb 技能，请按该技能执行完整流程。',
   'agent.copyPrompt': '复制提示词',
   'agent.copied': '已复制',
   'agent.actionStart': '开始采集',

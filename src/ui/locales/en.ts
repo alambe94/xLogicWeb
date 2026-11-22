@@ -18,7 +18,7 @@
 
 export const en = {
   // ------------------------------------------------------------ document
-  'app.title': 'SLogic Logic Analyzer',
+  'app.title': 'xLogicWeb · xEskWeb',
 
   // ------------------------------------------------------------- toolbar
   'toolbar.device': 'Device',
@@ -26,7 +26,8 @@ export const en = {
   'toolbar.deviceConnected': 'Connected',
   'toolbar.deviceMenuTitle': '{device} is connected',
   'toolbar.webusbUnavailable': 'WebUSB unavailable',
-  'toolbar.connectHint': 'Click “Connect device” and pick an SLogic16/32 U3',
+  'toolbar.otherAnalyzer': 'Other analyzer',
+  'toolbar.connectHint': 'Connect a compatible USB logic analyzer',
   'toolbar.noWebusb': 'This browser does not support WebUSB. Use Chrome or Edge',
   'toolbar.noWebusbInsecure': 'Connecting a device needs a secure page (HTTPS or localhost)',
   'toolbar.start': 'Capture',
@@ -55,10 +56,10 @@ export const en = {
   'toolbar.openTitle': 'Load a sigrok .sr session or a .lwcap',
   'toolbar.saveTitle': 'Save this capture (.lwcap, or .sr for PulseView)',
   'save.lwcap': 'Save as .lwcap',
-  'save.lwcapHint': 'slogicweb, keeps gaps',
+  'save.lwcapHint': 'xLogicWeb, keeps gaps',
   'save.sr': 'Export .sr',
   'save.srHint': 'PulseView, digital only',
-  'save.lwcapType': 'slogicweb capture',
+  'save.lwcapType': 'xLogicWeb capture',
   'save.srType': 'sigrok session (PulseView)',
   'open.file': 'Open file…',
   'open.fileHint': '.sr or .lwcap',
@@ -104,13 +105,14 @@ export const en = {
   'home.empty': 'None advertised',
   'home.features': 'Features',
   'home.logic': 'Capture waveforms and decode protocols',
-  'home.unpaired': 'For Ethernet, open xLogicWeb from the board IP. For USB or a saved capture, open the Logic instrument.',
+  'home.unpaired': 'For Ethernet, open xEskWeb from the board IP. For USB or a saved capture, open the Logic instrument.',
   'open.eskStatus': 'ESK device status',
   'esk.reading': 'Reading board status…',
   'esk.identity': 'Device {id}\nBoot {boot}\nFirmware 0x{firmware}',
   'open.eskLan': 'Capture from ESK Ethernet…',
   'capture.eskLan': 'ESK Ethernet · {samples} samples at {rate} · board ticks {ticks}',
   'open.esk': 'Capture from ESK USB…',
+  'esk.finiteProfile': 'Finite capture · {channels} digital channels · {samples} samples at {rate} · immediate trigger',
   'open.eskHint': '8 channels · 65,536 samples',
   'capture.esk': 'ESK xLOGIC · {samples} samples at {rate}',
   'open.example': 'Open example',
@@ -206,9 +208,9 @@ export const en = {
 
   // -------------------------------------------------------- empty hint
   'emptyHint.line1': 'No capture loaded.',
-  'emptyHint.line2': 'Open a .sr or .lwcap file (or drag it here), or connect an SLogic16/32 U3.',
+  'emptyHint.line2': 'Press Capture for an ESK waveform, or open a .sr or .lwcap file.',
   'emptyHint.line2Connected': 'Press Capture to record from {device}, or open a .sr or .lwcap file (or drag it here)',
-  'emptyHint.line2NoUsb': 'Open a .sr or .lwcap file (or drag it here) to view and decode it',
+  'emptyHint.line2NoUsb': 'Open a capture file, or visit the board IP for ESK Ethernet capture.',
   'drop.overlay': 'Drop .sr / .lwcap to open',
 
   // ---------------------------------------------------- browser notice
@@ -254,9 +256,9 @@ export const en = {
   'error.captureMemory': 'capture memory',
   'error.captureMemoryNotice': 'Capture stopped: out of memory. The samples recorded so far are kept. Lower the sample rate or the channel count, or capture for less time',
   'error.saveOutOfMemory': 'Save failed: out of memory. Close other tabs and try again, or save a shorter capture.',
-  'error.clearCacheNotice': 'Clearing was incomplete: some saved data or cached resources may remain. Check that this browser allows site storage for SLogic Web, then try again.',
-  'error.notice.fileType': 'This file is not a capture slogicweb can open. Choose a sigrok .sr session or a .lwcap file.',
-  'error.notice.fileUnsupported': 'This capture uses something slogicweb cannot open yet, such as analog channels or an unusual channel count.',
+  'error.clearCacheNotice': 'Clearing was incomplete: some saved data or cached resources may remain. Check that this browser allows site storage for xLogicWeb, then try again.',
+  'error.notice.fileType': 'This file is not a capture xLogicWeb can open. Choose a sigrok .sr session or a .lwcap file.',
+  'error.notice.fileUnsupported': 'This capture uses something xLogicWeb cannot open yet, such as analog channels or an unusual channel count.',
   'error.notice.fileTooLong': 'This capture is too long to open here.',
   'error.notice.fileDamaged': 'This file could not be opened: it looks damaged or incomplete.',
   'error.notice.decodeTooLarge': 'Decoding {id} stopped: the capture is too large to decode at once. Decode a shorter range or capture less.',
@@ -268,7 +270,7 @@ export const en = {
 
   // ---------------------------- connect failure guidance (error banner)
   'connectHelp.busy': 'The device is in use by another tab or program (such as PulseView/DSView). Close it and retry.',
-  'connectHelp.busyTab': 'The device is exclusively held by another slogicweb tab.',
+  'connectHelp.busyTab': 'The device is exclusively held by another xLogicWeb tab.',
   'connectHelp.permission': 'USB access is restricted. On Linux, install the udev rule and replug the USB cable; on Windows, close any process holding the driver exclusively, then retry.',
   'connectHelp.lost': 'USB connection lost. Unplug and replug the device cable, then retry.',
   'connectHelp.unsupported': 'This browser cannot connect devices. Use Chrome or Edge.',
@@ -1092,7 +1094,7 @@ export const en = {
   'agent.timeout': 'Timed out',
   'agent.howTo': 'Copy this prompt into your AI agent. The agent starts the browser and handles the setup itself; it uses its own account and this page stores no provider key.',
   'agent.setupTitle': 'Connect an agent',
-  'agent.askPrompt': 'Operate the slogicweb logic analyzer at {origin}.\n\n1. If no Chromium browser with remote debugging is running, start one yourself:\n   {launch}\n   Wait until window.slogicweb exists, then attach over CDP (Runtime.evaluate with awaitPromise and returnByValue).\n2. Introduce yourself with window.slogicweb.debug.agentHello(\'ai-agent\') and call agentPing() every few seconds.\n3. Read state with window.slogicweb.debug.snapshot(). For actions use window.slogicweb.debug.agentHost(): applySettings(), startAndWait(), stop(), attach(), setViewportSeconds(), zoomToAnnotation(), addBus(), updateBus(), removeBus(). Use summaries; never dump raw samples.\n4. Capture and decoder actions are gated in the page\'s Agent menu. If a call waits, ask me to approve it there. The USB chooser needs my click: ask me to click Connect and pick the board, and never claim it automatically. Never reset a wedged board.\n5. If a slogicweb skill is installed in your environment, follow it for the full workflow.',
+  'agent.askPrompt': 'Operate the xLogicWeb logic analyzer at {origin}.\n\n1. If no Chromium browser with remote debugging is running, start one yourself:\n   {launch}\n   Wait until window.slogicweb exists, then attach over CDP (Runtime.evaluate with awaitPromise and returnByValue).\n2. Introduce yourself with window.slogicweb.debug.agentHello(\'ai-agent\') and call agentPing() every few seconds.\n3. Read state with window.slogicweb.debug.snapshot(). For actions use window.slogicweb.debug.agentHost(): applySettings(), startAndWait(), stop(), attach(), setViewportSeconds(), zoomToAnnotation(), addBus(), updateBus(), removeBus(). Use summaries; never dump raw samples.\n4. Capture and decoder actions are gated in the page\'s Agent menu. If a call waits, ask me to approve it there. The USB chooser needs my click: ask me to click Connect and pick the board, and never claim it automatically. Never reset a wedged board.\n5. If a slogicweb skill is installed in your environment, follow it for the full workflow.',
   'agent.copyPrompt': 'Copy prompt',
   'agent.copied': 'Copied',
   'agent.actionStart': 'Start a capture',
@@ -1112,7 +1114,7 @@ export const en = {
   'settings.sections.developer': 'Developer tools',
   'settings.sections.about': 'About',
   'reset.title': 'Clear all saved data?',
-  'reset.body': 'This erases your settings, workspace, unsaved capture, assistant settings and API keys, and cached app resources, then reloads SLogic Web; stay online to restore the app and offline support.',
+  'reset.body': 'This erases your settings, workspace, unsaved capture, assistant settings and API keys, and cached app resources, then reloads xLogicWeb; stay online to restore the app and offline support.',
   'reset.confirm': 'Clear and reload',
   'reset.cancel': 'Cancel',
 

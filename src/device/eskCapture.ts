@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /** Finite raw8 capture on ESK's existing scoped xLOGIC USB interface. */
+export const ESK_CHANNELS = 8;
 export const ESK_SAMPLES = 65_536;
 export const ESK_RATE = 333_333_333;
 export const ESK_STREAM_RATE = 41_666_666;

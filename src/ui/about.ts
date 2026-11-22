@@ -11,10 +11,10 @@
 
 import { t } from './i18n.js';
 
-export const SOURCE_URL = 'https://github.com/sipeed/slogicweb';
+export const SOURCE_URL = 'https://github.com/alambe94/xLogicWeb';
 export const LICENSE_URL = `${SOURCE_URL}/blob/main/LICENSE`;
 export const NOTICE_URL = `${SOURCE_URL}/blob/main/NOTICE.md`;
-export const APP_NAME = 'slogicweb';
+export const APP_NAME = 'xEskWeb';
 /** Not translated: a legal notice reads the same in every locale. */
 export const COPYRIGHT = '© 2026 Sipeed Co., Ltd.';
 
@@ -56,6 +56,7 @@ export function aboutView(id: BuildIdentity = buildIdentity()): AboutView {
       { label: t('about.source'), href: SOURCE_URL },
       { label: t('about.licenseLink'), href: LICENSE_URL },
       { label: t('about.notice'), href: NOTICE_URL },
+      { label: 'Sipeed SLogicWeb', href: 'https://github.com/sipeed/SLogicWeb' },
     ],
   };
 }

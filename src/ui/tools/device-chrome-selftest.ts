@@ -174,8 +174,8 @@ check('device support: WebUSB present, absent in a secure context, or hidden by 
   const none = deviceToolbarView(null, 'unsupported');
   const insecure = deviceToolbarView(null, 'insecure');
   check('the Device command: idle opens the chooser, connected shows the model and state, no WebUSB disables',
-    idle.label === en['toolbar.connect'] && idle.ariaLabel === en['toolbar.connect'] &&
-      idle.state === null && !idle.disabled && !idle.connected && idle.primary &&
+    idle.label === en['toolbar.otherAnalyzer'] && idle.ariaLabel === en['toolbar.otherAnalyzer'] &&
+      idle.state === null && !idle.disabled && !idle.connected && !idle.primary &&
       idle.title === en['toolbar.connectHint'] && !on.primary && !none.primary && !insecure.primary &&
       on.label === 'SLogic32 U3' && on.state === en['toolbar.deviceConnected'] && on.connected &&
       on.ariaLabel === `${en['toolbar.device']}: SLogic32 U3` &&
@@ -192,10 +192,10 @@ check('device support: WebUSB present, absent in a secure context, or hidden by 
     on.title);
 }
 
-check('disconnected, the Device command reads Connect device and every connect hint names that label',
+check('the alternate analyzer command is distinct from the ESK connection in every language',
   (['en', 'zh-CN', 'fr', 'ru'] as const).every((l) => {
     const m: Messages = l === 'en' ? en : l === 'zh-CN' ? zhCN : l === 'fr' ? fr : ru;
-    return m['toolbar.connectHint'].includes(m['toolbar.connect']);
+    return m['toolbar.otherAnalyzer'] !== m['toolbar.connect'] && m['toolbar.connectHint'].includes('USB');
   }),
   `${en['toolbar.connectHint']} | ${zhCN['toolbar.connectHint']}`);
 
@@ -239,8 +239,8 @@ check('the browser notice appears only without WebUSB and names HTTPS only for a
 const html = fs.readFileSync('index.html', 'utf8');
 const app = fs.readFileSync('src/ui/app.ts', 'utf8');
 check('the tab title is localized, and waveform/label areas opt out of machine translation',
-  html.includes('<title data-i18n="app.title">SLogic Logic Analyzer</title>') &&
-    en['app.title'] === 'SLogic Logic Analyzer' && zhCN['app.title'] === 'SLogic 逻辑分析仪' &&
+  html.includes('<title data-i18n="app.title">xLogicWeb · xEskWeb</title>') &&
+    en['app.title'] === 'xLogicWeb · xEskWeb' && zhCN['app.title'] === 'xLogicWeb · xEskWeb' &&
     html.includes('<div id="labels-col" translate="no">') &&
     html.includes('<div id="plot" translate="no">') &&
     html.includes('<div id="empty-hint" translate="yes">') &&

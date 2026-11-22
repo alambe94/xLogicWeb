@@ -1,26 +1,28 @@
 # xLogicWeb
 
-A browser logic analyzer and mixed-signal viewer for Sipeed SLogic16 U3 and SLogic32 U3:
-digital channels, the SLogic32 U3's ADC module as analog rows, and sigrok protocol
-decoders on one timeline. It talks to the board over WebUSB, so there is nothing to
-install: open the page in a Chromium-based browser, connect the board and capture.
-Everything runs locally; there are no accounts and no cloud.
+xLogicWeb is the logic analyzer in xEskWeb. Open the Logic instrument to capture
+the eight ESK digital inputs, inspect waveforms and decode protocols on your laptop.
+The viewer runs in your browser. [Open xEskWeb](https://alambe94.github.io/xLogicWeb/)
 
-This fork adds ESK acquisition to the Sipeed viewer. The fork's Pages workflow builds for the repository path on `github.io`. A Pages-hosted session can acquire over WebUSB after the user selects the probe. Waveform acquisition and decoding run in the browser.
-
-Upstream viewer and source: [SLogicWeb](https://github.com/sipeed/slogicweb).
+The viewer builds on Sipeed SLogicWeb. **Other analyzer** opens the USB chooser for
+compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWeb)
 
 ## ESK xLOGIC over USB
 
-Open the app in Chrome or Edge on HTTPS or localhost and connect the ESK application
-USB cable. From **Open**, choose **Capture from ESK USB…** and select the board.
+Open xEskWeb directly in Chrome or Edge using HTTPS or localhost. Connect the ESK
+application USB cable, open **xLogicWeb**, press **Capture**, and select the board.
 The viewer displays eight digital channels from one 65,536-sample acquisition at
 333,333,333 Hz. Zoom, add decoders or save the trace using the usual viewer controls.
 The board can be released or unplugged after the waveform appears.
 
 ## ESK xLOGIC over Ethernet
 
-On a trusted LAN, run the bridge on a computer with the built viewer, Python
+Open the board IP on port 5555, approve the connection on Home, open **xLogicWeb**
+and press **Capture**. Each press retrieves a finite Ethernet capture. For long
+USB recordings, open the HTTPS viewer directly and choose **Open → Record live ESK USB**.
+After Stop, use the time slider to browse the disk recording.
+
+For the development bridge on a trusted LAN, run the bridge on a computer with the built viewer, Python
 and the xSDK host tools. The phone only needs a browser on the same network.
 
 ```sh

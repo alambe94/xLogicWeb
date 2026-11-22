@@ -383,7 +383,7 @@ const BANNER =
   '/*! SPDX-License-Identifier: GPL-3.0-or-later\n' +
   ' * slogicweb - Copyright (C) 2026 Sipeed Co., Ltd. and contributors\n' +
   ' * Free software with NO WARRANTY, under GNU GPL v3 or later.\n' +
-  ' * Source: https://github.com/sipeed/slogicweb\n' +
+  ' * Source: https://github.com/alambe94/xLogicWeb\n' +
   ' */';
 
 const portable = process.env.SLOGICWEB_PORTABLE === '1';

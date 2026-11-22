@@ -58,7 +58,7 @@ function check(name: string, pass: boolean, detail = ''): void {
 
 const SYNTHETIC: Record<string, string> = {
   'index.html': '<!doctype html><html><head><meta charset="utf-8" />\n' +
-    '  <title data-i18n="app.title">SLogic Logic Analyzer</title>\n</head><body></body></html>',
+    '  <title data-i18n="app.title">xEskWeb</title>\n</head><body></body></html>',
   'assets/index-AAAAAAAA.js': 'entry',
   'assets/index-AAAAAAAA.js.map': '{}',
   'assets/index-BBBBBBBB.css': 'css',
@@ -105,7 +105,7 @@ try {
     icons: { src: string; purpose: string; sizes: string }[];
   };
   check('manifest: name, start_url, standalone, app colours',
-    manifest.name === 'SLogic Logic Analyzer' && manifest.short_name === 'SLogic' &&
+    manifest.name === 'xEskWeb' && manifest.short_name === 'xEskWeb' &&
       manifest.start_url === './' && manifest.scope === './' && manifest.display === 'standalone' &&
       manifest.theme_color === THEME_COLOR && manifest.background_color === THEME_COLOR &&
       THEME_COLOR === '#1B1B1C',
