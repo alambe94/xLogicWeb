@@ -206,6 +206,8 @@ export const fr: Messages = {
   // ------------------------------------- error prefixes (App.fail sites)
   'error.render': 'rendu',
   'error.device': 'appareil',
+  'error.eskEthernet': 'La capture Ethernet a échoué',
+  'error.eskUsb': 'La capture USB a échoué',
   'error.openCapture': 'ouverture de capture',
   'error.save': 'enregistrement',
   'error.reconnect': 'reconnexion',

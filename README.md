@@ -35,7 +35,7 @@ Anyone who can open the bridge on the LAN can request a capture.
 
 ### Open from the board
 
-On firmware with **Open xLogicWeb**, tap that button at the board IP and keep the board tab open. The new tab opens xEskWeb Home from GitHub Pages, with live device identity and features. Select **xLogicWeb** to enter the Logic instrument. Its **Home** button and the browser Back and Forward controls switch views while preserving the open waveform and board tab. Under **Open**, select **ESK device status** or **Capture from ESK Ethernet…**. The board tab owns the local WebSocket and returns the reply directly to the viewer tab. The initial viewer load needs Internet access. A USB-only user can open the hosted viewer directly.
+On current firmware, open the board IP to see xEskWeb Home in one tab. Select **Connect device** to read its identity and features. Choose **xLogicWeb** and then **Open → Capture from ESK Ethernet…** for a waveform. Returning to Home preserves the capture. The board handles local WebSocket requests and the viewer loads from GitHub Pages. If the viewer is unavailable, reconnect to the Internet and select **Retry**. Firmware with the older **Open xEskWeb** button continues to pair through its launcher tab. For USB, open the hosted viewer directly.
 
 ### Board-origin viewer
 

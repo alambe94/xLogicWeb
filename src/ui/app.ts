@@ -7612,7 +7612,9 @@ export class App {
         { key: 'capture.eskLan', vars: { ...vars, ticks } });
       this.syncUnloadGuard();
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'NotFoundError')) this.fail('error.openCapture', error);
+      if (!(error instanceof DOMException && error.name === 'NotFoundError')) {
+        this.fail(transport === 'ethernet' ? 'error.eskEthernet' : 'error.eskUsb', error);
+      }
     } finally {
       this.eskCapturePending = false;
     }
