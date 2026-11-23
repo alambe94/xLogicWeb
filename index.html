@@ -346,17 +346,23 @@
     <aside id="bridge-dock" aria-label="xBridgeWeb" hidden></aside>
     <output id="native-status" hidden></output>
     <form id="rec-timeline" hidden>
-      <label><span data-i18n="rec.position">Position (s)</span> <input id="rec-seconds" class="viewer-input" type="number" min="0" step="any" required></label>
-      <button class="pill" type="submit" data-i18n="rec.go">Go</button>
-      <input id="rec-slider" class="acquisition-time-slider" type="range" min="0" step="1" aria-labelledby="rec-duration">
-      <output id="rec-duration"></output>
-      <div id="rec-edge-channel"></div>
-      <button type="button" id="rec-edge-previous" class="pill">Previous edge</button>
-      <button type="button" id="rec-edge-next" class="pill">Next edge</button>
-      <button type="button" id="rec-edge-cancel" class="pill" hidden>Cancel search</button>
-      <output id="rec-edge-result"></output>
-      <small id="rec-summary"></small>
-      <span id="rec-seek-error" role="status"></span>
+      <div class="recording-position">
+        <label><span data-i18n="rec.position">Position (s)</span> <input id="rec-seconds" class="viewer-input" type="number" min="0" step="any" required></label>
+        <button class="pill" type="submit" data-i18n="rec.go">Go</button>
+        <input id="rec-slider" class="acquisition-time-slider" type="range" min="0" step="1" aria-labelledby="rec-duration">
+        <output id="rec-duration"></output>
+      </div>
+      <div class="recording-edges">
+        <div id="rec-edge-channel"></div>
+        <button type="button" id="rec-edge-previous" class="pill">Previous edge</button>
+        <button type="button" id="rec-edge-next" class="pill">Next edge</button>
+      </div>
+      <div class="recording-feedback">
+        <output id="rec-edge-result"></output>
+        <button type="button" id="rec-edge-cancel" class="pill" hidden>Cancel search</button>
+        <small id="rec-summary"></small>
+        <span id="rec-seek-error" role="status"></span>
+      </div>
     </form>
     <div id="main">
       <div id="scroll-area">

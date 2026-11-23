@@ -940,6 +940,36 @@ export class Overlay {
     c.restore();
   }
 
+  /** Label the live frontier or ring the selected transition on its channel. */
+  drawRecordingGuide(x: number, label: string, rowY?: number): void {
+    if (x < 0 || x > this.wCss) return;
+    const c = this.ctx;
+    const px = Math.round(x) + 0.5;
+    c.save();
+    c.strokeStyle = c.fillStyle = this.palette.warning;
+    c.lineWidth = 2;
+    c.setLineDash([4, 3]);
+    c.beginPath();
+    c.moveTo(px, 0);
+    c.lineTo(px, this.hCss);
+    c.stroke();
+    if (rowY !== undefined) {
+      c.setLineDash([]);
+      c.beginPath();
+      c.arc(px, rowY, 6, 0, Math.PI * 2);
+      c.stroke();
+    }
+    c.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    const width = c.measureText(label).width + 10;
+    const left = px + width < this.wCss ? px : Math.max(0, px - width);
+    roundRect(c, left, 0, width, 16, 2);
+    c.fill();
+    c.fillStyle = this.palette.bg;
+    c.textBaseline = 'top';
+    c.fillText(label, left + 5, 2);
+    c.restore();
+  }
+
   /** The live edge during a capture: where the newest sample is. */
   drawLiveEdge(x: number): void {
     const c = this.ctx;
