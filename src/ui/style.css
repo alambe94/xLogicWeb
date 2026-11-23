@@ -1067,10 +1067,8 @@ html[data-theme="light"] .channel-color-custom { background: var(--bg30); }
 }
 #esk-recorder { margin: auto 1rem 1rem auto; width: min(34rem, calc(100vw - 2rem)); }
 #esk-recorder::backdrop { background: transparent; }
-#native-recorder { width: min(36rem, calc(100vw - 2rem)); }
-#native-preview { margin: .6rem 0; }
-#native-preview figcaption, #rec-storage { font-size: .8rem; }
-#native-wave { display: block; width: 100%; background: var(--muted); margin-top: .35rem; }
+#native-status { padding: 4px 12px; border-bottom: 1px solid var(--border-low); font-variant-numeric: tabular-nums; }
+#rec-storage { font-size: .8rem; }
 #rec-storage:empty, #rec-warnings:empty { display: none; }
 #rec-import > summary { cursor: pointer; }
 #rec-import[open] .panel-section-body { margin-top: 8px; }

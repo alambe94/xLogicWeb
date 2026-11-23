@@ -150,7 +150,7 @@ import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
 import { showEskRecorder } from './eskRecorder.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
-import { showNativeRecorder } from './eskNativeRecorder.js';
+import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { boardCaptureMaximum, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
@@ -508,6 +508,7 @@ export class App {
   private eskUntilStop = false;
   private eskLanCount = String(ESK_SAMPLES);
   private eskCapturePending = false;
+  private stopNativeRecording: (() => void) | undefined;
   private eskEdge: 'none' | 'rising' | 'falling' = 'none';
   private eskTriggerChannel = 0;
   private eskPrePercent = 50;
@@ -7146,6 +7147,8 @@ export class App {
 
 
   private primaryAction(): void {
+    if (this.stopNativeRecording) { this.stopNativeRecording(); return; }
+    if (this.eskCapturePending && !this.eskArmed) return;
     if (this.eskArmed) {
       this.eskArmed.abort();
       this.renderToolbarState();
@@ -7188,7 +7191,7 @@ export class App {
     // Start/stop, open and save all re-render the toolbar: the unload guard follows them.
     this.syncUnloadGuard();
     const repeatPending = this.repeatTimer.pending;
-    const showStop = this.running || repeatPending || !!this.eskArmed;
+    const showStop = this.running || repeatPending || !!this.eskArmed || !!this.stopNativeRecording;
     this.renderDeviceCommand();
     this.el.open.setAttribute('aria-label', t('toolbar.open'));
     this.el.save.setAttribute('aria-label', t('toolbar.save'));
@@ -7626,6 +7629,7 @@ export class App {
 
   /** `confirmed`: the caller already asked (Open button) before the chooser opened. */
   private async openFiles(files: File[], confirmed = false): Promise<void> {
+    if (this.eskCapturePending) return;
     if (!confirmed && !(await this.confirmDiscardCapture())) return;
     try {
       this.statusError = null;
@@ -7639,6 +7643,7 @@ export class App {
       this.endPendingRepeatSession();
       const t0 = performance.now();
       const cap = await loadFiles(files);
+      if (this.eskCapturePending) return;
       if (this.running) await this.stopCapture('manual');
       if (this.stopPending) await this.stopPending;
       this.endPendingRepeatSession();
@@ -7679,7 +7684,8 @@ export class App {
     this.dirty = true;
   }
 
-  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false, keepVisibility = label.kind === 'esk'): void {
+  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false, keepVisibility = label.kind === 'esk', preview = false): void {
+    const previousView = this.stack.viewport;
     if (!sameRecording) this.recordingTimeline.clear();
     this.stopQuickScroll();
     this.repeatTimer.cancel();
@@ -7749,10 +7755,11 @@ export class App {
     this.reconcileEdgeChannels();
     this.persistWorkspace();
     this.relayout();
-    this.stack.zoomToFit();
+    if (sameRecording) this.stack.setViewport(previousView.start, previousView.end);
+    else this.stack.zoomToFit();
     this.renderPanels();
     this.dirty = true;
-    this.scheduleAutoDecode();
+    if (!preview) this.scheduleAutoDecode();
   }
 
   private async openEskCapture(transport: 'usb' | 'ethernet'): Promise<void> {
@@ -7832,26 +7839,55 @@ export class App {
     }
   }
 
-  private openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions): void {
+  private async openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions): Promise<void> {
     if (this.eskCapturePending || this.running || this.stopping) return;
-    const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false) => {
+    let previewShown = false;
+    const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false, preview = false) => {
       this.endPendingRepeatSession();
       const packed = rate === ESK_PACKED_RATE && (name === 'xLOGIC USB D4–D7' || name === 'xLOGIC USB D0–D3');
       const store = createSampleStore(packed ? 4 : 8, rate);
       store.append(bytes);
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };
-      this.adoptCapture(store, packed && name.endsWith('D4–D7') ? ['D4', 'D5', 'D6', 'D7'] : [],
-        { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording, !packed);
+      if (preview && previewShown) {
+        this.waveStore = store;
+        this.storeRef.set(store);
+        this.dirty = true;
+      } else {
+        this.adoptCapture(store, packed && name.endsWith('D4–D7') ? ['D4', 'D5', 'D6', 'D7'] : [],
+          { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording || previewShown, !packed, preview);
+      }
+      previewShown = preview;
       this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
       this.syncUnloadGuard();
     };
     const display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: import('./eskRecorder.js').SavedRecording) => {
       showWindow(bytes, rate, start, name);
       if (saved) this.recordingTimeline.open(saved, rate, start, this.captureStore!.channelCount,
-        name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true));
+        name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true),
+        () => this.stack.viewport, sample => {
+          const view = this.stack.viewport, span = view.end - view.start;
+          const left = Math.max(0, Math.min(this.captureStore.length - span, sample - span / 2));
+          this.stack.setViewport(left, left + span);
+          this.dirty = true;
+        });
     };
     if (live && options && !options.ethernet && nativeRecorderAvailable()) {
-      showNativeRecorder(options, () => this.confirmDiscardCapture(), display);
+      this.eskCapturePending = true;
+      this.renderToolbarState();
+      this.renderSidebarContent();
+      try {
+        if (await this.confirmDiscardCapture()) {
+          this.statusError = null;
+          this.renderErrorBanner();
+          await recordNative(options, (data, hz, offset, title) => showWindow(data, hz, offset, title, false, true),
+            display, stop => { this.stopNativeRecording = stop; this.renderToolbarState(); });
+        }
+      } catch (error) { this.fail('error.eskUsb', error); }
+      finally {
+        this.eskCapturePending = false;
+        this.renderToolbarState();
+        this.renderSidebarContent();
+      }
     } else {
       showEskRecorder(live, display, this.confirmDialog, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
     }
@@ -8320,6 +8356,7 @@ export class App {
   }
 
   private async startCapture(origin: CaptureStartOrigin = 'manual'): Promise<void> {
+    if (this.eskCapturePending) return;
     this.stopQuickScroll();
     if (this.resetting || this.running || this.stopping || this.repeatTimer.pending) return;
     this.settledHeldCapture = false;
