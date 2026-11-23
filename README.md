@@ -41,8 +41,9 @@ on the board, USB link and host storage. After Stop, use the slider to browse th
 
 ### Native USB recording on Windows
 
-For long laptop captures, launch the local copy of xEskWeb with its WinUSB recorder.
-In a prepared demo bundle, extract the folder to an SSD and double-click
+For long laptop captures, download `xEskWeb-Windows-x64.zip` from
+[xEskWeb Releases](https://github.com/alambe94/xLogicWeb/releases). Extract it
+to a writable folder on an SSD and double-click
 `Start xEskWeb.cmd`. Keep its console open while recording. Choose the rate and
 sample count in Logic, then press **Capture** once. The waveform opens when the
 requested count is reached, or when you press **Stop**. Counts above 65,536 and
@@ -66,8 +67,7 @@ py -3 dev/esk_native.py --dist dist --recorder C:\ESK\xlogic_capture.exe --store
 ```
 
 Use `--serial SERIAL` to select a particular board. The hosted viewer continues
-to offer WebUSB and Ethernet. The Windows demo bundle is currently distributed
-separately. The optional PulseView client and sigrok-cli share a Windows ZIP
+to offer WebUSB and Ethernet. The optional PulseView client and sigrok-cli share a Windows ZIP
 on the [PulseView fork's releases page](https://github.com/alambe94/pulseview/releases/tag/xsdk-bundle-22).
 
 ## ESK xLOGIC over Ethernet
