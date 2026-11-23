@@ -1,10 +1,19 @@
 # Deployment
 
-[The deployment workflow](../.github/workflows/deploy-pages.yml) builds on pushes to
+## xEskWeb fork
+
+The fork's [Pages workflow](../.github/workflows/deploy-pages.yml) builds the
+viewer on pull requests and deploys merged changes to GitHub Pages. Windows
+ZIPs have a separate release cycle. The maintainer chooses the changes and
+timing for each Windows release before tagging or publishing a package.
+
+## Upstream SLogicWeb deployment
+
+The upstream deployment workflow builds on pushes to
 `main` and publishes the same artifact to GitHub Pages and Qiniu. It includes the
 analyzer, decoder runtime, offline shell, and OTA pages. Build output is not committed.
 
-## Configuration
+### Configuration
 
 - Set GitHub Pages to **GitHub Actions** and allow deployments from `main`.
 - Set the repository variable `QINIU_BUCKET` to a public-read bucket in the uploader's
@@ -15,7 +24,7 @@ The workflow checks out submodules, vendors runtime assets, runs checks, and sta
 `sub_service/ota` under `/ota/`. Refer to the workflow for the exact build commands.
 The hosted build uses an absolute base of `/`.
 
-## Hosting requirements
+### Hosting requirements
 
 - Use HTTPS for WebUSB. Serve `.wasm` as `application/wasm` and JavaScript modules
   with a JavaScript MIME type.
@@ -30,7 +39,7 @@ Incomplete uploads fail the job. Source maps are left out of that pass and uploa
 in a separate step after the CDN purge (`--source-maps`); a failed map is only a
 warning, since only DevTools fetches them.
 
-## Verification
+### Verification
 
 ```sh
 node --test .github/scripts/upload-qiniu.test.mjs

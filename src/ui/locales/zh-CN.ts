@@ -85,6 +85,8 @@ export const zhCN: Messages = {
   'rec.first': '起始采样点',
   'rec.reopen': '重新打开',
   'rec.delete': '删除',
+  'rec.edgeChannel': '边沿通道',
+  'rec.confirmNativeDelete': '从磁盘永久删除 {name}？',
   'rec.confirmDelete': '从浏览器存储删除 {name}？',
   'rec.busy': '另一个标签页正在使用此记录。',
   'rec.unavailable': '请在支持本地文件存储的浏览器中通过 HTTPS 直接打开 xLogicWeb。',
