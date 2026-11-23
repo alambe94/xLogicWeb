@@ -7857,10 +7857,11 @@ export class App {
     };
     const display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: import('./eskRecorder.js').SavedRecording) => {
       showWindow(bytes, rate, start, name);
-      if (saved) this.recordingTimeline.open(saved, rate, start, (data, offset) => showWindow(data, rate, offset, name, true));
+      if (saved) this.recordingTimeline.open(saved, rate, start, this.captureStore!.channelCount,
+        name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true));
     };
     if (live && options && !options.ethernet && nativeRecorderAvailable()) {
-      showNativeRecorder(nativeAction, options, () => this.confirmDiscardCapture(), display);
+      showNativeRecorder(nativeAction, options, () => this.confirmDiscardCapture(), display, key => this.recordingTimeline.clear(key));
     } else {
       showEskRecorder(live, display, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
     }

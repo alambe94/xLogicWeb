@@ -15,6 +15,7 @@ export interface SavedRecording {
   samples: number;
   summary?: string;
   read(start: number, end: number): Promise<Uint8Array>;
+  edge?(position: number, channel: number, direction: 'previous' | 'next'): Promise<{match: number | null; resume: number | null}>;
   dispose?(): void;
 }
 type Display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: SavedRecording) => void;

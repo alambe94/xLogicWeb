@@ -19,11 +19,25 @@ export class RecordingTimeline {
     this.form.onsubmit = this.slider.oninput = null;
   }
 
-  open(archive: SavedRecording, rate: number, first: number, display: (bytes: Uint8Array, start: number) => void): void {
+  open(archive: SavedRecording, rate: number, first: number, channels: number, firstChannel: number,
+      display: (bytes: Uint8Array, start: number) => void): void {
     this.archive = archive;
     this.form.hidden = false;
     const last = Math.max(0, archive.samples - displaySamples);
     let displayed = first, requested = first, reading = false;
+    const channel = document.querySelector<HTMLSelectElement>('#rec-edge-channel')!;
+    const prev = document.querySelector<HTMLButtonElement>('#rec-edge-previous')!;
+    const next = document.querySelector<HTMLButtonElement>('#rec-edge-next')!;
+    const cancel = document.querySelector<HTMLButtonElement>('#rec-edge-cancel')!;
+    const result = document.querySelector<HTMLOutputElement>('#rec-edge-result')!;
+    channel.replaceChildren(...Array.from({length: channels}, (_, i) =>
+      new Option('D' + (i + firstChannel), String(i + firstChannel))));
+    let generation = 0, match: number | null = null;
+    function resetSearch() {
+      generation++; match = null; result.value = ''; cancel.hidden = true;
+      prev.disabled = next.disabled = false;
+    }
+    resetSearch();
     this.slider.max = String(last);
     this.slider.disabled = last === 0;
     this.seconds.max = String(archive.samples / rate);
@@ -58,10 +72,53 @@ export class RecordingTimeline {
         }
       } finally { reading = false; }
     };
-    this.slider.oninput = () => void seek(this.slider.valueAsNumber);
+    const findEdge = async (direction: 'previous' | 'next') => {
+      const selected = Number(channel.value), token = ++generation;
+      const forward = direction === 'next';
+      let cursor: number | null = match ?? (forward ? requested : Math.min(archive.samples, requested + displaySamples));
+      prev.disabled = next.disabled = true; cancel.hidden = false;
+      result.value = 'Searching D' + selected + '…';
+      try {
+        while (cursor !== null && this.archive === archive && generation === token) {
+          let found: number | null, resume: number | null;
+          if (archive.edge) {
+            ({match: found, resume} = await archive.edge(cursor, selected, direction));
+          } else {
+            const start: number = forward ? cursor : Math.max(0, cursor - displaySamples);
+            const end: number = forward ? Math.min(archive.samples, start + displaySamples) : cursor;
+            if (end - start < 2) break;
+            const data = await archive.read(start, end);
+            const mask = 1 << (selected - firstChannel);
+            found = null;
+            for (let i = forward ? 1 : data.length - 1; i > 0 && i < data.length; i += forward ? 1 : -1) {
+              if ((data[i]! ^ data[i - 1]!) & mask) { found = start + i; break; }
+            }
+            resume = forward ? (end < archive.samples ? end - 1 : null) : (start ? start + 1 : null);
+          }
+          if (generation !== token || this.archive !== archive) return;
+          if (found !== null) {
+            match = found;
+            await seek(found - Math.floor(displaySamples / 2));
+            if (generation === token && this.archive === archive)
+              result.value = 'D' + selected + ' edge at sample ' + found.toLocaleString();
+            return;
+          }
+          cursor = resume;
+        }
+        if (generation === token && this.archive === archive) result.value = 'No further edge on D' + selected;
+      } catch (error) {
+        if (generation === token && this.archive === archive) result.value = error instanceof Error ? error.message : String(error);
+      } finally {
+        if (generation === token && this.archive === archive) { cancel.hidden = true; prev.disabled = next.disabled = false; }
+      }
+    };
+    prev.onclick = () => void findEdge('previous');
+    next.onclick = () => void findEdge('next');
+    channel.onchange = cancel.onclick = resetSearch;
+    this.slider.oninput = () => { resetSearch(); void seek(this.slider.valueAsNumber); };
     this.form.onsubmit = event => {
       event.preventDefault();
-      if (this.seconds.validity.valid) void seek(this.seconds.valueAsNumber * rate);
+      if (this.seconds.validity.valid) { resetSearch(); void seek(this.seconds.valueAsNumber * rate); }
     };
   }
 }
