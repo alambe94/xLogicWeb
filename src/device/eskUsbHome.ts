@@ -7,7 +7,7 @@ const names = ['', 'Device', 'Logic', 'DAP', 'UART', 'I2C', 'SPI', 'GPIO', 'USB 
   'BLE analyzer', 'Power analyzer', 'Firmware update', 'PWM', 'CAN', 'LIN', 'RS485', 'QSPI'];
 const owners = ['Unknown', 'Unclaimed', 'Pending', 'Claimed', 'Retiring', 'Quarantined', 'Faulted'];
 
-class HomeSession extends EskUsbSession {
+export class HomeSession extends EskUsbSession {
   async identity() {
     const query = new Uint8Array(8);
     query[0] = 1; // DEVICE/0 descriptor

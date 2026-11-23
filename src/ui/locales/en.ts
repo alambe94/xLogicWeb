@@ -133,7 +133,7 @@ export const en = {
   'home.connectUsb': 'Connect via USB',
   'home.nativeConnection': 'Connect via USB for Logic and Bridge, or via Ethernet for finite Logic captures.',
   'home.usbGone': 'USB disconnected',
-  'bridge.description': 'I²C, UART, SPI and CAN transactions',
+  'bridge.description': 'I²C, UART, SPI, CAN, GPIO and PWM',
   'bridge.usbHint': 'Connect the application USB cable and choose Connect via USB on Home. The selected protocol must be available on the board and in this browser.',
   'home.unpaired': 'Open the board IP for Ethernet. Open Logic to view a saved capture.',
   'open.eskStatus': 'ESK device status',

@@ -101,7 +101,7 @@
       </button>
       <a id="esk-logic-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newLogic" hidden>Open Logic in a new tab</a>
       <button id="esk-bridge" class="pill esk-instrument" type="button">
-        <strong>xBridgeWeb</strong><span data-i18n="bridge.description">I²C, UART, SPI and CAN transactions</span>
+        <strong>xBridgeWeb</strong><span data-i18n="bridge.description">I²C, UART, SPI, CAN, GPIO and PWM</span>
       </button>
       <a id="esk-bridge-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newBridge" hidden>Open Bridge in a new tab</a>
     </div>
@@ -144,8 +144,23 @@
             <label>Identifier (hex) <input class="viewer-input" id="bus-can-id" required></label>
             <label>Data bytes (hex) <input class="viewer-input" id="bus-can-tx" maxlength="23"></label>
           </fieldset>
+          <fieldset data-bus="GPIO" hidden disabled>
+            <legend>GPIO outputs</legend>
+            <div id="bus-gpio-action"></div>
+            <label>Output mask (hex, bits 0–6) <input class="viewer-input" id="bus-gpio-mask" maxlength="4" required></label>
+            <label>High bits (hex) <input class="viewer-input" id="bus-gpio-high" maxlength="4" value="0" required></label>
+          </fieldset>
+          <fieldset data-bus="PWM" hidden disabled>
+            <legend>PWM output</legend>
+            <div id="bus-timer"></div>
+            <div id="bus-pwm-mask"></div>
+            <label>Period (ns) <input class="viewer-input" id="bus-period" type="number" min="1" max="4294967295" value="1000000" required></label>
+            <label>Duty A (%) <input class="viewer-input" id="bus-duty-a" type="number" min="0" max="100" step="0.1" value="50" required></label>
+            <label>Duty B (%) <input class="viewer-input" id="bus-duty-b" type="number" min="0" max="100" step="0.1" value="0" required></label>
+          </fieldset>
           <button type="submit" class="mini" id="bus-run">Run transaction</button>
         </form>
+        <button type="button" class="mini" id="bus-release" hidden>Stop and release outputs</button>
         <p id="bridge-usb-hint" data-i18n="bridge.usbHint">Connect the application USB cable and choose Connect via USB on Home. The selected protocol must be available on the board and in this browser.</p>
         <output id="bridge-result" aria-live="polite"></output>
       </section>

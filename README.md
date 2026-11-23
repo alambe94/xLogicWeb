@@ -29,6 +29,8 @@ Run becomes available when the selected board and browser support the chosen pro
 | UART | Choose baud, data bits, parity and stop bits, then **Open UART port** and select the serial port belonging to the same board. Enter hex bytes to transmit. The receive display retains the latest 256 bytes. Close the port to release it or change framing. |
 | SPI | Select mode and clock, then enter hex bytes for one full-duplex CS0 transfer. The result shows the bytes received from the attached target. |
 | CAN | Select a nominal bitrate. **Internal loopback** verifies a standard classical CAN frame and its controller echo. **Send frame** and **Listen for one frame** use the external bus and require a transceiver and an active peer. On this USB profile, stop Logic capture before using CAN because channel control also claims interface zero. |
+| GPIO | Configure an output mask and its initial high bits, then write levels on those configured outputs. Both values use hex. **Stop and release outputs** returns the group to its safe state. |
+| PWM | Choose a timer, A/B outputs, period and duty. **Apply and start PWM** shows the realized frequency and duty from the timer. Applying new settings stops and restarts the timer. Stop and release when finished. |
 
 To inspect the EEPROM read on the wires, attach two Logic inputs to SDA and SCL
 on that bus and record the channel assignments. On the SK-AM64B demo fixture,
