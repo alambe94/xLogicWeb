@@ -80,9 +80,10 @@ The recorder writes raw samples directly to the SSD. After recording, the viewer
 reads up to 65,536 samples at a time as you move the slider. Four-channel captures
 store two samples per byte. During native USB capture, the main Logic waveform
 refreshes about four times a second while the tab is visible. The time ruler
-follows the recording, with the latest samples to the left of the central
-**Live** line and empty space ahead. A busy channel sets the initial zoom so
-individual pulses are visible. You can then adjust the scale while recording.
+follows the recording. Samples fill the plot from the left. Once the visible
+time span is full, the newest samples arrive at the right edge and older data
+scrolls left. A busy channel sets the initial zoom so individual pulses are
+visible. You can adjust the scale while recording and keep it when you stop.
 A short pulse between preview windows can still be inspected in the saved trace.
 Press **Stop** to inspect the recording, select an **Edge channel**, and use
 **Previous edge** or **Next edge** to highlight a transition at the current zoom.
