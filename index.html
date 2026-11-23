@@ -101,7 +101,7 @@
       </button>
       <a id="esk-logic-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newLogic" hidden>Open Logic in a new tab</a>
       <button id="esk-bridge" class="pill esk-instrument" type="button">
-        <strong>xBridgeWeb</strong><span data-i18n="bridge.description">Bridge · I²C board identification</span>
+        <strong>xBridgeWeb</strong><span data-i18n="bridge.description">I²C, UART, SPI and CAN transactions</span>
       </button>
       <a id="esk-bridge-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newBridge" hidden>Open Bridge in a new tab</a>
     </div>
@@ -111,10 +111,42 @@
       <button class="mini" id="bridge-home" type="button" data-i18n="home.button">Home</button>
       <h1 id="bridge-title" tabindex="-1">xBridgeWeb</h1>
       <section id="bridge-controls" class="esk-device">
-        <h2>I²C</h2>
-        <p data-i18n="bridge.eeprom">Board identification EEPROM · address 0x51</p>
-        <p id="bridge-usb-hint" data-i18n="bridge.usbHint">To read the board ID, connect the application USB cable to this computer and choose Connect via USB on Home. The board must have I²C enabled.</p>
-        <button class="mini" id="bridge-read" type="button" data-i18n="bridge.read" disabled>Read board ID</button>
+        <div id="bridge-protocol"></div>
+        <form id="bridge-form">
+          <fieldset data-bus="I2C">
+            <legend>I²C transaction</legend>
+            <label>7-bit address (hex) <input class="viewer-input" id="bus-address" maxlength="4" placeholder="08–77" required></label>
+            <div id="bus-operation"></div>
+            <label>Write bytes (hex) <input class="viewer-input" id="bus-write" required></label>
+            <label>Read bytes <input class="viewer-input" id="bus-count" type="number" min="1" max="1024" value="16" required></label>
+          </fieldset>
+          <fieldset data-bus="UART" hidden disabled>
+            <legend>UART serial port</legend>
+            <p>Select this board’s ESK serial port in the browser picker.</p>
+            <label>Baud <input class="viewer-input" id="bus-baud" type="number" min="9600" max="115200" value="115200" required></label>
+            <div id="bus-bits"></div>
+            <div id="bus-parity"></div>
+            <div id="bus-stop"></div>
+            <button type="button" class="mini" id="bus-port">Open UART port</button>
+            <label>Transmit bytes (hex) <input class="viewer-input" id="bus-uart-tx" maxlength="3071"></label>
+            <label>Received bytes (latest 256) <output id="bus-uart-rx"></output></label>
+          </fieldset>
+          <fieldset data-bus="SPI" hidden disabled>
+            <legend>SPI transfer · CS0</legend>
+            <div id="bus-mode"></div>
+            <label>Clock (Hz) <input class="viewer-input" id="bus-clock" type="number" min="100000" max="24000000" value="1000000" required></label>
+            <label>Transmit bytes (hex) <input class="viewer-input" id="bus-spi-tx" required></label>
+          </fieldset>
+          <fieldset data-bus="CAN" hidden disabled>
+            <legend>Classical CAN · standard ID</legend>
+            <div id="bus-can-action"></div>
+            <div id="bus-bitrate"></div>
+            <label>Identifier (hex) <input class="viewer-input" id="bus-can-id" required></label>
+            <label>Data bytes (hex) <input class="viewer-input" id="bus-can-tx" maxlength="23"></label>
+          </fieldset>
+          <button type="submit" class="mini" id="bus-run">Run transaction</button>
+        </form>
+        <p id="bridge-usb-hint" data-i18n="bridge.usbHint">Connect the application USB cable and choose Connect via USB on Home. The selected protocol must be available on the board and in this browser.</p>
         <output id="bridge-result" aria-live="polite"></output>
       </section>
     </div>

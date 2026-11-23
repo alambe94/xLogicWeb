@@ -22,7 +22,7 @@ export async function within<T>(operation: Promise<T>, ms: number): Promise<T> {
 // Chromium rejects EP0 transfers while an interface claim or release is pending.
 // Sequence those short operations per handle. Bulk sample reads stay independent.
 const controlTail = new WeakMap<USBDevice, Promise<void>>();
-function onControlPipe<T>(device: USBDevice, run: () => Promise<T>): Promise<T> {
+export function onControlPipe<T>(device: USBDevice, run: () => Promise<T>): Promise<T> {
   const result = (controlTail.get(device) ?? Promise.resolve()).then(run);
   controlTail.set(device, result.then(() => {}, () => {}));
   return result;
@@ -88,6 +88,7 @@ export class EskUsbSession {
       (opcode === 2 && status === 0 ? reply.getBigUint64(32, true) !== 0n : reply.getBigUint64(32, true) === session) &&
       (status === 0 || reply.byteLength === 48), 'Mismatched ESK control reply');
     await this.output(this.base + 3, words(this.boot, this.sequence));
+    if (status === 2) throw Error('ESK service is busy.');
     requireField(status === 0, 'ESK rejected control request ' + opcode + ' (status ' + status + ')');
     return reply;
   }
@@ -124,6 +125,26 @@ export class EskUsbSession {
   }
 }
 
+/** Some Windows WebUSB drivers expose no interface strings. Match only known ESK compositions. */
+export function eskBusInterface(device: USBDevice, bus: 'SPI' | 'CAN'): number {
+  const interfaces = (device.configuration ?? device.configurations.find(c => c.configurationValue === 1))?.interfaces ?? [];
+  const named = interfaces.find(i => i.alternate.interfaceName === 'xESK x' + bus);
+  if (named) return named.interfaceNumber;
+  const classes = interfaces.map(i => i.alternate.interfaceClass).join(',');
+  const spi = new Map([
+    ['255,255,255,255,255,255', 3],
+    ['255,255,255,2,10,255,255,255', 5],
+    ['255,255,255,2,10,255,255,255,255,255', 7],
+  ]).get(classes);
+  requireField(spi !== undefined, 'Unknown ESK USB composition for ' + bus + '.');
+  const number = spi + (bus === 'CAN' ? 1 : 0);
+  const port = interfaces[number];
+  requireField(port?.interfaceNumber === number && !port.alternate.interfaceName &&
+    ['in', 'out'].every(dir => port.alternate.endpoints.some(e => e.type === 'bulk' && e.direction === dir)),
+    bus + ' USB interface unavailable.');
+  return number;
+}
+
 // Share the handle while keeping interface claims and firmware sessions independent.
 interface DeviceUse {
   ready: Promise<void>;
@@ -131,7 +152,7 @@ interface DeviceUse {
   closing?: Promise<void>;
 }
 const active = new WeakMap<USBDevice, DeviceUse>();
-export async function withUsbInterface<T>(device: USBDevice, session: EskUsbSession,
+export async function withUsbInterface<T>(device: USBDevice, session: Pick<EskUsbSession, 'intf' | 'close'>,
     run: (intf: USBAlternateInterface) => Promise<T>): Promise<T> {
   let use = active.get(device);
   while (use?.closing) {

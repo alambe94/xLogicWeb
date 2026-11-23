@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { announceBoardView, fromBoard, needsBoardConsent, readBoardStatus } from '../device/eskPairedBoard.js';
 import { requestEskDevice, selectedEskUsbDevice, selectEskUsbDevice } from '../device/eskCapture.js';
-import { readUsbBoardStatus, readUsbBoardId } from '../device/eskUsbHome.js';
+import { initBridgeTools } from './eskBridge.js';
+import { readUsbBoardStatus } from '../device/eskUsbHome.js';
 import type { BoardStatus } from '../device/eskPairedBoard.js';
 import { t } from './i18n.js';
 import { nativeRecorderAvailable } from './eskNativeRecorder.js';
@@ -70,8 +71,7 @@ export function initEskHome(): void {
 
   const bridge = document.querySelector<HTMLElement>('#esk-bridge-page')!;
   const openBridge = document.querySelector<HTMLButtonElement>('#esk-bridge')!;
-  const boardId = document.querySelector<HTMLButtonElement>('#bridge-read')!;
-  const usbHint = document.getElementById('bridge-usb-hint')!;
+  const setBridge = initBridgeTools();
   const result = document.querySelector<HTMLOutputElement>('#bridge-result')!;
   const dock = document.querySelector<HTMLElement>('#bridge-dock')!;
   const toggle = document.querySelector<HTMLButtonElement>('#btn-bridge-panel')!;
@@ -83,11 +83,6 @@ export function initEskHome(): void {
   };
   let usbDevice: USBDevice | undefined, usbStatus: BoardStatus | undefined;
   let generation = 0, disconnected = false;
-
-  function enableBoardId(available: boolean) {
-    boardId.disabled = !available;
-    usbHint.hidden = available;
-  }
 
   async function updateStatus(userRequested = false): Promise<void> {
     if (refresh.disabled) return;
@@ -109,7 +104,6 @@ export function initEskHome(): void {
     connection.textContent = t('esk.reading');
     const token = ++generation;
     openLogic.disabled = !lan;
-    enableBoardId(false);
     try {
       if (!lan && !usbDevice) {
         const device = await requestEskDevice();
@@ -124,7 +118,7 @@ export function initEskHome(): void {
         usbStatus = board;
         selectEskUsbDevice(usbDevice);
         change.hidden = false;
-        enableBoardId(board.features.some(f => f.name === 'I2C' && f.instance === 0 && f.enabled));
+        setBridge(usbDevice, board);
       }
       refresh.dataset.i18n = 'capturePanel.tempRate';
       refresh.textContent = t('capturePanel.tempRate');
@@ -143,6 +137,7 @@ export function initEskHome(): void {
       if (token !== generation) return;
       if (!lan) {
         usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
+        setBridge();
         result.value = '';
         refresh.dataset.i18n = 'home.connectUsb'; refresh.textContent = t('home.connectUsb');
       }
@@ -153,25 +148,13 @@ export function initEskHome(): void {
     }
   }
 
-  boardId.onclick = async () => {
-    if (!usbDevice || !usbStatus || boardId.disabled) return;
-    const token = generation;
-    boardId.disabled = true;
-    result.value = t('esk.reading');
-    try {
-      const value = await readUsbBoardId(usbDevice, usbStatus);
-      if (token === generation) result.value = value;
-    } catch (error) {
-      if (token === generation) result.value = error instanceof Error ? error.message : String(error);
-    } finally { if (token === generation) boardId.disabled = false; }
-  };
   navigator.usb?.addEventListener('disconnect', event => {
     if (event.device !== usbDevice) return;
     generation++;
     change.hidden = true;
     disconnected = true;
     usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
-    enableBoardId(false);
+    setBridge();
     result.value = t('home.usbGone');
     identity.hidden = features.hidden = details.hidden = true;
     refresh.disabled = openLogic.disabled = false;
@@ -218,6 +201,7 @@ export function initEskHome(): void {
     try {
       const device = await requestEskDevice(true);
       if (device !== usbDevice) {
+        setBridge();
         usbStatus = undefined;
         result.value = '';
       }

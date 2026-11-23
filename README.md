@@ -10,20 +10,34 @@ compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWe
 ## USB Home and Bridge
 
 You can inspect [xBridgeWeb](https://alambe94.github.io/xLogicWeb/?view=bridge)
-from any laptop that can open the viewer. The I²C board-ID action becomes
-available after you connect a compatible board over USB on Home in that tab.
+from any laptop that can open the viewer. Choose a protocol and prepare its command before connecting. To run it,
+connect a compatible board over USB on Home in that tab.
 
 On the hosted xEskWeb Home page, choose **Connect via USB** and select the ESK
 application device. Home displays its identity, boot ID, firmware and advertised
 features. Open **xLogicWeb** for capture or **xBridgeWeb** for active bus tools.
 Both use the device selected on Home during this tab session. In Logic, select
-**xBridgeWeb** in the toolbar to keep the I²C controls and waveform visible together.
+**xBridgeWeb** in the toolbar to keep the bus controls and waveform visible together.
 You can also choose **Open Logic in a new tab** or **Open Bridge in a new tab** on Home.
 Each tab uses its own USB connection. Choose the same board in both tabs.
 
-In xBridgeWeb, **I²C → Read board ID** reads the TI identification record from
-the SK-AM64B EEPROM at address 0x51 and displays its board name and revision.
-The transfer sets the EEPROM word address to zero and reads 128 bytes.
+Run becomes available when the selected board and browser support the chosen protocol.
+
+| Tool | Operation |
+| --- | --- |
+| I²C | Enter a 7-bit address in hex. **Write then read** sends a repeated START between the write and read. For a short board-ID check, use address `51`, write `00 00`, and read four bytes. The expected reply is `AA 55 33 EE`. |
+| UART | Choose baud, data bits, parity and stop bits, then **Open UART port** and select the serial port belonging to the same board. Enter hex bytes to transmit. The receive display retains the latest 256 bytes. Close the port to release it or change framing. |
+| SPI | Select mode and clock, then enter hex bytes for one full-duplex CS0 transfer. The result shows the bytes received from the attached target. |
+| CAN | Select a nominal bitrate. **Internal loopback** verifies a standard classical CAN frame and its controller echo. **Send frame** and **Listen for one frame** use the external bus and require a transceiver and an active peer. On this USB profile, stop Logic capture before using CAN because channel control also claims interface zero. |
+
+To inspect the EEPROM read on the wires, attach two Logic inputs to SDA and SCL
+on that bus and record the channel assignments. On the SK-AM64B demo fixture,
+D0 is SCL and D1 is SDA. In Logic, choose USB, 41.67 MS/s, 65,536 samples,
+and a falling edge on D1. Click Capture. When Logic is waiting for the edge,
+run the four-byte combined read in the Bridge tab. Inspect the finite capture
+with the I²C decoder. Select the assigned channels and check the address,
+repeated START and four returned bytes. The seven-bit address is `51` in both
+directions. The controller ends the last read byte with a NACK and STOP.
 
 ## ESK xLOGIC over USB
 

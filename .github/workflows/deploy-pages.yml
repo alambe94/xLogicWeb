@@ -30,7 +30,8 @@ jobs:
           git -C "$RUNNER_TEMP/decoders" fetch --depth 1 https://github.com/sigrokproject/libsigrokdecode 71f451443029322d57376214c330b518efd84f88
           git -C "$RUNNER_TEMP/decoders" checkout --detach FETCH_HEAD
           node src/decode/tools/vendor-assets.mjs "$RUNNER_TEMP/decoders/decoders"
-      - run: npm run check
+      - name: Check types and ESK device self-tests
+        run: npm test -- --filter src/device/esk
       - name: Test native recording archive
         run: python3 -m unittest discover -s dev -p test_esk_native.py
       - name: Build for the repository's Pages path
