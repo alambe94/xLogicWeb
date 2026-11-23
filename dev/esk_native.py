@@ -20,6 +20,18 @@ WINDOW = 65536
 GIB = 1024 ** 3
 
 
+def stop_note(row, receipt):
+    if receipt.get("finish_verified") is True:
+        return "Hardware end of stream verified."
+    if row["samples"] == row["limit"]:
+        message = "Recording limit reached."
+    else:
+        message = "Recording stopped."
+    if receipt.get("cleanup_reads", {}).get("failed_reads"):
+        message += " A USB read failed during Stop."
+    return message + " The hardware tail is unverified."
+
+
 class Recordings:
     def __init__(self, directory, executable, serial, budget):
         self.directory = directory
@@ -103,8 +115,7 @@ class Recordings:
                 raise ValueError("USB cleanup is incomplete")
             row["samples"] = min(row["limit"], size * factor)
             row["state"] = "saved"
-            if cleanup["failed_reads"]:
-                row["note"] = "A USB read failed during Stop. The final tail is unverified."
+            row["note"] = stop_note(row, receipt)
         except (OSError, KeyError, ValueError) as exc:
             row.update(state="failed", note=f"{exc}. See {key}.log and the capture receipt.")
         self.save(row)
@@ -113,6 +124,14 @@ class Recordings:
     def status(self, key):
         self.refresh()
         row = self.metadata(key)
+        if row["state"] == "saved" and not row["note"]:
+            # Earlier helpers left the note empty when all Windows reads retired cleanly.
+            try:
+                receipt = json.loads(self.path(key, ".json").read_text())
+            except (OSError, ValueError):
+                receipt = {}
+            row["note"] = stop_note(row, receipt)
+            self.save(row)
         if row["state"] == "recording":
             if key != self.active:
                 row.update(state="failed", note="The helper ended before confirming this recording.")
