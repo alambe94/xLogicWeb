@@ -7,6 +7,8 @@ import { openEskReplay } from './srLoad.js';
 import { selectControl } from './select.js';
 import type { ConfirmDialog } from './confirmDialog.js';
 import { t } from './i18n.js';
+import { displayNativeRecording, listNativeRecordings, nativeRecorderAvailable, nativeRequest, type NativeRecord } from './nativeArchive.js';
+import { formatBytes } from './format.js';
 
 import type { LiveReply, LiveRequest } from '../device/eskRecordWorker.js';
 
@@ -20,7 +22,7 @@ export interface SavedRecording {
   edge?(position: number, channel: number, direction: 'previous' | 'next'): Promise<{match: number | null; resume: number | null}>;
   dispose?(): void;
 }
-type Display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: SavedRecording) => void;
+export type RecordingDisplay = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: SavedRecording) => void;
 
 async function recordingRoot(): Promise<FileSystemDirectoryHandle> {
   return (await navigator.storage.getDirectory()).getDirectoryHandle('esk-recordings', { create: true });
@@ -48,7 +50,7 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean }
-export function showEskRecorder(live: boolean, display: Display, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions): void {
+export function showEskRecorder(live: boolean, display: RecordingDisplay, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
   if (dialog.open) return;
   const get = <T extends HTMLElement>(id: string) => dialog.querySelector<T>('#rec-' + id)!;
@@ -62,29 +64,69 @@ export function showEskRecorder(live: boolean, display: Display, confirmation: C
   const heading = get<HTMLElement>('heading');
   heading.dataset.i18n = live ? 'rec.live' : 'rec.title';
   heading.textContent = live ? t('rec.live') : t('rec.title');
-  source.parentElement!.hidden = live;
+  const importer = get<HTMLDetailsElement>('import');
+  importer.hidden = live;
+  importer.open = false;
+  get('library').hidden = live;
+  first.value = '';
+  const nativeRows = new Map<string, NativeRecord>();
+  const diskSpace = get('storage');
+  diskSpace.textContent = '';
+  const warnings = get<HTMLOutputElement>('warnings');
+  warnings.value = '';
+  let canImport = false;
   get<HTMLElement>('rate').hidden = !live || !!options;
   limit.parentElement!.hidden = !!options;
   record.hidden = !!options;
   let busy = false, abort: AbortController | null = null, ready = false;
   function update() {
-    record.disabled = busy || !ready || (!live && !source.files?.length) || !limit.validity.valid;
+    record.disabled = busy || !ready || (!live && (!canImport || !source.files?.length)) || !limit.validity.valid;
     source.disabled = limit.disabled = first.disabled = busy || !ready;
     archive.disabled = busy || !ready || !archive.value;
+    stop.hidden = !live && !abort;
     stop.disabled = !abort || abort.signal.aborted;
     close.disabled = busy;
-    reopen.disabled = busy || !archive.value || !first.validity.valid;
+    const native = nativeRows.get(archive.value);
+    reopen.disabled = busy || !archive.value || !first.validity.valid || (!!native && native.state !== 'saved');
     remove.disabled = busy || !archive.value;
   }
   async function list(selected = archive.value) {
-    const root = await recordingRoot();
-    const names: string[] = [];
-    for await (const entry of root.values()) if (entry.kind === 'directory') names.push(entry.name);
-    names.sort().reverse();
-    archive = selectControl('rec-archive', t('rec.archive'), names.map(name => [name, name]),
-      names.includes(selected) ? selected : names[0] ?? '');
-    archive.addEventListener('change', () => { first.value = '0'; update(); });
+    if (live) return;
+    const choices: [string, string][] = [];
+    const errors: string[] = [];
+    nativeRows.clear();
+    if (nativeRecorderAvailable()) {
+      try {
+        for (const row of await listNativeRecordings()) {
+          if (row.state === 'recording') continue;
+          const key = 'native:' + row.id;
+          nativeRows.set(key, row);
+          choices.push([key, row.title + ' · ' + row.samples.toLocaleString() + ' samples · ' +
+            formatBytes(row.bytes ?? 0) + (row.state === 'failed' ? ' · ' + (row.note || 'Failed') : '')]);
+        }
+        const space = await (await nativeRequest('storage')).json();
+        diskSpace.textContent = (space.available / 2 ** 30).toFixed(2) + ' GiB available · ' + space.budget / 2 ** 30 + ' GiB archive limit';
+      } catch (error) { errors.push(String(error)); }
+    }
+    try {
+      if (!navigator.locks || !navigator.storage?.getDirectory) throw new Error(t('rec.unavailable'));
+      const names: string[] = [];
+      for await (const entry of (await recordingRoot()).values()) if (entry.kind === 'directory') names.push(entry.name);
+      for (const name of names.sort().reverse()) choices.push(['browser:' + name, name]);
+      canImport = true;
+    } catch (error) { canImport = false; errors.push(String(error)); }
+    warnings.value = errors.join(' · ');
+    archive = selectControl('rec-archive', t('rec.archive'), choices,
+      choices.some(([key]) => key === selected) ? selected : choices[0]?.[0] ?? '');
+    function select() {
+      const row = nativeRows.get(archive.value);
+      first.value = row ? String(Math.max(0, row.samples - displaySamples)) : '0';
+      update();
+    }
+    archive.addEventListener('change', select);
     archiveHost.replaceChildren(archive.el);
+    select();
+    if (!choices.length && !errors.length) status.value = t('rec.noSaved');
   }
   async function run(action: () => Promise<void>) {
     if (busy) return;
@@ -173,7 +215,7 @@ export function showEskRecorder(live: boolean, display: Display, confirmation: C
         } finally {
           signal.removeEventListener('abort', stopWorker);
           worker.terminate();
-          await list(name);
+          await list('browser:' + name);
         }
         if (completed) dialog.close();
         return;
@@ -227,7 +269,7 @@ export function showEskRecorder(live: boolean, display: Display, confirmation: C
         await controller.close();
         if (invalidReplay) await root.removeEntry(name, { recursive: true });
         first.value = String(Math.max(0, controller.bytes - displaySamples));
-        await list(name);
+        await list('browser:' + name);
         status.value = progress(accepted, controller.bytes, controller.queuedBytes);
       }
       if (controller.lastError) throw new Error(controller.lastError + ' · ' + status.value);
@@ -243,7 +285,13 @@ export function showEskRecorder(live: boolean, display: Display, confirmation: C
   stop.onclick = () => { abort?.abort(); update(); };
   reopen.onclick = () => void run(async () => {
     if (!(await confirmReplace())) return;
-    const name = archive.value;
+    const row = nativeRows.get(archive.value);
+    if (row) {
+      await displayNativeRecording(row, display, displaySamples, first.valueAsNumber);
+      dialog.close();
+      return;
+    }
+    const name = archive.value.slice('browser:'.length);
     await withArchive(name, async () => {
       const dir = await (await recordingRoot()).getDirectoryHandle(name);
       const saved = new RecordArchive(await createOpfsRecordStorage(dir));
@@ -259,13 +307,16 @@ export function showEskRecorder(live: boolean, display: Display, confirmation: C
     });
   });
   remove.onclick = async () => {
-    const name = archive.value;
-    if (!await confirmation.ask({title: t('rec.delete'), body: t('rec.confirmDelete', { name }),
+    const row = nativeRows.get(archive.value);
+    const name = row?.title ?? archive.value.slice('browser:'.length);
+    if (!await confirmation.ask({title: t('rec.delete'), body: t(row ? 'rec.confirmNativeDelete' : 'rec.confirmDelete', { name }),
       confirm: t('rec.delete'), cancel: t('reset.cancel')}, remove)) return;
     await run(async () => {
-      await withArchive(name, async () => { await (await recordingRoot()).removeEntry(name, { recursive: true }); });
-      removed(name);
-      await list(); status.value = '';
+      if (row) await nativeRequest('delete', {id: row.id});
+      else await withArchive(name, async () => { await (await recordingRoot()).removeEntry(name, { recursive: true }); });
+      removed(row?.id ?? name);
+      status.value = '';
+      await list();
     });
   };
   source.onchange = first.oninput = limit.oninput = update;
@@ -279,7 +330,6 @@ export function showEskRecorder(live: boolean, display: Display, confirmation: C
     return;
   }
   void run(async () => {
-    if (!window.isSecureContext || !navigator.storage?.getDirectory || !navigator.locks) throw new Error(t('rec.unavailable'));
     await list(); ready = true;
   });
 }

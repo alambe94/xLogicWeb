@@ -149,7 +149,8 @@ import {
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
 import { showEskRecorder } from './eskRecorder.js';
-import { nativeRecorderAvailable, showNativeRecorder } from './eskNativeRecorder.js';
+import { nativeRecorderAvailable } from './nativeArchive.js';
+import { showNativeRecorder } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { boardCaptureMaximum, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
@@ -7767,7 +7768,7 @@ export class App {
       return;
     }
     if (n > ESK_SAMPLES) {
-      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan}, 'capture');
+      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan});
       return;
     }
     this.eskCapturePending = true;
@@ -7831,8 +7832,7 @@ export class App {
     }
   }
 
-  private openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions,
-      nativeAction: 'capture' | 'browse' = 'browse'): void {
+  private openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions): void {
     if (this.eskCapturePending || this.running || this.stopping) return;
     const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false) => {
       this.endPendingRepeatSession();
@@ -7851,29 +7851,17 @@ export class App {
         name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true));
     };
     if (live && options && !options.ethernet && nativeRecorderAvailable()) {
-      showNativeRecorder(nativeAction, options, this.confirmDialog, () => this.confirmDiscardCapture(), display, key => this.recordingTimeline.clear(key));
+      showNativeRecorder(options, () => this.confirmDiscardCapture(), display);
     } else {
       showEskRecorder(live, display, this.confirmDialog, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
     }
   }
 
-  /** Open a file, a finite ESK USB capture, or the bundled example. */
+  /** Browse saved captures without starting acquisition. */
   private openItems(): SettingsMenuItem[] {
     return [
       { label: t('open.file'), hint: t('open.fileHint'), onPick: () => void this.pickFiles() },
-      ...(nativeRecorderAvailable() ? [{label: 'Native USB recording…', onPick: () => {
-        const count = this.eskUntilStop ? Infinity : parseSampleCount(this.eskCountText);
-        if (count !== undefined) this.openEskRecorder(true, {count, rate: this.eskRate, bank: this.eskBank});
-        else this.selectPage('capture');
-      }}] : []),
-      ...(!eskLanMode() && navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
-        label: t('open.esk'), onPick: () => void this.openEskCapture('usb'),
-      }] : []),
       ...(eskLanMode() === 'paired' ? [{ label: t('open.eskStatus'), onPick: () => void showEskStatus() }] : []),
-      ...(eskLanMode() &&
-          !this.running && !this.stopping && !this.eskCapturePending ? [{
-        label: t('open.eskLan'), onPick: () => void this.openEskCapture('ethernet'),
-      }] : []),
       ...(!this.running && !this.stopping && !this.eskCapturePending ? [
         { label: t('rec.title'), onPick: () => this.openEskRecorder(false) },
       ] : []),
