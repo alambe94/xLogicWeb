@@ -87,4 +87,3 @@ export async function openOutputs(device: USBDevice, expected: BoardStatus, bus:
   const send = await opening;
   return {send, done, close: () => { stop(); return done; }};
 }
-
