@@ -44,7 +44,8 @@ on the board, USB link and host storage. After Stop, use the slider to browse th
 For long laptop captures, launch the local copy of xEskWeb with its WinUSB recorder.
 In a prepared demo bundle, extract the folder to an SSD and double-click
 `Start xEskWeb.cmd`. Keep its console open while recording. Choose the rate and
-sample count in Logic, then **Capture → Record**. Counts above 65,536 and
+sample count in Logic, then press **Capture** once. The waveform opens when the
+requested count is reached, or when you press **Stop**. Counts above 65,536 and
 **Until stopped** use the native recorder. **Open → Native USB recording…**
 also lets you record a shorter trace or reopen a saved one after restarting.
 

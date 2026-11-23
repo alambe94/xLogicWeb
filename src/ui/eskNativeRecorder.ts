@@ -18,7 +18,7 @@ async function request(op: string, params: Record<string, unknown> = {}): Promis
   return response;
 }
 
-export function showNativeRecorder(options: EskRecordingOptions, confirmReplace: () => Promise<boolean>,
+export function showNativeRecorder(action: 'capture' | 'browse', options: EskRecordingOptions, confirmReplace: () => Promise<boolean>,
     display: (bytes: Uint8Array, rate: number, start: number, name: string, saved: SavedRecording) => void): void {
   const dialog = document.querySelector<HTMLDialogElement>('#native-recorder')!;
   if (dialog.open) return;
@@ -72,11 +72,16 @@ export function showNativeRecorder(options: EskRecordingOptions, confirmReplace:
     if (running) await follow(running);
     else if (rows[0]?.state === 'failed') status.value = rows[0].note;
   }
-  record.onclick = () => void guarded(async () => {
-    if (!await confirmReplace()) return;
+  async function start() {
+    if (!await confirmReplace()) {
+      if (action === 'capture') dialog.close();
+      return;
+    }
+    status.value = 'Starting USB recording…';
     await follow(await (await request('start', {rate: options.rate, bank: options.bank,
       samples: Number.isFinite(options.count) ? options.count : null})).json());
-  });
+  }
+  record.onclick = () => void guarded(start);
   stop.onclick = async () => {
     stop.disabled = true;
     try { await request('stop', {id: active}); }
@@ -87,7 +92,8 @@ export function showNativeRecorder(options: EskRecordingOptions, confirmReplace:
   });
   dialog.oncancel = e => { if (busy) e.preventDefault(); };
   close.onclick = () => dialog.close();
+  record.hidden = find('library').hidden = action === 'capture';
   status.value = '';
   dialog.showModal();
-  void guarded(refresh);
+  void guarded(action === 'capture' ? start : refresh);
 }

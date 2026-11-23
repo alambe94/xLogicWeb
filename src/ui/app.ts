@@ -7777,7 +7777,7 @@ export class App {
       return;
     }
     if (n > ESK_SAMPLES) {
-      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan});
+      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan}, 'capture');
       return;
     }
     this.eskCapturePending = true;
@@ -7841,7 +7841,8 @@ export class App {
     }
   }
 
-  private openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions): void {
+  private openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions,
+      nativeAction: 'capture' | 'browse' = 'browse'): void {
     if (this.eskCapturePending || this.running || this.stopping) return;
     const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false) => {
       this.endPendingRepeatSession();
@@ -7859,7 +7860,7 @@ export class App {
       if (saved) this.recordingTimeline.open(saved, rate, start, (data, offset) => showWindow(data, rate, offset, name, true));
     };
     if (live && options && !options.ethernet && nativeRecorderAvailable()) {
-      showNativeRecorder(options, () => this.confirmDiscardCapture(), display);
+      showNativeRecorder(nativeAction, options, () => this.confirmDiscardCapture(), display);
     } else {
       showEskRecorder(live, display, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
     }
