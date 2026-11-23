@@ -6943,6 +6943,7 @@ export class App {
       rateLabel.textContent = (lan ? 'Ethernet' : 'USB') + ' · ' + t('capturePanel.sampleRate') + ' ';
       const rates = document.createElement('select');
       rates.id = 'esk-finite-rate';
+      rates.className = 'viewer-input';
       for (const hz of lan ? [ESK_RATE] : [ESK_PACKED_RATE, ...ESK_FINITE_RATES]) {
         rates.add(new Option(formatRate(hz), String(hz), false, hz === rate));
       }
@@ -6963,6 +6964,7 @@ export class App {
       count.spellcheck = false;
       const maximum = lan ? max ?? ESK_SAMPLES : Number.MAX_SAFE_INTEGER;
       count.id = 'esk-sample-count';
+      count.className = 'viewer-input';
       count.required = true;
       count.value = lan ? (max === undefined ? String(ESK_SAMPLES) : this.eskLanCount) : this.eskCountText;
       count.disabled = this.eskCapturePending || (lan ? !max : this.eskUntilStop);
@@ -7017,6 +7019,7 @@ export class App {
         const edgeLabel = document.createElement('label');
         edgeLabel.textContent = t('overview.originTrigger');
         edge.id = 'esk-trigger-edge';
+        edge.className = 'viewer-input';
         for (const kind of ['none', 'rising', 'falling'] as const) {
           edge.add(new Option(t(kind === 'none' ? 'trigger.off' : kind === 'rising' ? 'trigger.rising' : 'trigger.falling'), kind));
         }
@@ -7027,6 +7030,7 @@ export class App {
         edgeLabel.append(edge);
         channelLabel.textContent = t('esk.triggerChannel');
         channel.id = 'esk-trigger-channel';
+        channel.className = 'viewer-input';
         const packed = rate === ESK_PACKED_RATE;
         const base = packed && this.eskBank === 'upper' ? 4 : 0;
         for (let i = base; i < base + (packed ? 4 : ESK_CHANNELS); i++) channel.add(new Option('D' + i, String(i), false, this.eskTriggerChannel === i));
@@ -7034,6 +7038,7 @@ export class App {
         channelLabel.append(channel);
         const position = document.createElement('select');
         position.id = 'esk-pre-trigger';
+        position.className = 'viewer-input';
         position.disabled = this.eskCapturePending;
         for (const percent of [0, 25, 50, 75]) position.add(new Option(percent + '%', String(percent), false, percent === this.eskPrePercent));
         position.onchange = () => { this.eskPrePercent = Number(position.value); };
