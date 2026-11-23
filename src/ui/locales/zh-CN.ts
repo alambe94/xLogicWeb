@@ -101,7 +101,7 @@ export const zhCN: Messages = {
   'rec.duration': '录制时长 · {duration}',
   'rec.range': '采样点 {start}–{end}，共 {total} 个',
   'rec.empty': '此记录没有已保存的采样点。',
-  'rec.label': '{name} · 采样点 {start}–{end}',
+  'rec.label': '{name} · 采样点 {start}–{end}{note}',
   'home.button': '主页',
   'home.instruments': '仪器',
   'home.details': '设备详情',
