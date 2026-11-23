@@ -5,7 +5,7 @@ import { initBridgeTools } from './eskBridge.js';
 import { readUsbBoardStatus } from '../device/eskUsbHome.js';
 import type { BoardStatus } from '../device/eskPairedBoard.js';
 import { t } from './i18n.js';
-import { nativeRecorderAvailable } from './eskNativeRecorder.js';
+import { nativeRecorderAvailable } from './nativeArchive.js';
 
 function showRows(body: HTMLTableSectionElement, rows: string[][]): void {
   body.replaceChildren();

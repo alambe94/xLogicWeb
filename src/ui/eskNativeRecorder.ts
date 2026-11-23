@@ -1,26 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { ESK_PACKED_RATE, selectedEskUsbDevice } from '../device/eskCapture.js';
-import { selectControl } from './select.js';
-import type { ConfirmDialog } from './confirmDialog.js';
-import { t } from './i18n.js';
-import { formatBytes } from './format.js';
-import { displaySamples, type EskRecordingOptions, type SavedRecording } from './eskRecorder.js';
-
-interface NativeRecord {
-  id: string; rate: number; bank: 'lower' | 'upper'; samples: number; bytes?: number;
-  state: 'recording' | 'saved' | 'failed'; title: string; note: string;
-}
-
-export function nativeRecorderAvailable(): boolean {
-  return location.hostname === '127.0.0.1' && !!document.querySelector('meta[name="esk-native-recorder"]');
-}
-
-async function request(op: string, params: Record<string, unknown> = {}): Promise<Response> {
-  const response = await fetch('/api/native', {method: 'POST', cache: 'no-store',
-    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({op, ...params})});
-  if (!response.ok) throw new Error(await response.text());
-  return response;
-}
+import { displaySamples, type EskRecordingOptions, type RecordingDisplay } from './eskRecorder.js';
+import { displayNativeRecording, listNativeRecordings, nativeRequest as request, type NativeRecord } from './nativeArchive.js';
 
 function drawPreview(canvas: HTMLCanvasElement, data: Uint8Array, row: NativeRecord) {
   const ctx = canvas.getContext('2d');
@@ -56,29 +37,20 @@ function drawPreview(canvas: HTMLCanvasElement, data: Uint8Array, row: NativeRec
   ctx.stroke();
 }
 
-export function showNativeRecorder(action: 'capture' | 'browse', options: EskRecordingOptions, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>,
-    display: (bytes: Uint8Array, rate: number, start: number, name: string, saved: SavedRecording) => void,
-    removed: (key: string) => void): void {
+export function showNativeRecorder(options: EskRecordingOptions, confirmReplace: () => Promise<boolean>, display: RecordingDisplay): void {
   const dialog = document.querySelector<HTMLDialogElement>('#native-recorder')!;
   if (dialog.open) return;
   const find = <T extends HTMLElement>(name: string) => dialog.querySelector<T>('#native-' + name)!;
-  const record = find<HTMLButtonElement>('record'), stop = find<HTMLButtonElement>('stop');
-  const reopen = find<HTMLButtonElement>('reopen'), close = find<HTMLButtonElement>('close');
-  const archiveHost = find('archive'), status = find<HTMLOutputElement>('status');
-  let recordings: NativeRecord[] = [];
-  let list = selectControl('native-archive', t('rec.archive'), [], '');
-  archiveHost.replaceChildren(list.el);
-  const erase = find<HTMLButtonElement>('delete'), preview = find('preview');
+  const stop = find<HTMLButtonElement>('stop'), close = find<HTMLButtonElement>('close');
+  const status = find<HTMLOutputElement>('status'), preview = find('preview');
   preview.hidden = true;
   find('profile').textContent = (options.rate / 1e6).toFixed(2) + ' MS/s · ' +
     (options.rate === ESK_PACKED_RATE ? (options.bank === 'upper' ? 'D4–D7' : 'D0–D3') : 'D0–D7') + ' · ' +
     (Number.isFinite(options.count) ? options.count.toLocaleString() + ' samples' : 'Until stopped');
   let active = '', busy = false;
   function controls() {
-    record.disabled = close.disabled = busy;
+    close.disabled = busy;
     stop.disabled = !active;
-    erase.disabled = list.disabled = busy || !list.value;
-    reopen.disabled = list.disabled || recordings.find(r => r.id === list.value)?.state !== 'saved';
   }
   async function guarded(fn: () => Promise<void>) {
     if (busy) return;
@@ -86,20 +58,6 @@ export function showNativeRecorder(action: 'capture' | 'browse', options: EskRec
     try { await fn(); }
     catch (e) { status.value = e instanceof Error ? e.message : String(e); }
     finally { busy = false; active = ''; controls(); }
-  }
-  async function show(row: NativeRecord) {
-    if (row.state !== 'saved') throw new Error(row.note || 'Recording is unavailable');
-    const saved: SavedRecording = {key: row.id, samples: row.samples, summary: row.note,
-      read: async (start, end) => {
-        const bytes = new Uint8Array(await (await request('window', {id: row.id, start, end})).arrayBuffer());
-        if (bytes.length !== end - start) throw new Error('Incomplete native recording window');
-        return bytes;
-      }, edge: async (position, channel, direction) =>
-        (await request('edge', {id: row.id, position, channel, direction})).json()};
-    const start = Math.max(0, row.samples - displaySamples);
-    const title = row.rate === ESK_PACKED_RATE ? 'xLOGIC USB ' + (row.bank === 'upper' ? 'D4–D7' : 'D0–D3') : 'xLOGIC USB';
-    display(await saved.read(start, row.samples), row.rate, start, title, saved);
-    dialog.close();
   }
   async function follow(row: NativeRecord) {
     active = row.id; controls();
@@ -120,60 +78,27 @@ export function showNativeRecorder(action: 'capture' | 'browse', options: EskRec
       await new Promise(resolve => setTimeout(resolve, 250));
       row = await (await request('status', {id: row.id})).json();
     }
-    await show(row);
-  }
-  async function refresh() {
-    const rows: NativeRecord[] = await (await request('list')).json();
-    const space = await (await request('storage')).json();
-    find('storage').textContent = (space.available / 2 ** 30).toFixed(2) + ' GiB available · ' +
-      (space.budget / 2 ** 30) + ' GiB archive limit';
-    recordings = rows.filter(r => r.state !== 'recording');
-    list = selectControl('native-archive', t('rec.archive'), recordings.map(r => [r.id,
-      r.title + ' · ' + r.samples.toLocaleString() + ' samples · ' + formatBytes(r.bytes ?? 0) +
-      (r.state === 'failed' ? ' · Failed' : '')]), recordings[0]?.id ?? '');
-    list.addEventListener('change', controls);
-    archiveHost.replaceChildren(list.el);
-    controls();
-    const running = rows.find(r => r.state === 'recording');
-    if (running) await follow(running);
-    else if (rows[0]?.state === 'failed') status.value = rows[0].note;
+    await displayNativeRecording(row, display, displaySamples);
+    dialog.close();
   }
   async function start() {
-    if (!await confirmReplace()) {
-      if (action === 'capture') dialog.close();
-      return;
-    }
+    if (!await confirmReplace()) { dialog.close(); return; }
+    const running = (await listNativeRecordings()).find(row => row.state === 'recording');
+    if (running) { await follow(running); return; }
     status.value = 'Starting USB recording…';
     const selected = selectedEskUsbDevice();
     if (selected && !selected.serialNumber) throw new Error('The selected USB board has no serial number for native recording');
     await follow(await (await request('start', {rate: options.rate, bank: options.bank,
       samples: Number.isFinite(options.count) ? options.count : null, serial: selected?.serialNumber})).json());
   }
-  record.onclick = () => void guarded(start);
-  erase.onclick = async () => {
-    const key = list.value;
-    const row = recordings.find(r => r.id === key);
-    if (!row || !await confirmation.ask({title: t('rec.delete'), body: t('rec.confirmNativeDelete', {name: row.title}),
-      confirm: t('rec.delete'), cancel: t('reset.cancel')}, erase)) return;
-    await guarded(async () => {
-      await request('delete', {id: key});
-      removed(key);
-      status.value = 'Recording deleted.';
-      await refresh();
-    });
-  };
   stop.onclick = async () => {
     stop.disabled = true;
     try { await request('stop', {id: active}); }
     catch (e) { status.value = String(e); controls(); }
   };
-  reopen.onclick = () => void guarded(async () => {
-    if (await confirmReplace()) await show(await (await request('status', {id: list.value})).json());
-  });
   dialog.oncancel = e => { if (busy) e.preventDefault(); };
   close.onclick = () => dialog.close();
-  record.hidden = find('library').hidden = action === 'capture';
   status.value = '';
   dialog.showModal();
-  void guarded(action === 'capture' ? start : refresh);
+  void guarded(start);
 }
