@@ -501,7 +501,8 @@ export class App {
     key: string; store: SampleStore; job: CaptureRangeJob; sources: CaptureJobSource[];
   } | null = null;
   private captureSessionId = 0;
-  private recordingTimeline = new RecordingTimeline();
+  private recordingTimeline = new RecordingTimeline(() => { this.dirty = true; });
+  private nativePreviewStart: number | null = null;
   private eskRate = ESK_RATE;
   private eskBank: EskBank = 'lower';
   private eskCountText = String(ESK_SAMPLES);
@@ -4481,6 +4482,13 @@ export class App {
     this.releaseRepeatHold();
     this.applySessionView();
     this.applyTriggerViewAnchor(rescaled);
+    if (this.nativePreviewStart !== null) {
+      // The preview store ends at the last confirmed sample. The renderers leave
+      // the portion of this viewport beyond that boundary empty.
+      const end = this.captureStore.length;
+      const half = this.stack.view.span / 2;
+      this.stack.restoreViewport(end - half, end + half);
+    }
     // The policy is resolved: only a Fixed Repeat viewport needs the previous wave as a
     // second layer. Doing this after the resolve keeps FollowLive off the composite.
     this.updateRepeatDisplay();
@@ -4581,6 +4589,17 @@ export class App {
       const liveAt = this.repeatShowingFront ? null : this.captureStore.length;
       if (this.running && liveAt !== null && liveAt > 0) {
         this.overlay.drawLiveEdge(this.toPx(liveAt));
+      }
+      if (this.nativePreviewStart !== null) {
+        this.overlay.drawRecordingGuide(this.toPx(this.captureStore.length), 'Live');
+      } else if (this.recordingTimeline.edge) {
+        const { sample, channel, bit } = this.recordingTimeline.edge;
+        const local = sample - this.recordingTimeline.windowStart;
+        if (local >= 0 && local < this.captureStore.length) {
+          const row = boxes.find(box => box.spec.kind === 'channel' && box.spec.channel === bit);
+          const label = 'D' + channel + (this.captureStore.sampleAt(bit, local) ? ' ↑' : ' ↓');
+          this.overlay.drawRecordingGuide(this.toPx(local), label, row && row.top + row.band / 2);
+        }
       }
       for (const cursor of this.cursors) cursor.marker.draw(this.overlay, (sample) => this.toPx(sample));
       if (this.hover) this.overlay.drawHover(this.hover);
@@ -6072,7 +6091,7 @@ export class App {
 
   /** The displayed store's T: the current wave's trigger, or the held old wave's T. */
   private displayOriginSample(): number {
-    return this.displayTriggerSample() ?? 0;
+    return this.displayTriggerSample() ?? -(this.nativePreviewStart ?? this.recordingTimeline.windowStart);
   }
 
   /**
@@ -7847,6 +7866,7 @@ export class App {
       const packed = rate === ESK_PACKED_RATE && (name === 'xLOGIC USB D4–D7' || name === 'xLOGIC USB D0–D3');
       const store = createSampleStore(packed ? 4 : 8, rate);
       store.append(bytes);
+      this.nativePreviewStart = preview ? start : null;
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };
       if (preview && previewShown) {
         this.waveStore = store;
@@ -7855,6 +7875,16 @@ export class App {
       } else {
         this.adoptCapture(store, packed && name.endsWith('D4–D7') ? ['D4', 'D5', 'D6', 'D7'] : [],
           { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording || previewShown, !packed, preview);
+        if (preview) {
+          // Fit about sixteen transitions on the captured half of a busy trace.
+          // Choose once. Later windows keep the user's time scale.
+          const tail = Math.min(store.length, 2048);
+          let edges = 0;
+          for (const channel of this.channels) {
+            if (channel.enabled) edges = Math.max(edges, store.edges(channel.index, store.length - tail, store.length).length);
+          }
+          if (edges >= 16) this.stack.setViewport(0, Math.ceil(32 * tail / edges));
+        }
       }
       previewShown = preview;
       this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
@@ -7884,6 +7914,8 @@ export class App {
         }
       } catch (error) { this.fail('error.eskUsb', error); }
       finally {
+        this.nativePreviewStart = null;
+        this.dirty = true;
         this.eskCapturePending = false;
         this.renderToolbarState();
         this.renderSidebarContent();

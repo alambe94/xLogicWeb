@@ -11,11 +11,18 @@ export class RecordingTimeline {
   private readonly duration = document.querySelector<HTMLOutputElement>('#rec-duration')!;
   private readonly error = document.querySelector<HTMLElement>('#rec-seek-error')!;
   private archive: SavedRecording | undefined;
+  windowStart = 0;
+  edge: { sample: number; channel: number; bit: number } | null = null;
+
+  constructor(private readonly redraw: () => void) {}
 
   clear(key?: string): void {
     if (key !== undefined && this.archive?.key !== key) return;
     this.archive?.dispose?.();
     this.archive = undefined;
+    this.windowStart = 0;
+    this.edge = null;
+    this.redraw();
     this.form.hidden = true;
     this.form.onsubmit = this.slider.oninput = null;
   }
@@ -24,6 +31,7 @@ export class RecordingTimeline {
       display: (bytes: Uint8Array, start: number) => void, viewport: () => {start: number; end: number},
       centerSample: (sample: number) => void): void {
     this.archive = archive;
+    this.windowStart = first;
     this.form.hidden = false;
     const last = Math.max(0, archive.samples - displaySamples);
     let displayed = first, requested = first, reading: Promise<void> | undefined;
@@ -35,10 +43,12 @@ export class RecordingTimeline {
     const cancel = document.querySelector<HTMLButtonElement>('#rec-edge-cancel')!;
     const result = document.querySelector<HTMLOutputElement>('#rec-edge-result')!;
     let generation = 0, match: number | null = null;
-    function resetSearch() {
+    const resetSearch = () => {
       generation++; match = null; result.value = ''; cancel.hidden = true;
       prev.disabled = next.disabled = false;
-    }
+      this.edge = null;
+      this.redraw();
+    };
     resetSearch();
     this.slider.max = String(last);
     this.slider.disabled = last === 0;
@@ -61,6 +71,7 @@ export class RecordingTimeline {
           if (this.archive === archive && requested === start) {
             display(bytes, start);
             displayed = start;
+            this.windowStart = start;
             this.error.textContent = '';
           }
         }
@@ -113,6 +124,7 @@ export class RecordingTimeline {
               await seek(found - Math.floor(displaySamples / 2));
             if (generation === token && this.archive === archive && found >= displayed && found < displayed + displaySamples) {
               match = found;
+              this.edge = { sample: found, channel: selected, bit: selected - firstChannel };
               centerSample(found - displayed);
               result.value = 'D' + selected + ' edge at sample ' + found.toLocaleString();
             }
