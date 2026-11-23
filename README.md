@@ -9,19 +9,19 @@ compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWe
 
 ## USB Home and Bridge
 
+You can inspect [xBridgeWeb](https://alambe94.github.io/xLogicWeb/?view=bridge)
+from any laptop that can open the viewer. Choose a protocol and prepare its command before connecting. To run it,
+connect a compatible board over USB on Home in that tab.
+
 On the hosted xEskWeb Home page, choose **Connect via USB** and select the ESK
 application device. Home displays its identity, boot ID, firmware and advertised
 features. Open **xLogicWeb** for capture or **xBridgeWeb** for active bus tools.
 Both use the device selected on Home during this tab session. In Logic, select
-**xBridgeWeb** in the toolbar to keep the I²C controls and waveform visible together.
+**xBridgeWeb** in the toolbar to keep the bus controls and waveform visible together.
 You can also choose **Open Logic in a new tab** or **Open Bridge in a new tab** on Home.
 Each tab uses its own USB connection. Choose the same board in both tabs.
 
-In xBridgeWeb, **I²C → Read board ID** reads the TI identification record from
-the SK-AM64B EEPROM at address 0x51 and displays its board name and revision.
-The transfer sets the EEPROM word address to zero and reads 128 bytes.
-
-The protocol selector follows the connected device's feature list.
+Run becomes available when the selected board and browser support the chosen protocol.
 
 | Tool | Operation |
 | --- | --- |
@@ -31,8 +31,10 @@ The protocol selector follows the connected device's feature list.
 | CAN | Select a nominal bitrate. **Internal loopback** verifies a standard classical CAN frame and its controller echo. **Send frame** and **Listen for one frame** use the external bus and require a transceiver and an active peer. On this USB profile, stop Logic capture before using CAN because channel control also claims interface zero. |
 
 To inspect the EEPROM read on the wires, attach two Logic inputs to SDA and SCL
-on that bus and record the channel assignments. Start USB recording in Logic,
-run the four-byte combined read in Bridge, then stop and inspect the transaction
+on that bus and record the channel assignments. On the SK-AM64B demo fixture,
+D0 is SCL and D1 is SDA. In Logic, choose USB, 41.67 MS/s, 65,536 samples,
+and a falling edge on D1. Click Capture. When Logic is waiting for the edge,
+run the four-byte combined read in the Bridge tab. Inspect the finite capture
 with the I²C decoder. Select the assigned channels and check the address,
 repeated START and four returned bytes. The seven-bit address is `51` in both
 directions. The controller ends the last read byte with a NACK and STOP.
@@ -44,6 +46,9 @@ application USB cable, open **xLogicWeb**, press **Capture**, and select the boa
 Open the **Capture** panel by clicking the capture summary above the channel labels.
 Choose a **Sample rate** and enter the number of **Samples** to retain. The default is
 65,536. After each capture you can change either field and capture again in the same tab.
+On USB and Ethernet, enter a whole number or use decimal K, M and G suffixes.
+For example, `100K` means 100,000 samples and `5G` means 5,000,000,000 samples.
+Ethernet counts must fit the capacity advertised by the board.
 The viewer remembers your USB selection until the device disconnects or you change it on Home.
 
 At 41.67, 83.33, 166.67 and 333.33 MS/s the board samples all eight inputs.
@@ -51,6 +56,49 @@ At 500 MS/s choose D0–D3 (the default) or D4–D7. For longer captures the vie
 saves samples to browser storage and displays a window of the recording. Select
 **Until stopped** for an open-ended USB recording. The sustainable rate depends
 on the board, USB link and host storage. After Stop, use the slider to browse the trace.
+
+### Native USB recording on Windows
+
+For long laptop captures, download `xEskWeb-Windows-x64.zip` from
+[xEskWeb Releases](https://github.com/alambe94/xLogicWeb/releases). Extract it
+to a writable folder on an SSD and double-click
+`Start xEskWeb.cmd`. The launcher opens xEskWeb Home in your browser. Keep its
+console open while recording. For USB, use Chrome or Edge, choose **Connect via
+USB**, and select the board once. Logic and Bridge share this selection in the
+same tab, including native recordings. Logic also opens saved recordings while
+disconnected. For finite Ethernet capture, choose **Connect via Ethernet** and
+enter the board address. This opens the board's one-tab viewer and its connection
+consent. The board loads that viewer from GitHub Pages.
+
+Choose the rate and sample count in Logic, then press **Capture** once. The waveform opens when the
+requested count is reached, or when you press **Stop**. Counts above 65,536 and
+**Until stopped** use the native recorder. **Open → Native USB recording…**
+also lets you record a shorter trace or reopen a saved one after restarting.
+
+The recorder writes raw samples directly to the SSD. After recording, the viewer
+reads up to 65,536 samples at a time as you move the slider. Four-channel captures
+store two samples per byte. During capture, **Live preview** shows the latest
+written window, refreshed about four times a second while the tab is visible.
+A short pulse between preview windows can still be inspected in the saved trace.
+Press **Stop** to inspect the recording, select an **Edge channel**, and use
+**Previous edge** or **Next edge** to center the waveform on a transition.
+The archive has a cumulative 16 GiB limit. **Open → Native USB recording…**
+shows free space and each trace's size. Use **Delete recording** to reclaim space.
+The timeline reports whether the recorder
+verified the hardware end of the stream. With the current SK-AM64B application,
+Stop can leave additional samples on the board or in pending USB reads. A
+count-limited recording can still contain the full requested sample count.
+
+To launch from source, build the viewer, then run this with Python 3.9 or newer
+and a compatible Windows recorder on a machine with the ESK application USB connected.
+
+```powershell
+py -3 dev/esk_native.py --dist dist --recorder C:\ESK\xlogic_capture.exe --store D:\ESK\recordings
+```
+
+Use `--serial SERIAL` to select a particular board. The hosted viewer continues
+to offer WebUSB and Ethernet. The optional PulseView client and sigrok-cli share a Windows ZIP
+on the [PulseView fork's releases page](https://github.com/alambe94/pulseview/releases/tag/xsdk-bundle-22).
 
 ## ESK xLOGIC over Ethernet
 

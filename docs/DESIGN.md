@@ -15,6 +15,19 @@ channel rows, plot, touch grammar, trigger and acquisition UI, presenters, statu
 visual system, copy and the UI review gate. C3 (migration) is §17 here; split it into
 `docs/MIGRATION.md` when it outgrows this document.
 
+## ESK widget conventions
+
+Home, Logic, Bridge and the Windows viewer use the original SLogicWeb widget
+for each interaction. Reuse the shared control and its light and dark theme
+tokens when adding or changing a feature. For example, use `selectControl` for
+option lists, `channelChip` for channel visibility and `ConfirmDialog` for
+destructive actions. Recorders use the same dialog, button and slider styles
+as the capture panel. Keep board-specific choices in the options and labels.
+
+Review changed widgets in both themes at laptop and phone widths. Check focus
+after a panel redraw, keyboard selection and dismissal, and disabled states.
+The browser or operating system presents device permission and file choosers.
+
 ## 1. Principles and scope
 
 - **One instrument, one time axis.** Digital, analog and decoded signals share one

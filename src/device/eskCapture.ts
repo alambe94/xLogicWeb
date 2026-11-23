@@ -8,6 +8,13 @@ export const ESK_RATE = 333_333_333;
 export const ESK_STREAM_RATE = 41_666_666;
 export const ESK_PACKED_RATE = 500_000_000;
 export type EskBank = 'lower' | 'upper';
+export type EskEdge = 'rising' | 'falling';
+export interface EskEdgeTrigger {
+  channel: number;
+  edge: EskEdge;
+  signal: AbortSignal;
+  onArmed: () => void;
+}
 export const ESK_FINITE_RATES = [ESK_RATE, 166_666_666, 83_333_333, ESK_STREAM_RATE];
 const streamReadBytes = 4 * 1024 * 1024;
 const LOGIC = 2;
@@ -59,7 +66,7 @@ class LogicSession extends EskUsbSession {
     requireField(reply.getUint8(6) === 0, 'ESK rejected capture command ' + opcode);
     abi(new DataView(reply.buffer, reply.byteOffset + 32, 64), 64);
   }
-  private async configure(stream: boolean, rate: number, bank: EskBank = 'lower', count = ESK_SAMPLES): Promise<void> {
+  private async configure(stream: boolean, rate: number, bank: EskBank = 'lower', count = ESK_SAMPLES, trigger?: EskEdgeTrigger): Promise<void> {
     const caps = await this.input(0x60, 56, 0);
     abi(caps, 56);
     const flags = caps.getUint32(32, true);
@@ -89,22 +96,51 @@ class LogicSession extends EskUsbSession {
     config.setUint32(8, rate, true);
     config.setUint32(12, stream ? 0 : count, true);
     config.setUint32(16, mask, true);
+    if (trigger) {
+      config.setUint32(20, 2, true); // Single-channel edge mode in the USB config.
+      config.setUint32(32, trigger.channel, true);
+      config.setUint32(36, Number(trigger.edge === 'falling'), true);
+    }
     config.setUint32(40, packed ? 3 : 0, true);
     await this.command(1, config.buffer);
   }
-  async capture(rate: number, count: number): Promise<Uint8Array> {
+  private async waitForEdge(trigger: EskEdgeTrigger): Promise<void> {
+    trigger.onArmed();
+    let renew = performance.now() + 200;
+    for (;;) {
+      trigger.signal.throwIfAborted();
+      if (performance.now() >= renew) {
+        await this.control(3);
+        renew = performance.now() + 200;
+      }
+      const status = await this.input(0x64, 64, 0);
+      abi(status, 64);
+      const flags = status.getUint32(56, true);
+      requireField(!(flags & 32), 'ESK capture session fault');
+      if (status.getBigUint64(16, true) > 0n) return;
+      requireField(status.getUint32(12, true) || (flags & 8), 'ESK stopped before the trigger');
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+  async capture(rate: number, count: number, trigger?: EskEdgeTrigger): Promise<Uint8Array> {
     const aligned = Math.ceil(count / 64) * 64;
-    await this.configure(false, rate, 'lower', aligned);
-    // Queue the exact-length read before START. A packet-aligned finite record has no trailing ZLP.
-    const read = this.usb.transferIn(1, aligned);
-    void read.catch(() => {}); // START can fail before we await the pending read.
+    await this.configure(false, rate, 'lower', aligned, trigger);
+    // A trigger may wait indefinitely. Leave the bulk pipe empty until samples exist
+    // so cancelling an idle acquisition cannot leave a read queued against the next one.
+    const read = trigger ? undefined : this.usb.transferIn(1, aligned);
+    void read?.catch(() => {});
     await this.command(2);
-    const data = await within(read, 700);
-    requireField(data.status === 'ok' && data.data?.byteLength === aligned, 'Incomplete xLOGIC sample record');
-    await this.command(3);
-    await this.checkFinalStatus(false, rate, aligned);
-    await this.release();
-    return new Uint8Array(data.data.buffer, data.data.byteOffset, count);
+    try {
+      if (trigger) { await this.waitForEdge(trigger); trigger.signal.throwIfAborted(); }
+      const data = await within(read ?? this.usb.transferIn(1, aligned), 700);
+      requireField(data.status === 'ok' && data.data?.byteLength === aligned, 'Incomplete xLOGIC sample record');
+      return new Uint8Array(data.data.buffer, data.data.byteOffset, count);
+    } finally {
+      await this.command(3);
+      try {
+        if (!trigger?.signal.aborted) await this.checkFinalStatus(false, rate, aligned);
+      } finally { await this.release(); }
+    }
   }
 
   async stream(signal: AbortSignal, accept: (bytes: Uint8Array) => void, rate = ESK_STREAM_RATE, bank: EskBank = 'lower'): Promise<bigint> {
@@ -141,9 +177,6 @@ class LogicSession extends EskUsbSession {
       await this.command(3);
       try {
         transmitted = await this.checkFinalStatus(true, rate);
-        // Queued IN reads can outlive Stop. Reset this pipe while LOGIC is
-        // still ours so the next client can receive its first finite record.
-        await this.usb.clearHalt('in', 1);
       } finally { await this.release(); }
     }
     requireField(transmitted >= received, 'ESK transmitted fewer bytes than the host received');
@@ -158,10 +191,18 @@ class LogicSession extends EskUsbSession {
       const flags = s.getUint32(56, true);
       requireField(!(flags & 32), 'ESK capture session fault');
       if (!s.getUint32(12, true) && (flags & 28) === 4) {
+        // Retire queued IN reads after physical Stop even when the counters
+        // reject this stream. A failed acquisition must also allow a fresh arm.
+        if (stream) await this.usb.clearHalt('in', 1);
         const sent = s.getBigUint64(24, true);
+        const counters = [32, 36, 40, 52].map(offset => s.getUint32(offset, true));
+        if (counters.some(value => value !== 0)) {
+          const [overruns, usb, ownership, timing] = counters;
+          throw new Error(`xLOGIC capture lost integrity (overruns ${overruns}, USB errors ${usb}, ownership errors ${ownership}, timing errors ${timing}, bytes sent ${sent})`);
+        }
         requireField((stream ? s.getUint32(8, true) === 1 && s.getUint32(44, true) === rate : (s.getBigUint64(16, true) === BigInt(count) && sent === BigInt(count))) &&
-          [32, 36, 40, 52].every(i => !s.getUint32(i, true)) && s.getUint32(60, true) === (rate === ESK_PACKED_RATE ? 3 : 0) && (flags & 1) &&
-          s.getUint32(48, true) === rate, 'xLOGIC sample counts, rate or error counters differ');
+          s.getUint32(60, true) === (rate === ESK_PACKED_RATE ? 3 : 0) && (flags & 1) &&
+          s.getUint32(48, true) === rate, 'xLOGIC sample counts, format or rate differ');
         return sent;
       }
       await delay();
@@ -179,9 +220,14 @@ async function withLogic<T>(device: USBDevice, run: (session: LogicSession) => P
   });
 }
 
-export function captureEsk(device: USBDevice, rate = ESK_RATE, bank: EskBank = 'lower', count = ESK_SAMPLES): Promise<Uint8Array> {
+export function captureEsk(device: USBDevice, rate = ESK_RATE, bank: EskBank = 'lower', count = ESK_SAMPLES, trigger?: EskEdgeTrigger): Promise<Uint8Array> {
   requireField(Number.isSafeInteger(count) && count > 0 && count <= ESK_SAMPLES, 'Invalid short capture size');
-  if (rate !== ESK_PACKED_RATE) return withLogic(device, session => session.capture(rate, count));
+  if (trigger) {
+    requireField(ESK_FINITE_RATES.includes(rate) && Number.isInteger(trigger.channel) && trigger.channel >= 0 &&
+      trigger.channel < ESK_CHANNELS && ['rising', 'falling'].includes(trigger.edge), 'Unsupported USB edge trigger');
+    trigger.signal.throwIfAborted();
+  }
+  if (rate !== ESK_PACKED_RATE) return withLogic(device, session => session.capture(rate, count, trigger));
   // The packed producer streams. Retain a bounded prefix and run the normal Stop/retirement checks.
   return withLogic(device, async session => {
     const stop = new AbortController();

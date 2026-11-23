@@ -4,6 +4,8 @@ import { createOpfsRecordStorage } from '../data/opfsStorage.js';
 import { ESK_STREAM_RATE, ESK_PACKED_RATE, requestEskDevice, type EskBank } from '../device/eskCapture.js';
 import { downloadBoardTrace } from '../device/eskLanRecording.js';
 import { openEskReplay } from './srLoad.js';
+import { selectControl } from './select.js';
+import type { ConfirmDialog } from './confirmDialog.js';
 import { t } from './i18n.js';
 
 import type { LiveReply, LiveRequest } from '../device/eskRecordWorker.js';
@@ -15,6 +17,7 @@ export interface SavedRecording {
   samples: number;
   summary?: string;
   read(start: number, end: number): Promise<Uint8Array>;
+  edge?(position: number, channel: number, direction: 'previous' | 'next'): Promise<{match: number | null; resume: number | null}>;
   dispose?(): void;
 }
 type Display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: SavedRecording) => void;
@@ -45,13 +48,15 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean }
-export function showEskRecorder(live: boolean, display: Display, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions): void {
+export function showEskRecorder(live: boolean, display: Display, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
   if (dialog.open) return;
   const get = <T extends HTMLElement>(id: string) => dialog.querySelector<T>('#rec-' + id)!;
   const source = get<HTMLInputElement>('source'), limit = get<HTMLInputElement>('limit');
   const record = get<HTMLButtonElement>('record'), stop = get<HTMLButtonElement>('stop');
-  const archive = get<HTMLSelectElement>('archive'), first = get<HTMLInputElement>('first');
+  const archiveHost = get('archive'), first = get<HTMLInputElement>('first');
+  let archive = selectControl('rec-archive', t('rec.archive'), [], '');
+  archiveHost.replaceChildren(archive.el);
   const reopen = get<HTMLButtonElement>('reopen'), remove = get<HTMLButtonElement>('delete');
   const close = get<HTMLButtonElement>('close'), status = get<HTMLOutputElement>('status');
   const heading = get<HTMLElement>('heading');
@@ -64,7 +69,8 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
   let busy = false, abort: AbortController | null = null, ready = false;
   function update() {
     record.disabled = busy || !ready || (!live && !source.files?.length) || !limit.validity.valid;
-    source.disabled = limit.disabled = archive.disabled = first.disabled = busy || !ready;
+    source.disabled = limit.disabled = first.disabled = busy || !ready;
+    archive.disabled = busy || !ready || !archive.value;
     stop.disabled = !abort || abort.signal.aborted;
     close.disabled = busy;
     reopen.disabled = busy || !archive.value || !first.validity.valid;
@@ -74,8 +80,11 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
     const root = await recordingRoot();
     const names: string[] = [];
     for await (const entry of root.values()) if (entry.kind === 'directory') names.push(entry.name);
-    archive.replaceChildren(...names.sort().reverse().map(name => new Option(name, name)));
-    if (names.includes(selected)) archive.value = selected;
+    names.sort().reverse();
+    archive = selectControl('rec-archive', t('rec.archive'), names.map(name => [name, name]),
+      names.includes(selected) ? selected : names[0] ?? '');
+    archive.addEventListener('change', () => { first.value = '0'; update(); });
+    archiveHost.replaceChildren(archive.el);
   }
   async function run(action: () => Promise<void>) {
     if (busy) return;
@@ -249,14 +258,16 @@ export function showEskRecorder(live: boolean, display: Display, confirmReplace:
       status.value = t('rec.range', { start, end: start + data.length - 1, total: manifest.bytes });
     });
   });
-  remove.onclick = () => void run(async () => {
+  remove.onclick = async () => {
     const name = archive.value;
-    if (!window.confirm(t('rec.confirmDelete', { name }))) return;
-    await withArchive(name, async () => { await (await recordingRoot()).removeEntry(name, { recursive: true }); });
-    removed(name);
-    await list(); status.value = '';
-  });
-  archive.onchange = () => { first.value = '0'; update(); };
+    if (!await confirmation.ask({title: t('rec.delete'), body: t('rec.confirmDelete', { name }),
+      confirm: t('rec.delete'), cancel: t('reset.cancel')}, remove)) return;
+    await run(async () => {
+      await withArchive(name, async () => { await (await recordingRoot()).removeEntry(name, { recursive: true }); });
+      removed(name);
+      await list(); status.value = '';
+    });
+  };
   source.onchange = first.oninput = limit.oninput = update;
   close.onclick = () => dialog.close();
   dialog.oncancel = event => { if (busy) { event.preventDefault(); abort?.abort(); update(); } };

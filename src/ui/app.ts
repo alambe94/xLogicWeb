@@ -68,7 +68,7 @@ import {
   snapAnalogHeight, type BusViewConfig, type BusViewState,
 } from './busView.js';
 import { layoutBubbles, type AnnotationSpan, type Bubble } from './annotationLayout.js';
-import { CapturePanel, cursorDistanceSideId, cursorEdgeSideId,
+import { CapturePanel, cursorDistanceSideId, cursorEdgeSideId, channelChip,
   type CapturePanelView, type CursorDistanceRowView,
   type CursorDistanceSideView, type CursorEdgeChannelView, type CursorEdgeRowView,
   type CursorRowView, type LoopDisplayMetrics, type PersistencePanelView,
@@ -105,6 +105,7 @@ import {
 import { srExportParts, type SrProbe } from './srSave.js';
 import { csvExportParts, vcdExportParts } from './textExport.js';
 import { FileDragDepth, SavedCaptures, captureUnsaved } from './fileGuards.js';
+import { selectControl } from './select.js';
 import { ConfirmDialog } from './confirmDialog.js';
 import { clearUserData } from './userData.js';
 import { connectSamplerate } from './connectDefaults.js';
@@ -148,10 +149,12 @@ import {
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
 import { showEskRecorder } from './eskRecorder.js';
+import { nativeRecorderAvailable, showNativeRecorder } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { boardCaptureMaximum, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
 import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_PACKED_RATE, type EskBank, requestEskDevice } from '../device/eskCapture.js';
+import { capturePackedEdge } from './eskPackedCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
 import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';
@@ -164,6 +167,7 @@ import {
 } from './deviceChrome.js';
 import { DeviceTabPresence } from './deviceTabPresence.js';
 import { detectCapabilities, type PlatformNavigatorLike } from '../platform/capabilities.js';
+import { parseSampleCount } from './sampleCount.js';
 import { formatCount, formatDuration, formatFreq, formatRate,
   formatAnalyzerNote, formatCaptureLabel, formatStatusError,
   formatStatusErrorDebug, statusDetailOf } from './format.js';
@@ -503,6 +507,10 @@ export class App {
   private eskUntilStop = false;
   private eskLanCount = String(ESK_SAMPLES);
   private eskCapturePending = false;
+  private eskEdge: 'none' | 'rising' | 'falling' = 'none';
+  private eskTriggerChannel = 0;
+  private eskPrePercent = 50;
+  private eskArmed: AbortController | null = null;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
   /**
@@ -6932,35 +6940,36 @@ export class App {
       const lan = !!eskLanMode();
       const max = lan ? boardCaptureMaximum() : undefined;
       const rate = lan ? ESK_RATE : this.eskRate;
-      const rateLabel = document.createElement('label');
-      rateLabel.textContent = (lan ? 'Ethernet' : 'USB') + ' · ' + t('capturePanel.sampleRate') + ' ';
-      const rates = document.createElement('select');
-      rates.id = 'esk-finite-rate';
-      for (const hz of lan ? [ESK_RATE] : [ESK_PACKED_RATE, ...ESK_FINITE_RATES]) {
-        rates.add(new Option(formatRate(hz), String(hz), false, hz === rate));
-      }
+      const rates = selectControl('esk-finite-rate', (lan ? 'Ethernet' : 'USB') + ' · ' + t('capturePanel.sampleRate'),
+        (lan ? [ESK_RATE] : [ESK_PACKED_RATE, ...ESK_FINITE_RATES]).map(hz => [String(hz), formatRate(hz)]), String(rate));
       rates.disabled = lan || this.eskCapturePending;
-      rates.onchange = () => {
+      rates.addEventListener('change', () => {
         this.eskRate = Number(rates.value);
-        if (this.eskRate === ESK_PACKED_RATE) this.eskBank = 'lower';
+        if (this.eskRate === ESK_PACKED_RATE) {
+          this.eskBank = 'lower';
+          this.eskTriggerChannel %= 4;
+        }
         this.renderSidebarContent();
-      };
-      rateLabel.append(rates);
+      });
       const samplesLabel = document.createElement('label');
       samplesLabel.textContent = t('esk.samples');
       const count = document.createElement('input');
-      count.type = 'number';
-      count.min = count.step = '1';
-      count.max = String(lan ? max ?? ESK_SAMPLES : Number.MAX_SAFE_INTEGER);
+      count.type = 'text';
+      count.spellcheck = false;
+      const maximum = lan ? max ?? ESK_SAMPLES : Number.MAX_SAFE_INTEGER;
       count.id = 'esk-sample-count';
+      count.className = 'viewer-input';
       count.required = true;
       count.value = lan ? (max === undefined ? String(ESK_SAMPLES) : this.eskLanCount) : this.eskCountText;
       count.disabled = this.eskCapturePending || (lan ? !max : this.eskUntilStop);
       samplesLabel.append(count);
+      let syncTrigger: ((samples: number | undefined) => void) | undefined;
       const updateEstimate = () => {
-        const n = count.valueAsNumber;
+        const n = parseSampleCount(count.value, maximum);
+        syncTrigger?.(n);
+        count.setCustomValidity(n === undefined ? t('esk.invalidSamples', {max: formatCount(maximum)}) : '');
         profile.textContent = !lan && this.eskUntilStop ? t('esk.diskRecording') :
-          count.validity.valid && n > 0 ? formatDuration(n / rate) + ' · ' + formatCount(n) + ' B' : '';
+          n !== undefined ? formatDuration(n / rate) + ' · ' + formatCount(n) + ' B' : '';
       };
       count.oninput = () => {
         if (lan) this.eskLanCount = count.value;
@@ -6969,10 +6978,11 @@ export class App {
       };
       const fields = document.createElement('div');
       fields.className = 'esk-capture-fields';
-      fields.append(rateLabel, samplesLabel);
+      fields.append(rates.el, samplesLabel);
       if (lan && max) {
         const useMax = document.createElement('button');
         useMax.type = 'button';
+        useMax.className = 'pill';
         useMax.textContent = t('esk.boardMaximum');
         useMax.disabled = this.eskCapturePending;
         useMax.onclick = () => { this.eskLanCount = count.value = String(max); updateEstimate(); };
@@ -6980,45 +6990,81 @@ export class App {
       }
       if (!lan) {
         const until = document.createElement('label');
+        until.className = 'settings-toggle';
         const checkbox = document.createElement('input');
+        checkbox.id = 'esk-until-stop';
         checkbox.type = 'checkbox';
         checkbox.checked = this.eskUntilStop;
         checkbox.disabled = this.eskCapturePending;
         checkbox.onchange = () => { this.eskUntilStop = checkbox.checked; this.renderSidebarContent(); };
         until.append(document.createTextNode(t('esk.untilStop')), checkbox);
         fields.append(until);
+        const edge = selectControl('esk-trigger-edge', t('overview.originTrigger'),
+          [['none', t('trigger.off')], ['rising', t('trigger.rising')], ['falling', t('trigger.falling')]], this.eskEdge);
+        const packed = rate === ESK_PACKED_RATE;
+        const base = packed && this.eskBank === 'upper' ? 4 : 0;
+        const channel = selectControl('esk-trigger-channel', t('esk.triggerChannel'),
+          Array.from({length: packed ? 4 : ESK_CHANNELS}, (_, i) => [String(base + i), 'D' + (base + i)]),
+          String(this.eskTriggerChannel));
+        const position = selectControl('esk-pre-trigger', t('capturePanel.preTriggerBuffer'),
+          [0, 25, 50, 75].map(n => [String(n), n + '%']), String(this.eskPrePercent));
+        syncTrigger = n => {
+          const available = !this.eskUntilStop && n !== undefined && n <= ESK_SAMPLES;
+          edge.disabled = this.eskCapturePending || !available;
+          edge.value = available ? this.eskEdge : 'none';
+          channel.el.hidden = edge.value === 'none';
+          position.el.hidden = channel.el.hidden || rate !== ESK_PACKED_RATE;
+          channel.disabled = this.eskCapturePending;
+        };
+        edge.addEventListener('change', () => {
+          this.eskEdge = edge.value as typeof this.eskEdge;
+          updateEstimate();
+        });
+        channel.addEventListener('change', () => { this.eskTriggerChannel = Number(channel.value); });
+        position.disabled = this.eskCapturePending;
+        position.addEventListener('change', () => { this.eskPrePercent = Number(position.value); });
+        fields.append(edge.el, channel.el, position.el);
       }
       updateEstimate();
       const channels = document.createElement('fieldset');
       channels.className = 'esk-channel-picker';
       const legend = document.createElement('legend');
       legend.textContent = t('esk.visibleChannels');
-      channels.append(legend);
+      const choices = document.createElement('div');
+      channels.append(legend, choices);
       if (rate === ESK_PACKED_RATE) {
+        choices.className = 'segmented';
         legend.textContent = t('esk.captureBank');
         for (const bank of ['lower', 'upper'] as const) {
           const label = document.createElement('label');
           const input = document.createElement('input');
+          label.className = 'seg' + (this.eskBank === bank ? ' on' : '');
           input.type = 'radio';
           input.name = 'esk-bank';
+          input.id = 'esk-bank-' + bank;
           input.value = bank;
           input.checked = this.eskBank === bank;
-          input.onchange = () => { if (input.checked) this.eskBank = bank; };
+          input.disabled = this.eskCapturePending;
+          input.onchange = () => {
+            if (!input.checked) return;
+            this.eskBank = bank;
+            this.eskTriggerChannel = this.eskTriggerChannel % 4 + (bank === 'upper' ? 4 : 0);
+            this.renderSidebarContent();
+          };
           label.append(input, bank === 'lower' ? 'D0–D3' : 'D4–D7');
-          channels.append(label);
+          choices.append(label);
         }
       } else {
+        choices.className = 'chip-grid channel-bank-grid';
         for (const ch of this.channels.slice(0, this.displayChannelCount())) {
-          const label = document.createElement('label');
-          const input = document.createElement('input');
-          input.type = 'checkbox';
-          input.checked = ch.enabled;
-          input.onchange = () => { this.setChannelEnabled(ch.index, input.checked); input.checked = ch.enabled; };
-          label.append(input, ch.name || defaultChannelName(ch.index));
-          channels.append(label);
+          const chip = channelChip(ch, (index, enabled) => this.setChannelEnabled(index, enabled));
+          chip.id = 'esk-channel-' + ch.index;
+          choices.append(chip);
         }
       }
+      const focused = panel.contains(document.activeElement) ? document.activeElement?.id : undefined;
       panel.replaceChildren(fields, channels, profile);
+      if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
       return;
     }
     if (this.sidebar.page === 'capture' || this.sidebar.page === 'measure') {
@@ -7099,6 +7145,11 @@ export class App {
 
 
   private primaryAction(): void {
+    if (this.eskArmed) {
+      this.eskArmed.abort();
+      this.renderToolbarState();
+      return;
+    }
     if (this.stopping) {
       // An automatic trigger restart is waiting for this stop; cancel its start so the
       // user's Stop is not overridden by a capture they did not ask for.
@@ -7136,7 +7187,7 @@ export class App {
     // Start/stop, open and save all re-render the toolbar: the unload guard follows them.
     this.syncUnloadGuard();
     const repeatPending = this.repeatTimer.pending;
-    const showStop = this.running || repeatPending;
+    const showStop = this.running || repeatPending || !!this.eskArmed;
     this.renderDeviceCommand();
     this.el.open.setAttribute('aria-label', t('toolbar.open'));
     this.el.save.setAttribute('aria-label', t('toolbar.save'));
@@ -7155,19 +7206,19 @@ export class App {
     this.el.theme.setAttribute('aria-label', t('toolbar.themeTitle'));
 
     const btn = this.el.transport;
-    btn.setAttribute('aria-label', this.stopping ? t('toolbar.stopping')
+    btn.setAttribute('aria-label', this.eskArmed ? t('unsaved.cancel') : this.stopping ? t('toolbar.stopping')
       : showStop ? t('toolbar.stop') : t('toolbar.start'));
     const label = btn.querySelector<HTMLElement>('.toolbar-item-label');
     if (label) {
-      label.textContent = this.stopping ? t('toolbar.shortStopping')
+      label.textContent = this.eskArmed ? t('unsaved.cancel') : this.stopping ? t('toolbar.shortStopping')
         : showStop ? t('toolbar.shortStop') : t('toolbar.shortStart');
     }
     const eskTransport = eskLanMode() ? 'open.eskLan' : navigator.usb ? 'open.esk' : undefined;
     btn.classList.toggle('primary', !showStop && (!!this.device || !!eskTransport));
     btn.classList.toggle('danger', showStop);
-    btn.disabled = (this.stopping && !this.triggerRestartPending) ||
+    btn.disabled = !!this.eskArmed?.signal.aborted || (this.stopping && !this.triggerRestartPending) ||
       (this.device === null && !showStop && (!eskTransport || this.eskCapturePending));
-    btn.title = this.stopping ? t('toolbar.stoppingTitle')
+    btn.title = this.eskArmed ? t('unsaved.cancel') : this.stopping ? t('toolbar.stoppingTitle')
       : showStop ? t('toolbar.stopTitle')
         : this.device ? t('toolbar.startTitle') : t(eskTransport ?? 'toolbar.noWebusb');
     applyToolbarHints(document, this.detailedLabels);
@@ -7708,17 +7759,19 @@ export class App {
     const lan = transport === 'ethernet';
     const max = lan ? boardCaptureMaximum() : undefined;
     const untilStop = !lan && this.eskUntilStop;
-    const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity : Number(lan ? this.eskLanCount : this.eskCountText);
-    if (!untilStop && !(Number.isSafeInteger(n) && n > 0 && n <= (max ?? Number.MAX_SAFE_INTEGER))) {
+    const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity
+      : parseSampleCount(lan ? this.eskLanCount : this.eskCountText, max);
+    if (n === undefined) {
       this.selectPage('capture');
       document.querySelector<HTMLInputElement>('#esk-sample-count')?.reportValidity();
       return;
     }
     if (n > ESK_SAMPLES) {
-      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan});
+      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan}, 'capture');
       return;
     }
     this.eskCapturePending = true;
+    const controller = new AbortController();
     this.renderToolbarState();
     this.renderSidebarContent();
     const previous = this.captureSessionId;
@@ -7731,7 +7784,22 @@ export class App {
       const bank = this.eskBank;
       const packed = rate === ESK_PACKED_RATE;
       let samples: Uint8Array, ticks: string | undefined;
-      if (device) samples = await captureEsk(device, rate, bank, n);
+      let triggerIndex: number | undefined;
+      if (device) {
+        const trigger = this.eskEdge !== 'none' ? {
+          channel: this.eskTriggerChannel, edge: this.eskEdge, signal: controller.signal,
+          onArmed: () => {
+            this.eskArmed = controller;
+            this.setFileNotice({key: 'esk.waitingForTrigger', vars: {channel: this.eskTriggerChannel}});
+            this.renderToolbarState();
+          },
+        } : undefined;
+        if (packed && trigger) {
+          triggerIndex = Math.floor(n * this.eskPrePercent / 100);
+          samples = await capturePackedEdge(device, bank, n, triggerIndex, trigger);
+        } else samples = await captureEsk(device, rate, bank, n, trigger);
+        controller.signal.throwIfAborted();
+      }
       else if (max) {
         samples = new Uint8Array(n);
         ticks = await receiveBoardCapture(n, new AbortController().signal, async (block, offset) => { samples.set(block, offset); });
@@ -7745,22 +7813,26 @@ export class App {
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: null };
       const names = packed && bank === 'upper' ? ['D4', 'D5', 'D6', 'D7'] : [];
       this.adoptCapture(store, names, { kind: 'esk', samples: store.length, rate: store.samplerate, ticks }, false, !packed);
+      if (triggerIndex !== undefined) this.triggerSampleIndex = triggerIndex;
       const vars = { samples: formatCount(store.length), rate: formatRate(store.samplerate) };
       this.setFileNotice(ticks === undefined ? { key: 'capture.esk', vars } :
         { key: 'capture.eskLan', vars: { ...vars, ticks } });
       this.syncUnloadGuard();
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'NotFoundError')) {
+      if (!(controller.signal.aborted && error === controller.signal.reason) && !(error instanceof DOMException && error.name === 'NotFoundError')) {
         this.fail(transport === 'ethernet' ? 'error.eskEthernet' : 'error.eskUsb', error);
       }
     } finally {
       this.eskCapturePending = false;
+      this.eskArmed = null;
+      if (this.fileNotice?.key === 'esk.waitingForTrigger') this.setFileNotice(null);
       this.renderToolbarState();
       this.renderSidebarContent();
     }
   }
 
-  private openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions): void {
+  private openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions,
+      nativeAction: 'capture' | 'browse' = 'browse'): void {
     if (this.eskCapturePending || this.running || this.stopping) return;
     const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false) => {
       this.endPendingRepeatSession();
@@ -7773,16 +7845,27 @@ export class App {
       this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
       this.syncUnloadGuard();
     };
-    showEskRecorder(live, (bytes, rate, start, name, saved) => {
+    const display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: import('./eskRecorder.js').SavedRecording) => {
       showWindow(bytes, rate, start, name);
-      if (saved) this.recordingTimeline.open(saved, rate, start, (data, offset) => showWindow(data, rate, offset, name, true));
-    }, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
+      if (saved) this.recordingTimeline.open(saved, rate, start, this.captureStore!.channelCount,
+        name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true));
+    };
+    if (live && options && !options.ethernet && nativeRecorderAvailable()) {
+      showNativeRecorder(nativeAction, options, this.confirmDialog, () => this.confirmDiscardCapture(), display, key => this.recordingTimeline.clear(key));
+    } else {
+      showEskRecorder(live, display, this.confirmDialog, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
+    }
   }
 
   /** Open a file, a finite ESK USB capture, or the bundled example. */
   private openItems(): SettingsMenuItem[] {
     return [
       { label: t('open.file'), hint: t('open.fileHint'), onPick: () => void this.pickFiles() },
+      ...(nativeRecorderAvailable() ? [{label: 'Native USB recording…', onPick: () => {
+        const count = this.eskUntilStop ? Infinity : parseSampleCount(this.eskCountText);
+        if (count !== undefined) this.openEskRecorder(true, {count, rate: this.eskRate, bank: this.eskBank});
+        else this.selectPage('capture');
+      }}] : []),
       ...(!eskLanMode() && navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
         label: t('open.esk'), onPick: () => void this.openEskCapture('usb'),
       }] : []),
