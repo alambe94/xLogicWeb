@@ -129,6 +129,7 @@ export const en = {
   'home.features': 'Features',
   'home.logic': 'Capture waveforms and decode protocols',
   'home.connectUsb': 'Connect via USB',
+  'home.nativeConnection': 'Connect via USB for Logic and Bridge, or via Ethernet for finite Logic captures.',
   'home.usbGone': 'USB disconnected',
   'bridge.description': 'Bridge · I²C board identification',
   'bridge.eeprom': 'Board identification EEPROM · address 0x51',

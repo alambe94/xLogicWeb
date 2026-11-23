@@ -44,8 +44,15 @@ on the board, USB link and host storage. After Stop, use the slider to browse th
 For long laptop captures, download `xEskWeb-Windows-x64.zip` from
 [xEskWeb Releases](https://github.com/alambe94/xLogicWeb/releases). Extract it
 to a writable folder on an SSD and double-click
-`Start xEskWeb.cmd`. Keep its console open while recording. Choose the rate and
-sample count in Logic, then press **Capture** once. The waveform opens when the
+`Start xEskWeb.cmd`. The launcher opens xEskWeb Home in your browser. Keep its
+console open while recording. For USB, use Chrome or Edge, choose **Connect via
+USB**, and select the board once. Logic and Bridge share this selection in the
+same tab, including native recordings. Logic also opens saved recordings while
+disconnected. For finite Ethernet capture, choose **Connect via Ethernet** and
+enter the board address. This opens the board's one-tab viewer and its connection
+consent. The board loads that viewer from GitHub Pages.
+
+Choose the rate and sample count in Logic, then press **Capture** once. The waveform opens when the
 requested count is reached, or when you press **Stop**. Counts above 65,536 and
 **Until stopped** use the native recorder. **Open → Native USB recording…**
 also lets you record a shorter trace or reopen a saved one after restarting.

@@ -4,6 +4,7 @@ import { requestEskDevice, selectedEskUsbDevice, selectEskUsbDevice } from '../d
 import { readUsbBoardStatus, readUsbBoardId } from '../device/eskUsbHome.js';
 import type { BoardStatus } from '../device/eskPairedBoard.js';
 import { t } from './i18n.js';
+import { nativeRecorderAvailable } from './eskNativeRecorder.js';
 
 function showRows(body: HTMLTableSectionElement, rows: string[][]): void {
   body.replaceChildren();
@@ -39,6 +40,7 @@ export function initEskHome(): void {
   browserSite.search = browserSite.hash = '';
   usbSite.href = browserSite.href;
   const paired = fromBoard();
+  const nativeHome = nativeRecorderAvailable();
   usbSite.hidden = !paired;
   lanChoice.hidden = paired || location.protocol === 'file:';
   newLogic.hidden = paired || location.protocol === 'file:';
@@ -81,7 +83,8 @@ export function initEskHome(): void {
   let generation = 0, disconnected = false;
 
   function enableBridge(available: boolean) {
-    openBridge.hidden = !available;
+    openBridge.hidden = !available && !nativeHome;
+    openBridge.disabled = !available;
     newBridge.hidden = !available || location.protocol === 'file:';
     boardId.disabled = !available;
     toggle.hidden = !available;
@@ -90,6 +93,7 @@ export function initEskHome(): void {
       toggle.setAttribute('aria-expanded', 'false');
     }
   }
+  enableBridge(false);
 
   async function updateStatus(userRequested = false): Promise<void> {
     if (refresh.disabled) return;
@@ -103,7 +107,7 @@ export function initEskHome(): void {
     refresh.dataset.i18n = label;
     refresh.textContent = t(label);
     if ((lan && needsBoardConsent() && !userRequested) || (!lan && (!navigator.usb || (!usbDevice && !userRequested)))) {
-      connection.textContent = lan ? '' : t(disconnected ? 'home.usbGone' : 'home.unpaired');
+      connection.textContent = lan ? '' : t(disconnected ? 'home.usbGone' : nativeHome ? 'home.nativeConnection' : 'home.unpaired');
       return;
     }
     change.hidden = true;
@@ -130,7 +134,7 @@ export function initEskHome(): void {
       }
       refresh.dataset.i18n = 'capturePanel.tempRate';
       refresh.textContent = t('capturePanel.tempRate');
-      connection.textContent = '';
+      connection.textContent = lan ? 'Ethernet' : 'USB';
       identity.textContent = t('esk.identity', {id: board.deviceId, boot: board.boot, firmware: board.firmware.toString(16)});
       identity.hidden = false;
       const rows = board.features.map(f => [f.name, String(f.instance), f.enabled ? f.ownership : t('trigger.off')]);
@@ -141,7 +145,7 @@ export function initEskHome(): void {
         showRows(resources, board.catalog.resources);
         details.hidden = false;
       }
-      if (!openBridge.hidden && new URL(location.href).searchParams.get('view') === 'bridge') display(true);
+      if (!openBridge.disabled && new URL(location.href).searchParams.get('view') === 'bridge') display(true);
     } catch (error) {
       if (token !== generation) return;
       if (!lan) {
@@ -187,7 +191,7 @@ export function initEskHome(): void {
     const params = new URL(location.href).searchParams;
     const view = location.protocol === 'file:' ? portableView : params.get('view');
     // Existing portable, bridge and diagnostic entry points open the analyzer.
-    const atBridge = view === 'bridge' && !!usbStatus;
+    const atBridge = view === 'bridge' && !!usbStatus && !openBridge.disabled;
     const atHome = view === 'home' || (view === 'bridge' && !atBridge) || (view === null && location.protocol !== 'file:' &&
       !params.size && !location.pathname.endsWith('/esk.html'));
     const host = atBridge || atHome ? standalone : dock;

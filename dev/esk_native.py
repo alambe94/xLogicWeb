@@ -62,10 +62,14 @@ class Recordings:
         used = sum(p.stat().st_size for p in self.directory.iterdir() if p.is_file())
         return max(0, min(self.budget - used, shutil.disk_usage(self.directory).free) - 2**20)
 
-    def start(self, rate, bank, samples):
+    def start(self, rate, bank, samples, serial=None):
         self.refresh()
         if self.process:
             raise ValueError("Another native recording is active")
+        if serial is not None and (not isinstance(serial, str) or not 1 <= len(serial) <= 126 or not serial.isprintable()):
+            raise ValueError("Invalid USB serial number")
+        if self.serial and serial and self.serial != serial:
+            raise ValueError("The selected USB device differs from the recorder's configured serial number")
         if type(rate) is not int or rate not in RATES or bank not in ("lower", "upper"):
             raise ValueError("Unsupported USB profile")
         if samples is not None and (type(samples) is not int or not 0 < samples < 2**53):
@@ -83,8 +87,8 @@ class Recordings:
                "--channel-mask", str((15 if bank == "lower" else 240) if factor == 2 else 255),
                "--duration", "86400", "--record-bytes", str(limit), "--stop-on-stdin-close",
                "--output", str(self.path(key, ".bin")), "--json", str(self.path(key, ".json"))]
-        if self.serial:
-            cmd += ["--serial", self.serial]
+        if serial or self.serial:
+            cmd += ["--serial", serial or self.serial]
         try:
             with self.path(key, ".log").open("wb") as log:
                 self.process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=log, stderr=log,
@@ -213,7 +217,7 @@ class Recordings:
         with self.lock:
             op, key = body.get("op"), body.get("id")
             if op == "start":
-                return self.start(body.get("rate"), body.get("bank"), body.get("samples"))
+                return self.start(body.get("rate"), body.get("bank"), body.get("samples"), body.get("serial"))
             if op == "stop":
                 return self.stop(key)
             if op == "status":
@@ -306,7 +310,7 @@ def main():
         server.dist = dist
         server.records = Recordings(store, args.recorder.resolve(), args.serial, 16 * GIB)
         server.authority = f"127.0.0.1:{server.server_port}"
-        url = f"http://{server.authority}/?view=logic"
+        url = f"http://{server.authority}/"
         print(url, flush=True)
         if not args.no_browser:
             webbrowser.open(url)
