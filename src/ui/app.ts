@@ -68,7 +68,7 @@ import {
   snapAnalogHeight, type BusViewConfig, type BusViewState,
 } from './busView.js';
 import { layoutBubbles, type AnnotationSpan, type Bubble } from './annotationLayout.js';
-import { CapturePanel, channelChip, cursorDistanceSideId, cursorEdgeSideId,
+import { CapturePanel, cursorDistanceSideId, cursorEdgeSideId, channelChip,
   type CapturePanelView, type CursorDistanceRowView,
   type CursorDistanceSideView, type CursorEdgeChannelView, type CursorEdgeRowView,
   type CursorRowView, type LoopDisplayMetrics, type PersistencePanelView,

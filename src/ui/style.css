@@ -2149,14 +2149,15 @@ html.resizing { cursor: col-resize; user-select: none; }
 }
 .field { flex: 1; display: flex; flex-direction: column; gap: 3px; }
 .field label { font-size: 10px; color: var(--text50); }
-.field input, .esk-capture-fields input[type="text"], .esk-capture-fields select,
+.esk-capture-fields input[type="text"], .esk-capture-fields select,
 #esk-board-address, #rec-timeline input[type="number"], #rec-timeline select,
-.esk-record-controls input[type="number"], .esk-record-controls select, #native-archive {
+.esk-record-controls input[type="number"], .esk-record-controls select, #native-archive,
+.field input {
   background: var(--bg10); color: var(--text80);
   border: 1px solid var(--border-low); border-radius: 3px;
-  padding: 4px 6px; font: inherit;
+  padding: 4px 6px; font: inherit; width: 100%;
 }
-.field input { width: 100%; }
+#rec-timeline input[type="number"], #rec-timeline select, #native-archive { width: auto; }
 .panel-section-head .field input[type="checkbox"] { width: auto; align-self: flex-start; }
 
 .select-field { min-width: 0; }
@@ -2661,6 +2662,9 @@ html[data-theme="light"] .analog-button:not(.on) { border-color: #2F6FAF; color:
 :is(html[data-theme="dark"], html[data-theme="light"]) .analog-cell {
   background: rgb(76 154 255 / 10%); border-color: #4C9AFF;
 }
+:is(html[data-theme="dark"], html[data-theme="light"]) :is(.esk-capture-fields select, .esk-capture-fields input[type="text"],
+  #esk-board-address, #rec-timeline input[type="number"], #rec-timeline select,
+  .esk-record-controls input[type="number"], .esk-record-controls select, #native-archive),
 :is(html[data-theme="dark"], html[data-theme="light"]) .field input,
 :is(html[data-theme="dark"], html[data-theme="light"]) .usb-console-command input {
   background: var(--background); border-color: var(--input);
