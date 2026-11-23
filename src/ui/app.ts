@@ -68,7 +68,7 @@ import {
   snapAnalogHeight, type BusViewConfig, type BusViewState,
 } from './busView.js';
 import { layoutBubbles, type AnnotationSpan, type Bubble } from './annotationLayout.js';
-import { CapturePanel, cursorDistanceSideId, cursorEdgeSideId,
+import { CapturePanel, channelChip, cursorDistanceSideId, cursorEdgeSideId,
   type CapturePanelView, type CursorDistanceRowView,
   type CursorDistanceSideView, type CursorEdgeChannelView, type CursorEdgeRowView,
   type CursorRowView, type LoopDisplayMetrics, type PersistencePanelView,
@@ -6997,6 +6997,7 @@ export class App {
       if (lan && max) {
         const useMax = document.createElement('button');
         useMax.type = 'button';
+        useMax.className = 'pill';
         useMax.textContent = t('esk.boardMaximum');
         useMax.disabled = this.eskCapturePending;
         useMax.onclick = () => { this.eskLanCount = count.value = String(max); updateEstimate(); };
@@ -7004,7 +7005,9 @@ export class App {
       }
       if (!lan) {
         const until = document.createElement('label');
+        until.className = 'settings-toggle';
         const checkbox = document.createElement('input');
+        checkbox.id = 'esk-until-stop';
         checkbox.type = 'checkbox';
         checkbox.checked = this.eskUntilStop;
         checkbox.disabled = this.eskCapturePending;
@@ -7043,14 +7046,18 @@ export class App {
       channels.className = 'esk-channel-picker';
       const legend = document.createElement('legend');
       legend.textContent = t('esk.visibleChannels');
-      channels.append(legend);
+      const choices = document.createElement('div');
+      channels.append(legend, choices);
       if (rate === ESK_PACKED_RATE) {
+        choices.className = 'segmented';
         legend.textContent = t('esk.captureBank');
         for (const bank of ['lower', 'upper'] as const) {
           const label = document.createElement('label');
           const input = document.createElement('input');
+          label.className = 'seg' + (this.eskBank === bank ? ' on' : '');
           input.type = 'radio';
           input.name = 'esk-bank';
+          input.id = 'esk-bank-' + bank;
           input.value = bank;
           input.checked = this.eskBank === bank;
           input.disabled = this.eskCapturePending;
@@ -7061,20 +7068,19 @@ export class App {
             this.renderSidebarContent();
           };
           label.append(input, bank === 'lower' ? 'D0–D3' : 'D4–D7');
-          channels.append(label);
+          choices.append(label);
         }
       } else {
+        choices.className = 'chip-grid channel-bank-grid';
         for (const ch of this.channels.slice(0, this.displayChannelCount())) {
-          const label = document.createElement('label');
-          const input = document.createElement('input');
-          input.type = 'checkbox';
-          input.checked = ch.enabled;
-          input.onchange = () => { this.setChannelEnabled(ch.index, input.checked); input.checked = ch.enabled; };
-          label.append(input, ch.name || defaultChannelName(ch.index));
-          channels.append(label);
+          const chip = channelChip(ch, (index, enabled) => this.setChannelEnabled(index, enabled));
+          chip.id = 'esk-channel-' + ch.index;
+          choices.append(chip);
         }
       }
+      const focused = panel.contains(document.activeElement) ? document.activeElement?.id : undefined;
       panel.replaceChildren(fields, channels, profile);
+      if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
       return;
     }
     if (this.sidebar.page === 'capture' || this.sidebar.page === 'measure') {

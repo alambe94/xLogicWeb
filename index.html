@@ -120,8 +120,22 @@
   </main>
   <div id="app">
     <div id="toolbar">
-      <button id="btn-esk-home" type="button" class="mini" data-i18n="home.button" title="xEskWeb">Home</button>
-      <button id="btn-bridge-panel" class="mini" type="button" aria-controls="bridge-dock" aria-expanded="false" hidden>xBridgeWeb</button>
+      <button id="btn-esk-home" type="button" class="toolbar-item" aria-labelledby="esk-home-label" title="xEskWeb">
+        <span class="toolbar-item-media" aria-hidden="true">
+          <svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+            <path d="M3 10 12 3l9 7v10H3z M9 20v-7h6v7"></path>
+          </svg>
+        </span>
+        <span class="toolbar-item-label" id="esk-home-label" data-i18n="home.button">Home</span>
+      </button>
+      <button id="btn-bridge-panel" class="toolbar-item" type="button" title="xBridgeWeb" aria-label="xBridgeWeb" aria-controls="bridge-dock" aria-expanded="false" hidden>
+        <span class="toolbar-item-media" aria-hidden="true">
+          <svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 8h17l-4-4 M21 16H4l4 4"></path>
+          </svg>
+        </span>
+        <span class="toolbar-item-label">xBridgeWeb</span>
+      </button>
       <button id="btn-connect" class="toolbar-item toolbar-device" title="Connect device" aria-label="Device">
         <span class="toolbar-item-media">
           <svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" data-icon="inline-start">
@@ -287,13 +301,13 @@
     <aside id="bridge-dock" aria-label="xBridgeWeb" hidden></aside>
     <form id="rec-timeline" hidden>
       <label><span data-i18n="rec.position">Position (s)</span> <input id="rec-seconds" type="number" min="0" step="any" required></label>
-      <button type="submit" data-i18n="rec.go">Go</button>
+      <button class="pill" type="submit" data-i18n="rec.go">Go</button>
       <input id="rec-slider" type="range" min="0" step="1" aria-labelledby="rec-duration">
       <output id="rec-duration"></output>
       <label>Edge channel <select id="rec-edge-channel"></select></label>
-      <button type="button" id="rec-edge-previous">Previous edge</button>
-      <button type="button" id="rec-edge-next">Next edge</button>
-      <button type="button" id="rec-edge-cancel" hidden>Cancel search</button>
+      <button type="button" id="rec-edge-previous" class="pill">Previous edge</button>
+      <button type="button" id="rec-edge-next" class="pill">Next edge</button>
+      <button type="button" id="rec-edge-cancel" class="pill" hidden>Cancel search</button>
       <output id="rec-edge-result"></output>
       <small id="rec-summary"></small>
       <span id="rec-seek-error" role="status"></span>
@@ -393,15 +407,15 @@
         <figcaption>Live preview <span id="native-range"></span></figcaption>
         <canvas id="native-wave" width="512" height="160" aria-label="Live digital waveforms"></canvas>
       </figure>
-      <div><button id="native-record">Record</button> <button id="native-stop" disabled>Stop</button></div>
+      <div><button id="native-record" class="primary">Record</button> <button id="native-stop" class="pill" disabled>Stop</button></div>
       <div id="native-library">
         <label>Saved recording <select id="native-archive"></select></label>
-        <button id="native-reopen">Reopen</button>
-        <button id="native-delete">Delete recording</button>
+        <button id="native-reopen" class="pill">Reopen</button>
+        <button id="native-delete" class="pill">Delete recording</button>
         <p id="native-storage"></p>
       </div>
       <output id="native-status" role="status"></output>
-      <button id="native-close">Close</button>
+      <button id="native-close" class="pill">Close</button>
     </div>
   </dialog>
   <dialog id="esk-recorder" class="shortcuts-dialog" aria-labelledby="rec-heading">
@@ -410,12 +424,12 @@
       <label><span data-i18n="rec.source">Source (.sr, 8 digital channels)</span><input type="file" id="rec-source" accept=".sr"></label>
       <p id="rec-rate" data-i18n="rec.fixedRate" hidden>Continuous USB sample rate · 41.67 MS/s</p>
       <label><span data-i18n="rec.limit">Recording limit (MiB, optional)</span><input type="number" min="1" step="1" id="rec-limit"></label>
-      <div><button id="rec-record" data-i18n="rec.record">Record</button> <button id="rec-stop" data-i18n="rec.stop">Stop</button></div>
+      <div><button id="rec-record" class="primary" data-i18n="rec.record">Record</button> <button id="rec-stop" class="pill" data-i18n="rec.stop">Stop</button></div>
       <label><span data-i18n="rec.archive">Saved recording</span><select id="rec-archive"></select></label>
       <label><span data-i18n="rec.first">First sample</span><input id="rec-first" type="number" value="0" min="0" step="1" required></label>
-      <div><button id="rec-reopen" data-i18n="rec.reopen">Reopen</button> <button id="rec-delete" data-i18n="rec.delete">Delete</button></div>
+      <div><button id="rec-reopen" class="pill" data-i18n="rec.reopen">Reopen</button> <button id="rec-delete" class="pill" data-i18n="rec.delete">Delete</button></div>
       <output id="rec-status" role="status"></output>
-      <button id="rec-close" data-i18n="settings.close">Close</button>
+      <button id="rec-close" class="pill" data-i18n="settings.close">Close</button>
     </div>
   </dialog>
 </body>
