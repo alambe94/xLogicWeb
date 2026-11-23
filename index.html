@@ -115,7 +115,7 @@
         <form id="bridge-form">
           <fieldset data-bus="I2C">
             <legend>I²C transaction</legend>
-            <label>7-bit address (hex) <input class="viewer-input" id="bus-address" maxlength="4" placeholder="08–77" required></label>
+            <label>7-bit address (hex, 0x08–0x77) <input class="viewer-input" id="bus-address" maxlength="4" required></label>
             <div id="bus-operation"></div>
             <label>Write bytes (hex) <input class="viewer-input" id="bus-write" required></label>
             <label>Read bytes <input class="viewer-input" id="bus-count" type="number" min="1" max="1024" value="16" required></label>
@@ -133,9 +133,12 @@
           </fieldset>
           <fieldset data-bus="SPI" hidden disabled>
             <legend>SPI transfer · CS0</legend>
+            <div id="bus-spi-action"></div>
             <div id="bus-mode"></div>
             <label>Clock (Hz) <input class="viewer-input" id="bus-clock" type="number" min="100000" max="24000000" value="1000000" required></label>
-            <label>Transmit bytes (hex) <input class="viewer-input" id="bus-spi-tx" required></label>
+            <label>MOSI transmit bytes (hex) <input class="viewer-input" id="bus-spi-tx" required></label>
+            <label hidden>Receive length (bytes) <input class="viewer-input" id="bus-spi-count" type="number" min="1" max="1020" value="1" required disabled></label>
+            <label hidden>MOSI fill byte (hex) <input class="viewer-input" id="bus-spi-fill" maxlength="2" value="00" pattern="[0-9A-Fa-f]{2}" required disabled></label>
           </fieldset>
           <fieldset data-bus="CAN" hidden disabled>
             <legend>Classical CAN · standard ID</legend>
