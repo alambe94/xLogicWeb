@@ -125,6 +125,7 @@ export const ru: Messages = {
   'home.features': 'Функции',
   'home.logic': 'Захват сигналов и декодирование протоколов',
   'home.connectUsb': 'Подключить по USB',
+  'home.nativeConnection': 'Подключитесь по USB для работы с Logic и Bridge или по Ethernet для захвата заданного числа отсчётов в Logic.',
   'home.usbGone': 'USB отключён',
   'bridge.description': 'Мост · идентификация платы по I²C',
   'bridge.eeprom': 'EEPROM идентификации платы · адрес 0x51',

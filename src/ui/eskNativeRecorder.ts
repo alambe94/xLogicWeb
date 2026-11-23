@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { ESK_PACKED_RATE } from '../device/eskCapture.js';
+import { ESK_PACKED_RATE, selectedEskUsbDevice } from '../device/eskCapture.js';
 import { formatBytes } from './format.js';
 import { displaySamples, type EskRecordingOptions, type SavedRecording } from './eskRecorder.js';
 
@@ -137,8 +137,10 @@ export function showNativeRecorder(action: 'capture' | 'browse', options: EskRec
       return;
     }
     status.value = 'Starting USB recording…';
+    const selected = selectedEskUsbDevice();
+    if (selected && !selected.serialNumber) throw new Error('The selected USB board has no serial number for native recording');
     await follow(await (await request('start', {rate: options.rate, bank: options.bank,
-      samples: Number.isFinite(options.count) ? options.count : null})).json());
+      samples: Number.isFinite(options.count) ? options.count : null, serial: selected?.serialNumber})).json());
   }
   record.onclick = () => void guarded(start);
   list.onchange = controls;

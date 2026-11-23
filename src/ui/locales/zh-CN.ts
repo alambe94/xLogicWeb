@@ -123,6 +123,7 @@ export const zhCN: Messages = {
   'home.features': '功能',
   'home.logic': '采集波形并解码协议',
   'home.connectUsb': '通过 USB 连接',
+  'home.nativeConnection': '通过 USB 连接可使用 Logic 和 Bridge；通过以太网连接可在 Logic 中采集指定数量的样本。',
   'home.usbGone': 'USB 已断开',
   'bridge.description': '总线桥 · I²C 板卡识别',
   'bridge.eeprom': '板卡识别 EEPROM · 地址 0x51',

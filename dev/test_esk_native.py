@@ -42,6 +42,20 @@ class RecordingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.window(self.key, 0, WINDOW + 1)
 
+    @patch("esk_native.subprocess.Popen")
+    def test_selected_usb_serial_reaches_native_recorder(self, launch):
+        self.store.request(dict(op="start", rate=RATES[0], bank="lower", samples=64, serial="xESK0123"))
+        cmd = launch.call_args.args[0]
+        self.assertEqual(cmd[cmd.index("--serial") + 1], "xESK0123")
+
+    @patch("esk_native.subprocess.Popen")
+    def test_configured_board_mismatch_fails_before_capture(self, launch):
+        self.store.serial = "xESK0123"
+        with self.assertRaisesRegex(ValueError, "differs"):
+            self.store.start(RATES[0], "lower", 64, serial="xESK5678")
+        launch.assert_not_called()
+        self.assertEqual(list(self.store.directory.iterdir()), [])
+
     def test_live_preview_is_bounded_to_written_samples(self):
         self.store.save(dict(id=self.key, rate=RATES[-1], bank="upper", state="recording", limit=9, samples=0))
         self.store.active = self.key

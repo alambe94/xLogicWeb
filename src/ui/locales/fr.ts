@@ -125,6 +125,7 @@ export const fr: Messages = {
   'home.features': 'Fonctions',
   'home.logic': 'Acquérir des signaux et décoder des protocoles',
   'home.connectUsb': 'Connecter en USB',
+  'home.nativeConnection': 'Connectez-vous en USB pour Logic et Bridge, ou en Ethernet pour les captures de longueur définie dans Logic.',
   'home.usbGone': 'USB déconnecté',
   'bridge.description': 'Pont · identification de la carte par I²C',
   'bridge.eeprom': 'EEPROM d’identification · adresse 0x51',
