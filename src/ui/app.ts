@@ -148,7 +148,7 @@ import {
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
-import { showEskRecorder } from './eskRecorder.js';
+import { displaySamples, showEskRecorder } from './eskRecorder.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
 import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
@@ -4483,11 +4483,10 @@ export class App {
     this.applySessionView();
     this.applyTriggerViewAnchor(rescaled);
     if (this.nativePreviewStart !== null) {
-      // The preview store ends at the last confirmed sample. The renderers leave
-      // the portion of this viewport beyond that boundary empty.
-      const end = this.captureStore.length;
-      const half = this.stack.view.span / 2;
-      this.stack.restoreViewport(end - half, end + half);
+      // Fill from sample zero, then scroll the confirmed tail at the user's scale.
+      const span = Math.min(this.stack.view.span, displaySamples);
+      const end = Math.max(this.captureStore.length, span);
+      this.stack.restoreViewport(end - span, end);
     }
     // The policy is resolved: only a Fixed Repeat viewport needs the previous wave as a
     // second layer. Doing this after the resolve keeps FollowLive off the composite.
@@ -4591,7 +4590,7 @@ export class App {
         this.overlay.drawLiveEdge(this.toPx(liveAt));
       }
       if (this.nativePreviewStart !== null) {
-        this.overlay.drawRecordingGuide(this.toPx(this.captureStore.length), 'Live');
+        this.overlay.drawRecordingGuide(Math.min(this.toPx(this.captureStore.length), wCss - 1), 'Live');
       } else if (this.recordingTimeline.edge) {
         const { sample, channel, bit } = this.recordingTimeline.edge;
         const local = sample - this.recordingTimeline.windowStart;
@@ -7877,14 +7876,17 @@ export class App {
         this.adoptCapture(store, packed && name.endsWith('D4–D7') ? ['D4', 'D5', 'D6', 'D7'] : [],
           { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording || previewShown, !packed, preview);
         if (preview) {
-          // Fit about sixteen transitions on the captured half of a busy trace.
-          // Choose once. Later windows keep the user's time scale.
+          // Choose the initial scale once. A quiet input starts with the full preview window.
           const tail = Math.min(store.length, 2048);
           let edges = 0;
           for (const channel of this.channels) {
             if (channel.enabled) edges = Math.max(edges, store.edges(channel.index, store.length - tail, store.length).length);
           }
-          if (edges >= 16) this.stack.setViewport(0, Math.ceil(32 * tail / edges));
+          const span = edges >= 16 ? Math.ceil(16 * tail / edges) : displaySamples;
+          this.stack.restoreViewport(0, span);
+        } else if (previewShown) {
+          // Stop on the newest saved samples even if the final read grew since the last preview.
+          this.stack.setViewport(store.length - this.stack.view.span, store.length);
         }
       }
       previewShown = preview;
