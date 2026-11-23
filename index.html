@@ -344,6 +344,7 @@
     </div>
 
     <aside id="bridge-dock" aria-label="xBridgeWeb" hidden></aside>
+    <output id="native-status" hidden></output>
     <form id="rec-timeline" hidden>
       <label><span data-i18n="rec.position">Position (s)</span> <input id="rec-seconds" class="viewer-input" type="number" min="0" step="any" required></label>
       <button class="pill" type="submit" data-i18n="rec.go">Go</button>
@@ -444,19 +445,6 @@
   <input id="file-input" type="file" multiple hidden
          accept=".sr,.lwcap" />
   <script type="module" src="/src/ui/main.ts"></script>
-  <dialog id="native-recorder" class="shortcuts-dialog" aria-labelledby="native-heading">
-    <div class="shortcuts-form">
-      <header class="shortcuts-header"><h2 id="native-heading">Native USB recording</h2></header>
-      <p id="native-profile"></p>
-      <figure id="native-preview" hidden>
-        <figcaption>Live preview <span id="native-range"></span></figcaption>
-        <canvas id="native-wave" width="512" height="160" aria-label="Live digital waveforms"></canvas>
-      </figure>
-      <div><button id="native-stop" class="danger" disabled>Stop</button></div>
-      <output id="native-status" role="status"></output>
-      <footer class="shortcuts-actions"><button id="native-close" class="shortcuts-close">Close</button></footer>
-    </div>
-  </dialog>
   <dialog id="esk-recorder" class="shortcuts-dialog" aria-labelledby="rec-heading">
     <div class="shortcuts-form esk-record-controls">
       <header class="shortcuts-header"><h2 id="rec-heading" data-i18n="rec.title">Saved recordings…</h2></header>

@@ -78,11 +78,12 @@ this browser profile at this viewer address.
 
 The recorder writes raw samples directly to the SSD. After recording, the viewer
 reads up to 65,536 samples at a time as you move the slider. Four-channel captures
-store two samples per byte. During capture, **Live preview** shows the latest
-written window, refreshed about four times a second while the tab is visible.
+store two samples per byte. During native USB capture, the main Logic waveform
+shows the latest written window, refreshed about four times a second while the
+tab is visible. You can zoom the waveform while recording.
 A short pulse between preview windows can still be inspected in the saved trace.
 Press **Stop** to inspect the recording, select an **Edge channel**, and use
-**Previous edge** or **Next edge** to center the waveform on a transition.
+**Previous edge** or **Next edge** to bring a transition into view at the current zoom.
 The archive has a cumulative 16 GiB limit. **Open → Saved recordings…**
 shows free space and each trace's size. Use **Delete recording** to reclaim space.
 The timeline reports whether the recorder

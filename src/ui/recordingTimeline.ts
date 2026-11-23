@@ -21,11 +21,12 @@ export class RecordingTimeline {
   }
 
   open(archive: SavedRecording, rate: number, first: number, channels: number, firstChannel: number,
-      display: (bytes: Uint8Array, start: number) => void): void {
+      display: (bytes: Uint8Array, start: number) => void, viewport: () => {start: number; end: number},
+      centerSample: (sample: number) => void): void {
     this.archive = archive;
     this.form.hidden = false;
     const last = Math.max(0, archive.samples - displaySamples);
-    let displayed = first, requested = first, reading = false;
+    let displayed = first, requested = first, reading: Promise<void> | undefined;
     const channel = selectControl('rec-edge-channel', t('rec.edgeChannel'),
       Array.from({length: channels}, (_, i) => [String(i + firstChannel), 'D' + (i + firstChannel)]), String(firstChannel));
     document.getElementById('rec-edge-channel')!.replaceChildren(channel.el);
@@ -52,11 +53,7 @@ export class RecordingTimeline {
       this.seconds.value = String(start / rate);
     };
     position(first);
-    const seek = async (sample: number) => {
-      requested = Math.max(0, Math.min(last, Math.round(sample)));
-      position(requested);
-      if (reading) return;
-      reading = true;
+    const readRequested = async () => {
       try {
         while (this.archive === archive && requested !== displayed) {
           const start = requested;
@@ -72,12 +69,24 @@ export class RecordingTimeline {
           position(displayed);
           this.error.textContent = error instanceof Error ? error.message : String(error);
         }
-      } finally { reading = false; }
+      }
+    };
+    const seek = (sample: number) => {
+      requested = Math.max(0, Math.min(last, Math.round(sample)));
+      position(requested);
+      reading ??= readRequested().finally(() => { reading = undefined; });
+      return reading;
     };
     const findEdge = async (direction: 'previous' | 'next') => {
       const selected = Number(channel.value), token = ++generation;
       const forward = direction === 'next';
-      let cursor: number | null = match ?? (forward ? requested : Math.min(archive.samples, requested + displaySamples));
+      const view = viewport();
+      const windowSize = Math.min(displaySamples, archive.samples - displayed);
+      const visibleCenter = Math.round(displayed + (view.start + view.end) / 2);
+      const origin = view.end - view.start < windowSize
+        ? Math.max(0, Math.min(archive.samples, visibleCenter))
+        : forward ? requested : Math.min(archive.samples, requested + displaySamples);
+      let cursor: number | null = match ?? origin;
       prev.disabled = next.disabled = true; cancel.hidden = false;
       result.value = 'Searching D' + selected + '…';
       try {
@@ -99,10 +108,14 @@ export class RecordingTimeline {
           }
           if (generation !== token || this.archive !== archive) return;
           if (found !== null) {
-            match = found;
-            await seek(found - Math.floor(displaySamples / 2));
-            if (generation === token && this.archive === archive)
+            const half = (view.end - view.start) / 2;
+            if (reading || found - half < displayed || found + half >= displayed + windowSize)
+              await seek(found - Math.floor(displaySamples / 2));
+            if (generation === token && this.archive === archive && found >= displayed && found < displayed + displaySamples) {
+              match = found;
+              centerSample(found - displayed);
               result.value = 'D' + selected + ' edge at sample ' + found.toLocaleString();
+            }
             return;
           }
           cursor = resume;
