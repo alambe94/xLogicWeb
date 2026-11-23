@@ -100,7 +100,7 @@
         <strong>xLogicWeb</strong><span data-i18n="home.logic">Capture waveforms and decode protocols</span>
       </button>
       <a id="esk-logic-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newLogic" hidden>Open Logic in a new tab</a>
-      <button id="esk-bridge" class="pill esk-instrument" type="button" hidden>
+      <button id="esk-bridge" class="pill esk-instrument" type="button">
         <strong>xBridgeWeb</strong><span data-i18n="bridge.description">Bridge · I²C board identification</span>
       </button>
       <a id="esk-bridge-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newBridge" hidden>Open Bridge in a new tab</a>
@@ -113,6 +113,7 @@
       <section id="bridge-controls" class="esk-device">
         <h2>I²C</h2>
         <p data-i18n="bridge.eeprom">Board identification EEPROM · address 0x51</p>
+        <p id="bridge-usb-hint" data-i18n="bridge.usbHint">To read the board ID, connect the application USB cable to this computer and choose Connect via USB on Home. The board must have I²C enabled.</p>
         <button class="mini" id="bridge-read" type="button" data-i18n="bridge.read" disabled>Read board ID</button>
         <output id="bridge-result" aria-live="polite"></output>
       </section>
@@ -128,7 +129,7 @@
         </span>
         <span class="toolbar-item-label" id="esk-home-label" data-i18n="home.button">Home</span>
       </button>
-      <button id="btn-bridge-panel" class="toolbar-item" type="button" title="xBridgeWeb" aria-label="xBridgeWeb" aria-controls="bridge-dock" aria-expanded="false" hidden>
+      <button id="btn-bridge-panel" class="toolbar-item" type="button" title="xBridgeWeb" aria-label="xBridgeWeb" aria-controls="bridge-dock" aria-expanded="false">
         <span class="toolbar-item-media" aria-hidden="true">
           <svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 8h17l-4-4 M21 16H4l4 4"></path>

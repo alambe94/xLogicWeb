@@ -9,6 +9,10 @@ compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWe
 
 ## USB Home and Bridge
 
+You can inspect [xBridgeWeb](https://alambe94.github.io/xLogicWeb/?view=bridge)
+from any laptop that can open the viewer. The I²C board-ID action becomes
+available after you connect a compatible board over USB on Home in that tab.
+
 On the hosted xEskWeb Home page, choose **Connect via USB** and select the ESK
 application device. Home displays its identity, boot ID, firmware and advertised
 features. Open **xLogicWeb** for capture or **xBridgeWeb** for active bus tools.

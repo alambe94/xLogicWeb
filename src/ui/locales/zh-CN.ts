@@ -129,6 +129,7 @@ export const zhCN: Messages = {
   'home.usbGone': 'USB 已断开',
   'bridge.description': '总线桥 · I²C 板卡识别',
   'bridge.eeprom': '板卡识别 EEPROM · 地址 0x51',
+  'bridge.usbHint': '要读取板卡标识，请将应用 USB 线连接到这台电脑，然后在主页选择通过 USB 连接。板卡必须已启用 I²C。',
   'bridge.read': '读取板卡标识',
   'home.unpaired': '通过以太网连接时，请打开板卡 IP 地址。要查看已保存的采集，请打开逻辑分析仪。',
   'open.eskStatus': 'ESK 设备状态',

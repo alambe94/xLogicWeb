@@ -131,6 +131,7 @@ export const fr: Messages = {
   'home.usbGone': 'USB déconnecté',
   'bridge.description': 'Pont · identification de la carte par I²C',
   'bridge.eeprom': 'EEPROM d’identification · adresse 0x51',
+  'bridge.usbHint': 'Pour lire l’identifiant, branchez le câble USB de l’application à cet ordinateur puis choisissez la connexion USB sur l’accueil. L’I²C doit être activé sur la carte.',
   'bridge.read': 'Lire l’identifiant de la carte',
   'home.unpaired': 'Pour Ethernet, ouvrez l’adresse IP de la carte. Pour un fichier de capture, ouvrez l’analyseur logique.',
   'open.eskStatus': 'État de la carte ESK',

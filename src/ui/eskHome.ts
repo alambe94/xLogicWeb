@@ -44,6 +44,7 @@ export function initEskHome(): void {
   usbSite.hidden = !paired;
   lanChoice.hidden = paired || location.protocol === 'file:';
   newLogic.hidden = paired || location.protocol === 'file:';
+  newBridge.hidden = location.protocol === 'file:';
   for (const [link, view] of [[newLogic, 'logic'], [newBridge, 'bridge']] as const) {
     const url = new URL(browserSite);
     url.searchParams.set('view', view);
@@ -70,6 +71,7 @@ export function initEskHome(): void {
   const bridge = document.querySelector<HTMLElement>('#esk-bridge-page')!;
   const openBridge = document.querySelector<HTMLButtonElement>('#esk-bridge')!;
   const boardId = document.querySelector<HTMLButtonElement>('#bridge-read')!;
+  const usbHint = document.getElementById('bridge-usb-hint')!;
   const result = document.querySelector<HTMLOutputElement>('#bridge-result')!;
   const dock = document.querySelector<HTMLElement>('#bridge-dock')!;
   const toggle = document.querySelector<HTMLButtonElement>('#btn-bridge-panel')!;
@@ -82,18 +84,10 @@ export function initEskHome(): void {
   let usbDevice: USBDevice | undefined, usbStatus: BoardStatus | undefined;
   let generation = 0, disconnected = false;
 
-  function enableBridge(available: boolean) {
-    openBridge.hidden = !available && !nativeHome;
-    openBridge.disabled = !available;
-    newBridge.hidden = !available || location.protocol === 'file:';
+  function enableBoardId(available: boolean) {
     boardId.disabled = !available;
-    toggle.hidden = !available;
-    if (!available) {
-      dock.hidden = true;
-      toggle.setAttribute('aria-expanded', 'false');
-    }
+    usbHint.hidden = available;
   }
-  enableBridge(false);
 
   async function updateStatus(userRequested = false): Promise<void> {
     if (refresh.disabled) return;
@@ -115,7 +109,7 @@ export function initEskHome(): void {
     connection.textContent = t('esk.reading');
     const token = ++generation;
     openLogic.disabled = !lan;
-    enableBridge(false);
+    enableBoardId(false);
     try {
       if (!lan && !usbDevice) {
         const device = await requestEskDevice();
@@ -130,7 +124,7 @@ export function initEskHome(): void {
         usbStatus = board;
         selectEskUsbDevice(usbDevice);
         change.hidden = false;
-        enableBridge(board.features.some(f => f.name === 'I2C' && f.instance === 0 && f.enabled));
+        enableBoardId(board.features.some(f => f.name === 'I2C' && f.instance === 0 && f.enabled));
       }
       refresh.dataset.i18n = 'capturePanel.tempRate';
       refresh.textContent = t('capturePanel.tempRate');
@@ -145,7 +139,6 @@ export function initEskHome(): void {
         showRows(resources, board.catalog.resources);
         details.hidden = false;
       }
-      if (!openBridge.disabled && new URL(location.href).searchParams.get('view') === 'bridge') display(true);
     } catch (error) {
       if (token !== generation) return;
       if (!lan) {
@@ -178,7 +171,7 @@ export function initEskHome(): void {
     change.hidden = true;
     disconnected = true;
     usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
-    enableBridge(false);
+    enableBoardId(false);
     result.value = t('home.usbGone');
     identity.hidden = features.hidden = details.hidden = true;
     refresh.disabled = openLogic.disabled = false;
@@ -191,8 +184,8 @@ export function initEskHome(): void {
     const params = new URL(location.href).searchParams;
     const view = location.protocol === 'file:' ? portableView : params.get('view');
     // Existing portable, bridge and diagnostic entry points open the analyzer.
-    const atBridge = view === 'bridge' && !!usbStatus && !openBridge.disabled;
-    const atHome = view === 'home' || (view === 'bridge' && !atBridge) || (view === null && location.protocol !== 'file:' &&
+    const atBridge = view === 'bridge';
+    const atHome = view === 'home' || (view === null && location.protocol !== 'file:' &&
       !params.size && !location.pathname.endsWith('/esk.html'));
     const host = atBridge || atHome ? standalone : dock;
     if (controls.parentElement !== host) host.appendChild(controls);
@@ -203,7 +196,10 @@ export function initEskHome(): void {
     if (atHome) {
       if (focus) document.getElementById('esk-home-title')!.focus();
       void updateStatus();
-    } else if (focus) { (atBridge ? document.getElementById('bridge-title')! : goHome).focus(); }
+    } else {
+      if (focus) (atBridge ? document.getElementById('bridge-title')! : goHome).focus();
+      if (atBridge && !paired) void updateStatus();
+    }
   }
   function navigate(view: 'home' | 'logic' | 'bridge'): void {
     const url = new URL(location.href);
