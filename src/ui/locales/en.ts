@@ -135,6 +135,7 @@ export const en = {
   'home.usbGone': 'USB disconnected',
   'bridge.description': 'Bridge · I²C board identification',
   'bridge.eeprom': 'Board identification EEPROM · address 0x51',
+  'bridge.usbHint': 'To read the board ID, connect the application USB cable to this computer and choose Connect via USB on Home. The board must have I²C enabled.',
   'bridge.read': 'Read board ID',
   'home.unpaired': 'Open the board IP for Ethernet. Open Logic to view a saved capture.',
   'open.eskStatus': 'ESK device status',
