@@ -296,6 +296,32 @@ export type TriggerStatusView = Pick<CapturePanelView,
   'settingsArmed' | 'repeatMissed' | 'triggerPreObtainedSec' | 'triggerPreFill'> &
   { mode: CaptureSettings['mode'] };
 
+export function channelChip(c: ChannelState, onToggle: (index: number, enabled: boolean) => void): HTMLButtonElement {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'chip' + (c.enabled ? ' on' : '');
+  const prefix = document.createElement('span');
+  prefix.className = 'chip-d';
+  prefix.textContent = 'D';
+  const number = document.createElement('span');
+  number.textContent = String(c.index);
+  chip.append(prefix, number);
+  // The chip shows/hides the row only; what is acquired is the channel width.
+  const id = c.name === defaultChannelName(c.index) ? `D${c.index}` : `D${c.index} ${c.name}`;
+  chip.title = t('capturePanel.chipToggle', { id });
+  chip.setAttribute('aria-label', chip.title);
+  chip.dataset.channel = String(c.index);
+  chip.setAttribute('aria-pressed', String(c.enabled));
+  if (c.enabled) {
+    chip.style.background = c.color;
+    chip.style.color = chipForeground(c.color);
+  } else {
+    chip.style.borderColor = c.color;
+  }
+  chip.addEventListener('click', () => onToggle(c.index, !c.enabled));
+  return chip;
+}
+
 export class CapturePanel {
   private advancedOpen = false;
   /** The live temperature span in the Advanced section, if it is mounted. */
@@ -890,27 +916,7 @@ export class CapturePanel {
         const chips: HTMLButtonElement[] = [];
         for (const index of indices) {
           const c = v.channels[index]!;
-          const chip = document.createElement('button');
-          chip.className = 'chip' + (c.enabled ? ' on' : '');
-          const prefix = document.createElement('span');
-          prefix.className = 'chip-d';
-          prefix.textContent = 'D';
-          const number = document.createElement('span');
-          number.textContent = String(c.index);
-          chip.append(prefix, number);
-          // The chip shows/hides the row only; what is acquired is the channel width.
-          const id = c.name === defaultChannelName(c.index) ? `D${c.index}` : `D${c.index} ${c.name}`;
-          chip.title = t('capturePanel.chipToggle', { id });
-          chip.setAttribute('aria-label', chip.title);
-          chip.dataset.channel = String(c.index);
-          chip.setAttribute('aria-pressed', String(c.enabled));
-          if (c.enabled) {
-            chip.style.background = c.color;
-            chip.style.color = chipForeground(c.color);
-          } else {
-            chip.style.borderColor = c.color;
-          }
-          chip.addEventListener('click', () => this.cb.onToggleChannel(c.index, !c.enabled));
+          const chip = channelChip(c, (index, enabled) => this.cb.onToggleChannel(index, enabled));
           grid.appendChild(chip);
           chips.push(chip);
         }
