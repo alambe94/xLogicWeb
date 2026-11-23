@@ -223,8 +223,8 @@ html, body {
 .esk-catalog-scroll caption { text-align: left; font-weight: bold; }
 .esk-catalog-scroll th, .esk-catalog-scroll td { padding: .35rem .55rem; vertical-align: top; }
 .esk-home-content { max-width: 56rem; margin: 0 auto; padding: clamp(20px, 6vw, 64px) 20px; }
-#bridge-controls fieldset { display: grid; gap: .65rem; margin: .8rem 0; padding: .8rem; min-width: 0; }
-#bridge-controls fieldset[hidden] { display: none; }
+#bridge-controls fieldset { display: grid; gap: .65rem; margin: .8rem 0; padding: .8rem; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); }
+#bridge-controls [hidden] { display: none; }
 #bridge-controls label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
 #bridge-controls input { max-width: 100%; min-width: 0; }
 #bridge-controls output { display: block; overflow-wrap: anywhere; white-space: pre-wrap; }

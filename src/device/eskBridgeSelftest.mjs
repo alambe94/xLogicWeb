@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { strict as assert } from 'node:assert';
-import { bulkCommand, hexBytes, i2cCommand, parseHex, spiCommands } from './eskBridgeFrames.js';
+import { bulkCommand, hexBytes, i2cCommand, parseHex, spiCommands, spiReceiveBytes } from './eskBridgeFrames.js';
 const pointer = parseHex('00 00');
 assert.deepEqual([...i2cCommand(0x51, pointer, 2).payload], [81, 0, 2, 0, 2, 0, 0, 0]);
 assert.deepEqual([...i2cCommand(0x51, pointer, 0).payload], [81, 0, 2, 0, 0, 0]);
@@ -13,6 +13,12 @@ for (const addr of [-1, 7, 120, 256, NaN])
 assert.throws(() => i2cCommand(81, new Uint8Array(1019), 1));
 assert.throws(() => i2cCommand(81, pointer, 1025));
 assert.throws(() => i2cCommand(81, new Uint8Array(), 0));
+for (const address of [0x08, 0x77]) assert.equal(i2cCommand(address, pointer, 1).payload[0], address);
+for (const [count, fill] of [[0, '00'], [1021, 'FF'], [1.5, '00'], [1, ''], [1, '123'], [1, 'GG']])
+  assert.throws(() => spiReceiveBytes(count, fill));
+const receive = spiCommands(0, 1000000, spiReceiveBytes(1020, 'a5'))[2];
+assert.equal(receive.reply, 1020);
+assert.ok(receive.payload.subarray(4).every(byte => byte === 0xa5));
 const spi = spiCommands(3, 1000000, Uint8Array.of(0x55));
 assert.deepEqual(spi.map(c => c.op), [4, 5, 1]);
 assert.deepEqual([...spi[0].payload], [1, 1]);

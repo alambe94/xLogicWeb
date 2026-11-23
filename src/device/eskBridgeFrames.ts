@@ -28,6 +28,11 @@ export function i2cCommand(address: number, write: Uint8Array, count: number): B
   payload.set(write, prefix);
   return { op: combined ? 3 : count ? 2 : 1, payload, reply: count };
 }
+export function spiReceiveBytes(count: number, fill: string): Uint8Array {
+  requireField(Number.isInteger(count) && count >= 1 && count <= 1020, 'Receive length must be 1–1,020 bytes.');
+  requireField(/^[0-9a-f]{2}$/i.test(fill), 'Enter one hexadecimal MOSI fill byte.');
+  return new Uint8Array(count).fill(parseInt(fill, 16));
+}
 export function spiCommands(mode: number, hz: number, bytes: Uint8Array): BridgeCommand[] {
   requireField(Number.isInteger(mode) && mode >= 0 && mode <= 3, 'Invalid SPI mode.');
   requireField(Number.isInteger(hz) && hz >= 100000 && hz <= 24000000, 'SPI clock must be 100 kHz–24 MHz.');

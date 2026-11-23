@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { selectControl, type SelectOptionTuple } from './select.js';
-import { hexBytes, i2cCommand, parseHex, spiCommands } from '../device/eskBridgeFrames.js';
+import { hexBytes, i2cCommand, parseHex, spiCommands, spiReceiveBytes } from '../device/eskBridgeFrames.js';
 import { readUsbBoardStatus, runUsbBridge } from '../device/eskUsbHome.js';
 import type { BoardStatus } from '../device/eskPairedBoard.js';
 import { gpioCommand, openOutputs, pwmCommand, pwmTiming, type OutputHandle } from '../device/eskOutputs.js';
@@ -26,6 +26,7 @@ export function initBridgeTools() {
   const bits = picker('bus-bits', 'Data bits', choices('8', '7'));
   const parity = picker('bus-parity', 'Parity', choices('none', 'odd', 'even'));
   const stop = picker('bus-stop', 'Stop bits', choices('1', '2'));
+  const spiAction = picker('bus-spi-action', 'Operation', [['exchange', 'Transmit and receive'], ['receive', 'Receive']]);
   const mode = picker('bus-mode', 'Mode', choices('0', '1', '2', '3'));
   const canAction = picker('bus-can-action', 'Operation', [['loopback', 'Internal loopback'], ['listen', 'Listen for one frame'], ['send', 'Send frame']]);
   const bitrate = picker('bus-bitrate', 'Bitrate (bit/s)', choices('125000', '250000', '500000', '1000000'), '500000');
@@ -48,7 +49,7 @@ export function initBridgeTools() {
     switch (name) {
       case 'GPIO': return gpioAction.value === 'configure' ? 'Configure outputs' : 'Write levels';
       case 'PWM': return 'Apply and start PWM';
-      case 'SPI': return 'Transfer';
+      case 'SPI': return spiAction.value === 'receive' ? 'Receive' : 'Transfer';
       case 'UART': return 'Send bytes';
       case 'CAN': return canAction.value === 'listen' ? 'Listen for one frame' : canAction.value === 'send' ? 'Send frame' : 'Internal loopback';
       default: return 'Run transaction';
@@ -66,6 +67,12 @@ export function initBridgeTools() {
     }
     input('duty-a').disabled = !(Number(pwmMask.value) & 1);
     input('duty-b').disabled = !(Number(pwmMask.value) & 2);
+    const receive = spiAction.value === 'receive';
+    for (const id of ['spi-tx', 'spi-count', 'spi-fill']) {
+      const field = input(id);
+      field.disabled = id === 'spi-tx' ? receive : !receive;
+      field.closest('label')!.hidden = field.disabled;
+    }
     input('write').disabled = operation.value === 'read';
     input('count').disabled = operation.value === 'write';
     input('can-id').disabled = input('can-tx').disabled = canAction.value === 'listen';
@@ -186,8 +193,11 @@ export function initBridgeTools() {
         return canTransaction(d, action, Number(bitrate.value), action === 'listen' ? 0 : hexNumber(input('can-id').value), action === 'listen' ? new Uint8Array() : parseHex(input('can-tx').value));
       }
       if (protocol.value === 'SPI') {
-        const commands = spiCommands(Number(mode.value), input('clock').valueAsNumber, parseHex(input('spi-tx').value));
-        return hexBytes(await runUsbBridge(d, b, 'SPI', commands));
+        const tx = spiAction.value === 'receive'
+          ? spiReceiveBytes(input('spi-count').valueAsNumber, input('spi-fill').value)
+          : parseHex(input('spi-tx').value);
+        const commands = spiCommands(Number(mode.value), input('clock').valueAsNumber, tx);
+        return 'RX (MISO) · ' + hexBytes(await runUsbBridge(d, b, 'SPI', commands));
       }
       const op = operation.value;
       const tx = op === 'read' ? new Uint8Array() : parseHex(input('write').value);
@@ -203,6 +213,7 @@ export function initBridgeTools() {
   });
   for (const control of [timer, pwmMask, gpioAction]) control.addEventListener('change', render);
   protocol.addEventListener('change', () => { result.value = ''; render(); });
+  spiAction.addEventListener('change', () => { result.value = ''; render(); });
   operation.addEventListener('change', render);
   canAction.addEventListener('change', render);
   window.addEventListener('pagehide', () => {
