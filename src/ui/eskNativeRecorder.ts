@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { ESK_PACKED_RATE, selectedEskUsbDevice } from '../device/eskCapture.js';
+import { selectControl } from './select.js';
+import type { ConfirmDialog } from './confirmDialog.js';
+import { t } from './i18n.js';
 import { formatBytes } from './format.js';
 import { displaySamples, type EskRecordingOptions, type SavedRecording } from './eskRecorder.js';
 
@@ -53,7 +56,7 @@ function drawPreview(canvas: HTMLCanvasElement, data: Uint8Array, row: NativeRec
   ctx.stroke();
 }
 
-export function showNativeRecorder(action: 'capture' | 'browse', options: EskRecordingOptions, confirmReplace: () => Promise<boolean>,
+export function showNativeRecorder(action: 'capture' | 'browse', options: EskRecordingOptions, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>,
     display: (bytes: Uint8Array, rate: number, start: number, name: string, saved: SavedRecording) => void,
     removed: (key: string) => void): void {
   const dialog = document.querySelector<HTMLDialogElement>('#native-recorder')!;
@@ -61,7 +64,10 @@ export function showNativeRecorder(action: 'capture' | 'browse', options: EskRec
   const find = <T extends HTMLElement>(name: string) => dialog.querySelector<T>('#native-' + name)!;
   const record = find<HTMLButtonElement>('record'), stop = find<HTMLButtonElement>('stop');
   const reopen = find<HTMLButtonElement>('reopen'), close = find<HTMLButtonElement>('close');
-  const list = find<HTMLSelectElement>('archive'), status = find<HTMLOutputElement>('status');
+  const archiveHost = find('archive'), status = find<HTMLOutputElement>('status');
+  let recordings: NativeRecord[] = [];
+  let list = selectControl('native-archive', t('rec.archive'), [], '');
+  archiveHost.replaceChildren(list.el);
   const erase = find<HTMLButtonElement>('delete'), preview = find('preview');
   preview.hidden = true;
   find('profile').textContent = (options.rate / 1e6).toFixed(2) + ' MS/s · ' +
@@ -72,7 +78,7 @@ export function showNativeRecorder(action: 'capture' | 'browse', options: EskRec
     record.disabled = close.disabled = busy;
     stop.disabled = !active;
     erase.disabled = list.disabled = busy || !list.value;
-    reopen.disabled = list.disabled || list.selectedOptions[0]?.dataset.state !== 'saved';
+    reopen.disabled = list.disabled || recordings.find(r => r.id === list.value)?.state !== 'saved';
   }
   async function guarded(fn: () => Promise<void>) {
     if (busy) return;
@@ -121,12 +127,13 @@ export function showNativeRecorder(action: 'capture' | 'browse', options: EskRec
     const space = await (await request('storage')).json();
     find('storage').textContent = (space.available / 2 ** 30).toFixed(2) + ' GiB available · ' +
       (space.budget / 2 ** 30) + ' GiB archive limit';
-    list.replaceChildren(...rows.filter(r => r.state !== 'recording').map(r => {
-      const option = new Option(r.title + ' · ' + r.samples.toLocaleString() + ' samples · ' + formatBytes(r.bytes ?? 0) +
-        (r.state === 'failed' ? ' · Failed' : ''), r.id);
-      option.dataset.state = r.state;
-      return option;
-    }));
+    recordings = rows.filter(r => r.state !== 'recording');
+    list = selectControl('native-archive', t('rec.archive'), recordings.map(r => [r.id,
+      r.title + ' · ' + r.samples.toLocaleString() + ' samples · ' + formatBytes(r.bytes ?? 0) +
+      (r.state === 'failed' ? ' · Failed' : '')]), recordings[0]?.id ?? '');
+    list.addEventListener('change', controls);
+    archiveHost.replaceChildren(list.el);
+    controls();
     const running = rows.find(r => r.state === 'recording');
     if (running) await follow(running);
     else if (rows[0]?.state === 'failed') status.value = rows[0].note;
@@ -143,15 +150,18 @@ export function showNativeRecorder(action: 'capture' | 'browse', options: EskRec
       samples: Number.isFinite(options.count) ? options.count : null, serial: selected?.serialNumber})).json());
   }
   record.onclick = () => void guarded(start);
-  list.onchange = controls;
-  erase.onclick = () => void guarded(async () => {
+  erase.onclick = async () => {
     const key = list.value;
-    if (!window.confirm('Permanently delete ' + list.selectedOptions[0]!.text + '?')) return;
-    await request('delete', {id: key});
-    removed(key);
-    status.value = 'Recording deleted.';
-    await refresh();
-  });
+    const row = recordings.find(r => r.id === key);
+    if (!row || !await confirmation.ask({title: t('rec.delete'), body: t('rec.confirmNativeDelete', {name: row.title}),
+      confirm: t('rec.delete'), cancel: t('reset.cancel')}, erase)) return;
+    await guarded(async () => {
+      await request('delete', {id: key});
+      removed(key);
+      status.value = 'Recording deleted.';
+      await refresh();
+    });
+  };
   stop.onclick = async () => {
     stop.disabled = true;
     try { await request('stop', {id: active}); }

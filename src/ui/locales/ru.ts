@@ -87,6 +87,8 @@ export const ru: Messages = {
   'rec.first': 'Первый отсчёт',
   'rec.reopen': 'Открыть снова',
   'rec.delete': 'Удалить',
+  'rec.edgeChannel': 'Канал фронта',
+  'rec.confirmNativeDelete': 'Удалить {name} с диска без возможности восстановления?',
   'rec.confirmDelete': 'Удалить {name} из хранилища браузера?',
   'rec.busy': 'Эта запись используется в другой вкладке.',
   'rec.unavailable': 'Откройте xLogicWeb напрямую по HTTPS в браузере с локальным файловым хранилищем.',

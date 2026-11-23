@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { displaySamples, type SavedRecording } from './eskRecorder.js';
+import { selectControl } from './select.js';
 import { formatDuration } from './format.js';
 import { t } from './i18n.js';
 
@@ -25,13 +26,13 @@ export class RecordingTimeline {
     this.form.hidden = false;
     const last = Math.max(0, archive.samples - displaySamples);
     let displayed = first, requested = first, reading = false;
-    const channel = document.querySelector<HTMLSelectElement>('#rec-edge-channel')!;
+    const channel = selectControl('rec-edge-channel', t('rec.edgeChannel'),
+      Array.from({length: channels}, (_, i) => [String(i + firstChannel), 'D' + (i + firstChannel)]), String(firstChannel));
+    document.getElementById('rec-edge-channel')!.replaceChildren(channel.el);
     const prev = document.querySelector<HTMLButtonElement>('#rec-edge-previous')!;
     const next = document.querySelector<HTMLButtonElement>('#rec-edge-next')!;
     const cancel = document.querySelector<HTMLButtonElement>('#rec-edge-cancel')!;
     const result = document.querySelector<HTMLOutputElement>('#rec-edge-result')!;
-    channel.replaceChildren(...Array.from({length: channels}, (_, i) =>
-      new Option('D' + (i + firstChannel), String(i + firstChannel))));
     let generation = 0, match: number | null = null;
     function resetSearch() {
       generation++; match = null; result.value = ''; cancel.hidden = true;
@@ -46,6 +47,7 @@ export class RecordingTimeline {
     this.error.textContent = '';
     const position = (start: number) => {
       this.slider.value = String(start);
+      this.slider.style.setProperty('--acquisition-fill', (last ? 100 * this.slider.valueAsNumber / last : 0) + '%');
       this.slider.setAttribute('aria-valuetext', formatDuration(start / rate, 8));
       this.seconds.value = String(start / rate);
     };
@@ -114,7 +116,8 @@ export class RecordingTimeline {
     };
     prev.onclick = () => void findEdge('previous');
     next.onclick = () => void findEdge('next');
-    channel.onchange = cancel.onclick = resetSearch;
+    channel.addEventListener('change', resetSearch);
+    cancel.onclick = resetSearch;
     this.slider.oninput = () => { resetSearch(); void seek(this.slider.valueAsNumber); };
     this.form.onsubmit = event => {
       event.preventDefault();

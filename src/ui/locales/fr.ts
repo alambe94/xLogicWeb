@@ -87,6 +87,8 @@ export const fr: Messages = {
   'rec.first': 'Premier échantillon',
   'rec.reopen': 'Rouvrir',
   'rec.delete': 'Supprimer',
+  'rec.edgeChannel': 'Canal de front',
+  'rec.confirmNativeDelete': 'Supprimer définitivement {name} du disque ?',
   'rec.confirmDelete': 'Supprimer {name} du stockage du navigateur ?',
   'rec.busy': 'Cet enregistrement est utilisé dans un autre onglet.',
   'rec.unavailable': 'Ouvrez xLogicWeb directement en HTTPS dans un navigateur avec stockage local des fichiers.',

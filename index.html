@@ -96,11 +96,11 @@
         </details>
       </section>
       <h2 data-i18n="home.instruments">Instruments</h2>
-      <button id="esk-logic" class="esk-instrument" type="button">
+      <button id="esk-logic" class="pill esk-instrument" type="button">
         <strong>xLogicWeb</strong><span data-i18n="home.logic">Capture waveforms and decode protocols</span>
       </button>
       <a id="esk-logic-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newLogic" hidden>Open Logic in a new tab</a>
-      <button id="esk-bridge" class="esk-instrument" type="button" hidden>
+      <button id="esk-bridge" class="pill esk-instrument" type="button" hidden>
         <strong>xBridgeWeb</strong><span data-i18n="bridge.description">Bridge · I²C board identification</span>
       </button>
       <a id="esk-bridge-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newBridge" hidden>Open Bridge in a new tab</a>
@@ -302,9 +302,9 @@
     <form id="rec-timeline" hidden>
       <label><span data-i18n="rec.position">Position (s)</span> <input id="rec-seconds" class="viewer-input" type="number" min="0" step="any" required></label>
       <button class="pill" type="submit" data-i18n="rec.go">Go</button>
-      <input id="rec-slider" type="range" min="0" step="1" aria-labelledby="rec-duration">
+      <input id="rec-slider" class="acquisition-time-slider" type="range" min="0" step="1" aria-labelledby="rec-duration">
       <output id="rec-duration"></output>
-      <label>Edge channel <select id="rec-edge-channel" class="viewer-input"></select></label>
+      <div id="rec-edge-channel"></div>
       <button type="button" id="rec-edge-previous" class="pill">Previous edge</button>
       <button type="button" id="rec-edge-next" class="pill">Next edge</button>
       <button type="button" id="rec-edge-cancel" class="pill" hidden>Cancel search</button>
@@ -400,36 +400,36 @@
          accept=".sr,.lwcap" />
   <script type="module" src="/src/ui/main.ts"></script>
   <dialog id="native-recorder" class="shortcuts-dialog" aria-labelledby="native-heading">
-    <div class="shortcuts-body">
-      <h2 id="native-heading">Native USB recording</h2>
+    <div class="shortcuts-form">
+      <header class="shortcuts-header"><h2 id="native-heading">Native USB recording</h2></header>
       <p id="native-profile"></p>
       <figure id="native-preview" hidden>
         <figcaption>Live preview <span id="native-range"></span></figcaption>
         <canvas id="native-wave" width="512" height="160" aria-label="Live digital waveforms"></canvas>
       </figure>
-      <div><button id="native-record" class="primary">Record</button> <button id="native-stop" class="pill" disabled>Stop</button></div>
+      <div><button id="native-record" class="primary">Record</button> <button id="native-stop" class="danger" disabled>Stop</button></div>
       <div id="native-library">
-        <label>Saved recording <select id="native-archive" class="viewer-input"></select></label>
+        <div id="native-archive"></div>
         <button id="native-reopen" class="pill">Reopen</button>
         <button id="native-delete" class="pill">Delete recording</button>
         <p id="native-storage"></p>
       </div>
       <output id="native-status" role="status"></output>
-      <button id="native-close" class="pill">Close</button>
+      <footer class="shortcuts-actions"><button id="native-close" class="shortcuts-close">Close</button></footer>
     </div>
   </dialog>
   <dialog id="esk-recorder" class="shortcuts-dialog" aria-labelledby="rec-heading">
-    <div class="esk-record-controls">
-      <h2 id="rec-heading" data-i18n="rec.title">Recording from a saved session</h2>
+    <div class="shortcuts-form esk-record-controls">
+      <header class="shortcuts-header"><h2 id="rec-heading" data-i18n="rec.title">Recording from a saved session</h2></header>
       <label><span data-i18n="rec.source">Source (.sr, 8 digital channels)</span><input type="file" id="rec-source" accept=".sr"></label>
       <p id="rec-rate" data-i18n="rec.fixedRate" hidden>Continuous USB sample rate · 41.67 MS/s</p>
       <label><span data-i18n="rec.limit">Recording limit (MiB, optional)</span><input type="number" min="1" step="1" id="rec-limit" class="viewer-input"></label>
-      <div><button id="rec-record" class="primary" data-i18n="rec.record">Record</button> <button id="rec-stop" class="pill" data-i18n="rec.stop">Stop</button></div>
-      <label><span data-i18n="rec.archive">Saved recording</span><select id="rec-archive" class="viewer-input"></select></label>
+      <div><button id="rec-record" class="primary" data-i18n="rec.record">Record</button> <button id="rec-stop" class="danger" data-i18n="rec.stop">Stop</button></div>
+      <div id="rec-archive"></div>
       <label><span data-i18n="rec.first">First sample</span><input id="rec-first" class="viewer-input" type="number" value="0" min="0" step="1" required></label>
       <div><button id="rec-reopen" class="pill" data-i18n="rec.reopen">Reopen</button> <button id="rec-delete" class="pill" data-i18n="rec.delete">Delete</button></div>
       <output id="rec-status" role="status"></output>
-      <button id="rec-close" class="pill" data-i18n="settings.close">Close</button>
+      <footer class="shortcuts-actions"><button id="rec-close" class="shortcuts-close" data-i18n="settings.close">Close</button></footer>
     </div>
   </dialog>
 </body>

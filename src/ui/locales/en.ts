@@ -91,6 +91,8 @@ export const en = {
   'rec.first': 'First sample',
   'rec.reopen': 'Reopen',
   'rec.delete': 'Delete',
+  'rec.edgeChannel': 'Edge channel',
+  'rec.confirmNativeDelete': 'Permanently delete {name} from disk?',
   'rec.confirmDelete': 'Delete {name} from browser storage?',
   'rec.busy': 'This recording is in use in another tab.',
   'rec.unavailable': 'Open xLogicWeb directly over HTTPS in a browser with local file storage support.',
