@@ -53,8 +53,10 @@ The recorder writes raw samples directly to the SSD. After recording, the viewer
 reads up to 65,536 samples at a time as you move the slider. Four-channel captures
 store two samples per byte. The recording directory has a cumulative 16 GiB limit.
 To reclaim space, close the launcher and move all files sharing a recording ID
-out of the recordings folder together. A warning on the timeline identifies a
-USB read failure during Stop when the last hardware samples cannot be verified.
+out of the recordings folder together. The timeline reports whether the recorder
+verified the hardware end of the stream. With the current SK-AM64B application,
+Stop can leave additional samples on the board or in pending USB reads. A
+count-limited recording can still contain the full requested sample count.
 
 To launch from source, build the viewer, then run this with Python 3.9 or newer
 and a compatible Windows recorder on a machine with the ESK application USB connected.
@@ -64,7 +66,9 @@ py -3 dev/esk_native.py --dist dist --recorder C:\ESK\xlogic_capture.exe --store
 ```
 
 Use `--serial SERIAL` to select a particular board. The hosted viewer continues
-to offer WebUSB and Ethernet. PulseView remains an optional sigrok desktop client.
+to offer WebUSB and Ethernet. The Windows demo bundle is currently distributed
+separately. The optional PulseView client and sigrok-cli share a Windows ZIP
+on the [PulseView fork's releases page](https://github.com/alambe94/pulseview/releases/tag/xsdk-bundle-22).
 
 ## ESK xLOGIC over Ethernet
 

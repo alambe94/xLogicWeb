@@ -42,6 +42,18 @@ class RecordingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.window(self.key, 0, WINDOW + 1)
 
+    def test_stop_without_failed_reads_still_needs_hardware_proof(self):
+        cleanup = dict(drain_completed=True, unresolved_reads=0, failed_reads=0)
+        row = self.complete(RATES[0], 9, b"abc", 255, cleanup_reads=cleanup, finish_verified=False)
+        self.assertEqual(row["note"], "Recording stopped. The hardware tail is unverified.")
+        row["note"] = ""
+        self.store.save(row)
+        self.assertIn("unverified", self.store.status(self.key)["note"])
+        verified = self.complete(RATES[0], 9, b"abc", 255, cleanup_reads=cleanup, finish_verified=True)
+        self.assertEqual(verified["note"], "Hardware end of stream verified.")
+        limited = self.complete(RATES[0], 3, b"abc", 255, cleanup_reads=cleanup, finish_verified=False)
+        self.assertIn("Recording limit reached.", limited["note"])
+
     def test_receipt_refuses_overrun_and_mismatched_bank(self):
         self.assertEqual(self.complete(RATES[0], 3, b"abc", 255, overruns=1)["state"], "failed")
         self.assertEqual(self.complete(RATES[-1], 5, b"abc", 15)["state"], "failed")
