@@ -25,9 +25,9 @@ Run becomes available when the selected board and browser support the chosen pro
 
 | Tool | Operation |
 | --- | --- |
-| I²C | Enter a 7-bit address in hex. **Write then read** sends a repeated START between the write and read. For a short board-ID check, use address `51`, write `00 00`, and read four bytes. The expected reply is `AA 55 33 EE`. |
+| I²C | Enter the unshifted 7-bit address in hex, from `0x08` to `0x77` (8–119 decimal). **Write then read** sends a repeated START between the write and read. For a short board-ID check, use address `51`, write `00 00`, and read four bytes. The expected reply is `AA 55 33 EE`. |
 | UART | Choose baud, data bits, parity and stop bits, then **Open UART port** and select the serial port belonging to the same board. Enter hex bytes to transmit. The receive display retains the latest 256 bytes. Close the port to release it or change framing. |
-| SPI | Select mode and clock, then enter hex bytes for one full-duplex CS0 transfer. The result shows the bytes received from the attached target. |
+| SPI | Select mode and clock. **Transmit and receive** exchanges the entered MOSI bytes for the same number of MISO bytes under one CS0 assertion. **Receive** clocks 1–1,020 bytes using the selected MOSI fill byte (default `00`). For a target that needs a command before returning data, send the command and dummy bytes together using **Transmit and receive**. |
 | CAN | Select a nominal bitrate. **Internal loopback** verifies a standard classical CAN frame and its controller echo. **Send frame** and **Listen for one frame** use the external bus and require a transceiver and an active peer. On this USB profile, stop Logic capture before using CAN because channel control also claims interface zero. |
 
 To inspect the EEPROM read on the wires, attach two Logic inputs to SDA and SCL
