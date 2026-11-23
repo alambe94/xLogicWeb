@@ -380,6 +380,17 @@
   <input id="file-input" type="file" multiple hidden
          accept=".sr,.lwcap" />
   <script type="module" src="/src/ui/main.ts"></script>
+  <dialog id="native-recorder" class="shortcuts-dialog" aria-labelledby="native-heading">
+    <div class="shortcuts-body">
+      <h2 id="native-heading">Native USB recording</h2>
+      <p id="native-profile"></p>
+      <div><button id="native-record">Record</button> <button id="native-stop" disabled>Stop</button></div>
+      <label>Saved recording <select id="native-archive"></select></label>
+      <button id="native-reopen">Reopen</button>
+      <output id="native-status" role="status"></output>
+      <button id="native-close">Close</button>
+    </div>
+  </dialog>
   <dialog id="esk-recorder" class="shortcuts-dialog" aria-labelledby="rec-heading">
     <div class="esk-record-controls">
       <h2 id="rec-heading" data-i18n="rec.title">Recording from a saved session</h2>

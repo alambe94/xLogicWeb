@@ -31,6 +31,8 @@ jobs:
           git -C "$RUNNER_TEMP/decoders" checkout --detach FETCH_HEAD
           node src/decode/tools/vendor-assets.mjs "$RUNNER_TEMP/decoders/decoders"
       - run: npm run check
+      - name: Test native recording archive
+        run: python3 -m unittest discover -s dev -p test_esk_native.py
       - name: Build for the repository's Pages path
         env:
           REPO_NAME: ${{ github.event.repository.name }}

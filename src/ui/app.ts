@@ -148,6 +148,7 @@ import {
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
 import { showEskRecorder } from './eskRecorder.js';
+import { nativeRecorderAvailable, showNativeRecorder } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { boardCaptureMaximum, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
@@ -7853,16 +7854,26 @@ export class App {
       this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
       this.syncUnloadGuard();
     };
-    showEskRecorder(live, (bytes, rate, start, name, saved) => {
+    const display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: import('./eskRecorder.js').SavedRecording) => {
       showWindow(bytes, rate, start, name);
       if (saved) this.recordingTimeline.open(saved, rate, start, (data, offset) => showWindow(data, rate, offset, name, true));
-    }, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
+    };
+    if (live && options && !options.ethernet && nativeRecorderAvailable()) {
+      showNativeRecorder(options, () => this.confirmDiscardCapture(), display);
+    } else {
+      showEskRecorder(live, display, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
+    }
   }
 
   /** Open a file, a finite ESK USB capture, or the bundled example. */
   private openItems(): SettingsMenuItem[] {
     return [
       { label: t('open.file'), hint: t('open.fileHint'), onPick: () => void this.pickFiles() },
+      ...(nativeRecorderAvailable() ? [{label: 'Native USB recording…', onPick: () => {
+        const count = this.eskUntilStop ? Infinity : parseSampleCount(this.eskCountText);
+        if (count !== undefined) this.openEskRecorder(true, {count, rate: this.eskRate, bank: this.eskBank});
+        else this.selectPage('capture');
+      }}] : []),
       ...(!eskLanMode() && navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
         label: t('open.esk'), onPick: () => void this.openEskCapture('usb'),
       }] : []),
