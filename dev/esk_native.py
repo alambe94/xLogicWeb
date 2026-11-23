@@ -17,6 +17,9 @@ from urllib.parse import unquote, urlsplit
 
 RATES = (41666666, 83333333, 166666666, 333333333, 500000000)
 WINDOW = 65536
+EDGE_CHUNK = 4 * 1024 ** 2
+LOW_NIBBLE = bytes(i & 15 for i in range(256))
+HIGH_NIBBLE = bytes(i >> 4 for i in range(256))
 GIB = 1024 ** 3
 
 
@@ -147,21 +150,64 @@ class Recordings:
             self.process.stdin.close()
         return self.status(key)
 
-    def window(self, key, start, end):
+    def window(self, key, start, end, *, preview=False):
         row = self.status(key)
-        if row["state"] != "saved" or type(start) is not int or type(end) is not int or not (
+        readable = row["state"] == "saved" or (preview and row["state"] == "recording" and key == self.active)
+        if not readable or type(start) is not int or type(end) is not int or not (
                 0 <= start < end <= row["samples"] and end - start <= WINDOW):
             raise ValueError("Invalid recording window")
+        return self.read_samples(row, start, end)
+
+    def read_samples(self, row, start, end):
         packed = row["rate"] == RATES[-1]
         begin, finish = (start // 2, (end + 1) // 2) if packed else (start, end)
-        with self.path(key, ".bin").open("rb") as stream:
+        with self.path(row["id"], ".bin").open("rb") as stream:
             stream.seek(begin)
             data = stream.read(finish - begin)
         if len(data) != finish - begin:
             raise ValueError("Recording was truncated")
         if packed:
-            return bytes((data[i // 2 - begin] >> (4 * (i % 2))) & 15 for i in range(start, end))
+            expanded = bytearray(2 * len(data))
+            expanded[::2] = data.translate(LOW_NIBBLE)
+            expanded[1::2] = data.translate(HIGH_NIBBLE)
+            return bytes(expanded[start % 2:start % 2 + end - start])
         return data
+
+    def edge(self, key, position, channel, direction):
+        row = self.status(key)
+        packed = row["rate"] == RATES[-1]
+        first = 4 if packed and row["bank"] == "upper" else 0
+        if (row["state"] != "saved" or type(position) is not int or not 0 <= position <= row["samples"]
+                or type(channel) is not int or not first <= channel < first + (4 if packed else 8)
+                or direction not in ("previous", "next")):
+            raise ValueError("Invalid edge search")
+        forward = direction == "next"
+        start = position if forward else max(0, position - EDGE_CHUNK - 1)
+        end = min(row["samples"], position + EDGE_CHUNK + 1) if forward else position
+        if end - start < 2:
+            return dict(match=None, resume=None)
+        bit = channel - first
+        levels = self.read_samples(row, start, end).translate(bytes((i >> bit) & 1 for i in range(256)))
+        other = bytes([1 - levels[0 if forward else -1]])
+        i = levels.find(other) if forward else levels.rfind(other)
+        match = start + i + (0 if forward else 1) if i >= 0 else None
+        resume = (end - 1 if end < row["samples"] else None) if forward else (start + 1 if start else None)
+        return dict(match=match, resume=None if match is not None else resume)
+
+    def remove(self, key):
+        self.refresh()
+        if key == self.active:
+            raise ValueError("Stop the recording before deleting it")
+        path = self.path(key, ".record")
+        pending = self.path(key, ".removing")
+        if path.exists():
+            path.replace(pending)
+        if pending.exists():
+            self.finish_removal(key)
+
+    def finish_removal(self, key):
+        for suffix in (".bin", ".log", ".json", ".tmp", ".removing"):
+            self.path(key, suffix).unlink(missing_ok=True)
 
     def request(self, body):
         with self.lock:
@@ -172,11 +218,23 @@ class Recordings:
                 return self.stop(key)
             if op == "status":
                 return self.status(key)
+            if op == "delete":
+                self.remove(key)
+                return {}
+            if op == "storage":
+                return dict(available=self.available(), budget=self.budget)
             if op == "list":
+                for pending in self.directory.glob("*.removing"):
+                    self.finish_removal(pending.stem)
                 rows = [self.status(p.stem) for p in self.directory.glob("*.record")]
+                for row in rows:
+                    path = self.path(row["id"], ".bin")
+                    row["bytes"] = path.stat().st_size if path.exists() else 0
                 return sorted(rows, key=lambda row: row["title"], reverse=True)
-            if op == "window":
-                return self.window(key, body.get("start"), body.get("end"))
+            if op in ("window", "preview"):
+                return self.window(key, body.get("start"), body.get("end"), preview=op == "preview")
+            if op == "edge":
+                return self.edge(key, body.get("position"), body.get("channel"), body.get("direction"))
             raise ValueError("Unknown recorder operation")
 
 

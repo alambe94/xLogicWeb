@@ -290,6 +290,11 @@
       <button type="submit" data-i18n="rec.go">Go</button>
       <input id="rec-slider" type="range" min="0" step="1" aria-labelledby="rec-duration">
       <output id="rec-duration"></output>
+      <label>Edge channel <select id="rec-edge-channel"></select></label>
+      <button type="button" id="rec-edge-previous">Previous edge</button>
+      <button type="button" id="rec-edge-next">Next edge</button>
+      <button type="button" id="rec-edge-cancel" hidden>Cancel search</button>
+      <output id="rec-edge-result"></output>
       <small id="rec-summary"></small>
       <span id="rec-seek-error" role="status"></span>
     </form>
@@ -384,10 +389,16 @@
     <div class="shortcuts-body">
       <h2 id="native-heading">Native USB recording</h2>
       <p id="native-profile"></p>
+      <figure id="native-preview" hidden>
+        <figcaption>Live preview <span id="native-range"></span></figcaption>
+        <canvas id="native-wave" width="512" height="160" aria-label="Live digital waveforms"></canvas>
+      </figure>
       <div><button id="native-record">Record</button> <button id="native-stop" disabled>Stop</button></div>
       <div id="native-library">
         <label>Saved recording <select id="native-archive"></select></label>
         <button id="native-reopen">Reopen</button>
+        <button id="native-delete">Delete recording</button>
+        <p id="native-storage"></p>
       </div>
       <output id="native-status" role="status"></output>
       <button id="native-close">Close</button>

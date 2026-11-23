@@ -52,9 +52,14 @@ also lets you record a shorter trace or reopen a saved one after restarting.
 
 The recorder writes raw samples directly to the SSD. After recording, the viewer
 reads up to 65,536 samples at a time as you move the slider. Four-channel captures
-store two samples per byte. The recording directory has a cumulative 16 GiB limit.
-To reclaim space, close the launcher and move all files sharing a recording ID
-out of the recordings folder together. The timeline reports whether the recorder
+store two samples per byte. During capture, **Live preview** shows the latest
+written window, refreshed about four times a second while the tab is visible.
+A short pulse between preview windows can still be inspected in the saved trace.
+Press **Stop** to inspect the recording, select an **Edge channel**, and use
+**Previous edge** or **Next edge** to center the waveform on a transition.
+The archive has a cumulative 16 GiB limit. **Open → Native USB recording…**
+shows free space and each trace's size. Use **Delete recording** to reclaim space.
+The timeline reports whether the recorder
 verified the hardware end of the stream. With the current SK-AM64B application,
 Stop can leave additional samples on the board or in pending USB reads. A
 count-limited recording can still contain the full requested sample count.

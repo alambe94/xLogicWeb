@@ -1033,6 +1033,11 @@ html[data-theme="light"] .channel-color-custom { background: var(--bg30); }
 }
 #esk-recorder { margin: auto 1rem 1rem auto; width: min(34rem, calc(100vw - 2rem)); }
 #esk-recorder::backdrop { background: transparent; }
+#native-recorder { width: min(36rem, calc(100vw - 2rem)); }
+#native-preview { margin: .6rem 0; }
+#native-preview figcaption, #native-storage { font-size: .8rem; }
+#native-wave { display: block; width: 100%; background: var(--muted); margin-top: .35rem; }
+#native-archive { max-width: 100%; }
 .esk-record-controls { display: grid; gap: .55rem; padding: 1rem; }
 .esk-record-controls h2 { font-size: 1rem; margin: 0; }
 .esk-record-controls label { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: .5rem; }

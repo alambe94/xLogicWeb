@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from esk_native import Recordings, RATES, WINDOW
 
@@ -16,7 +16,7 @@ class RecordingTests(unittest.TestCase):
         self.key = "a" * 32
 
     def complete(self, rate, limit, data, mask, **changes):
-        self.store.save(dict(id=self.key, rate=rate, bank="upper", limit=limit,
+        self.store.save(dict(id=self.key, title="Test capture", rate=rate, bank="upper", limit=limit,
                              samples=0, state="recording", note=""))
         self.store.path(self.key, ".bin").write_bytes(data)
         receipt = dict(bytes=len(data), actual_sample_rate=rate, channel_mask=mask,
@@ -41,6 +41,44 @@ class RecordingTests(unittest.TestCase):
         self.assertEqual(self.store.window(self.key, 1, 3), b"bc")
         with self.assertRaises(ValueError):
             self.store.window(self.key, 0, WINDOW + 1)
+
+    def test_live_preview_is_bounded_to_written_samples(self):
+        self.store.save(dict(id=self.key, rate=RATES[-1], bank="upper", state="recording", limit=9, samples=0))
+        self.store.active = self.key
+        self.store.path(self.key, ".bin").write_bytes(bytes.fromhex("1032"))
+        self.assertEqual(self.store.window(self.key, 1, 4, preview=True), bytes([1, 2, 3]))
+        with self.assertRaises(ValueError):
+            self.store.window(self.key, 1, 5, preview=True)
+        with self.assertRaises(ValueError):
+            self.store.window(self.key, 0, 4)
+        with self.assertRaises(ValueError):
+            self.store.remove(self.key)
+
+    @patch("esk_native.EDGE_CHUNK", 3)
+    def test_search_crosses_block_and_packed_byte_boundaries(self):
+        self.complete(RATES[-1], 7, bytes.fromhex("000010f1"), 240)
+        self.assertEqual(self.store.edge(self.key, 0, 4, "next"), dict(match=None, resume=3))
+        self.assertEqual(self.store.edge(self.key, 3, 4, "next")["match"], 5)
+        self.assertEqual(self.store.edge(self.key, 7, 4, "previous")["match"], 5)
+        self.assertIsNone(self.store.edge(self.key, 5, 4, "next")["match"])
+        with self.assertRaises(ValueError):
+            self.store.edge(self.key, 1, 0, "previous")
+        self.complete(RATES[0], 9, bytes([1, 1, 1, 0, 0, 0, 0, 0, 0]), 255)
+        cursor = 9
+        while cursor is not None:
+            result = self.store.edge(self.key, cursor, 0, "previous")
+            cursor = result["resume"]
+        self.assertEqual(result["match"], 3)
+
+    def test_archive_usage_and_delete(self):
+        self.complete(RATES[0], 3, b"abc", 255)
+        self.assertEqual(self.store.request(dict(op="list"))[0]["bytes"], 3)
+        free = self.store.available()
+        self.store.request(dict(op="delete", id=self.key))
+        self.assertGreater(self.store.available(), free)
+        self.assertEqual(self.store.request(dict(op="list")), [])
+        self.assertEqual(list(self.store.directory.iterdir()), [])
+        self.store.remove(self.key)
 
     def test_stop_without_failed_reads_still_needs_hardware_proof(self):
         cleanup = dict(drain_completed=True, unresolved_reads=0, failed_reads=0)
