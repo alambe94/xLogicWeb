@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { findPulse, scanBlock } from '../traceSearch.js';
+import { filteredTrace } from '../traceFilter.js';
 const raw = new Uint8Array(scanBlock + 80);
 raw.fill(8, scanBlock - 4, scanBlock + 3);
 raw.fill(8, scanBlock + 20, scanBlock + 29);
@@ -17,4 +18,13 @@ assert.equal(await search(source, 7, true), null);
 assert.equal((await search(source, 7, false)).start, scanBlock + 20);
 assert.equal(await search({...source,gaps:[{startSample:scanBlock,endSample:scanBlock+1}]},8,true),null);
 console.log('Pulse polarity, strict width, reverse search, incomplete pulses, gaps and split windows passed.');
+const copy = raw.slice();
+const filtered = filteredTrace(source, new Map([[3, 8]]), signal);
+assert.deepEqual(await filtered.read(scanBlock - 7, scanBlock + 8), new Uint8Array(15));
+assert.deepEqual(await filtered.read(scanBlock + 21, scanBlock + 26), new Uint8Array(5).fill(8));
+assert.deepEqual(await filteredTrace(source, new Map([[3,7]]), signal).read(scanBlock, scanBlock + 2), new Uint8Array([8,8]));
+const inverted = {...source, read: async (a,b) => (await source.read(a,b)).map(x => x ^ 255)};
+assert.deepEqual(await filteredTrace(inverted,new Map([[3,8]]),signal).read(scanBlock,scanBlock+3),new Uint8Array(3).fill(255));
+assert.deepEqual(raw, copy);
+console.log('Raw preservation, high/low glitch rejection, exact cutoff and cross-window filter context passed.');
 
