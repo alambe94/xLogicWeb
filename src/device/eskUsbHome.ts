@@ -2,6 +2,7 @@
 import { eskBusInterface, EskUsbSession, requireField, withUsbInterface } from './eskUsbSession.js';
 import { bulkCommand, i2cCommand, type BridgeCommand } from './eskBridgeFrames.js';
 import type { BoardStatus } from './eskPairedBoard.js';
+import { readBoardPolicy, saveBoardName, type NetworkManagement } from './eskBoardName.js';
 
 const names = ['', 'Device', 'Logic', 'DAP', 'UART', 'I2C', 'SPI', 'GPIO', 'USB analyzer',
   'BLE analyzer', 'Power analyzer', 'Firmware update', 'PWM', 'CAN', 'LIN', 'RS485', 'QSPI'];
@@ -53,10 +54,29 @@ class HomeSession extends EskUsbSession {
     return {...identity, features};
   }
 
-  async transactions(intf: USBAlternateInterface, expected: BoardStatus, service: 'I2C' | 'SPI', commands: BridgeCommand[]) {
+  async verifyIdentity(expected: BoardStatus) {
     const identity = await this.identity();
     requireField(identity.boot === expected.boot && identity.deviceId === expected.deviceId,
       'Board identity or boot changed. Refresh Home.');
+  }
+
+  async boardName(expected: BoardStatus, name?: string) {
+    await this.verifyIdentity(expected);
+    requireField(expected.firmware >= 0x2800, 'This firmware needs an update to rename the board.');
+    const payload = (r: DataView) => new DataView(r.buffer, r.byteOffset + 48, r.byteLength - 48);
+    const port: NetworkManagement = {
+      service: async command => payload(await this.exchange(7, command, 1, this.session)),
+      status: async () => payload(await this.exchange(9, new Uint8Array())),
+    };
+    await this.control(2, 30000n);
+    try {
+      if (name === undefined) return {name: (await readBoardPolicy(port)).name};
+      return {name, advertised: await saveBoardName(port, name)};
+    } finally { await this.release(); }
+  }
+
+  async transactions(intf: USBAlternateInterface, expected: BoardStatus, service: 'I2C' | 'SPI', commands: BridgeCommand[]) {
+    await this.verifyIdentity(expected);
     const ep = (dir: USBDirection) => intf.endpoints.find(e => e.type === 'bulk' && e.direction === dir)?.endpointNumber;
     const input = ep('in'), output = ep('out');
     requireField(input && output, 'Missing bridge USB endpoints.');
@@ -93,6 +113,11 @@ export function decodeBoardId(bytes: Uint8Array): string {
 export function readUsbBoardStatus(device: USBDevice): Promise<BoardStatus> {
   const session = new HomeSession(device, 2, 0x60, 0);
   return withUsbInterface(device, session, async () => { await session.openConnection(); return session.status(); });
+}
+
+export function usbBoardName(device: USBDevice, expected: BoardStatus, name?: string): Promise<{name: string; advertised?: string}> {
+  const session = new HomeSession(device, 2, 0x60, 1);
+  return withUsbInterface(device, session, async () => { await session.openConnection(); return session.boardName(expected, name); });
 }
 
 export function runUsbBridge(device: USBDevice, expected: BoardStatus, service: 'I2C' | 'SPI', commands: BridgeCommand[]): Promise<Uint8Array> {

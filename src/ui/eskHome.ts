@@ -7,6 +7,8 @@ import type { BoardStatus } from '../device/eskPairedBoard.js';
 import { onLocaleChange, t } from './i18n.js';
 import { aboutView } from './about.js';
 import { initFirmwareCheck } from './eskFirmwareCheck.js';
+import { initBoardName } from './eskBoardName.js';
+import { boardAddress } from '../device/eskBoardName.js';
 import { applyUpdate, getUpdateState, onUpdateStateChange } from './pwaUpdate.js';
 import { nativeRecorderAvailable, nativeRequest } from './nativeArchive.js';
 
@@ -85,6 +87,7 @@ export function initEskHome(): void {
     lanChoice.addEventListener('toggle', () => { if (lanChoice.open && !scan.disabled) scan.click(); });
   }
   const setFirmwareTarget = initFirmwareCheck();
+  const setNameTarget = initBoardName();
   const firmware = document.getElementById('esk-firmware')!;
   const firmwareGuide = document.getElementById('esk-firmware-guide')!;
   const webBuild = document.getElementById('esk-web-build')!;
@@ -125,15 +128,13 @@ export function initEskHome(): void {
   address.oninput = () => address.setCustomValidity('');
   form.onsubmit = event => {
     event.preventDefault();
-    const match = /^(?:http:\/\/)?(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?\/?$/i.exec(address.value.trim());
-    const port = Number(match?.[2] ?? 5555);
-    if (!match || match[1]!.split('.').some(part => String(Number(part)) !== part || Number(part) > 255) ||
-        port < 1 || port > 65535) {
+    const url = boardAddress(address.value);
+    if (!url) {
       address.setCustomValidity(t('home.invalidAddress'));
       address.reportValidity();
       return;
     }
-    location.assign('http://' + match[1] + ':' + port + '/');
+    location.assign(url);
   };
 
   const details = document.querySelector<HTMLDetailsElement>('#esk-details')!;
@@ -207,6 +208,7 @@ export function initEskHome(): void {
         selectEskUsbDevice(usbDevice);
         change.hidden = false;
         setBridge(usbDevice, board);
+        setNameTarget(usbDevice, board);
       }
       refresh.dataset.i18n = 'capturePanel.tempRate';
       refresh.textContent = t('capturePanel.tempRate');
@@ -229,6 +231,7 @@ export function initEskHome(): void {
       if (lan) setBridge();
       if (!lan) {
         usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
+        setNameTarget();
         setBridge();
         result.value = '';
         refresh.dataset.i18n = 'home.connectUsb'; refresh.textContent = t('home.connectUsb');
@@ -250,6 +253,7 @@ export function initEskHome(): void {
     boardFirmware = undefined;
     renderVersions();
     usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
+    setNameTarget();
     setBridge();
     result.value = t('home.usbGone');
     identity.hidden = features.hidden = details.hidden = true;
@@ -298,6 +302,7 @@ export function initEskHome(): void {
     try {
       const device = await requestEskDevice(true);
       if (device !== usbDevice) {
+        setNameTarget();
         setBridge();
         usbStatus = undefined;
         result.value = '';

@@ -280,9 +280,9 @@ html, body {
 .esk-capture-fields .settings-toggle { justify-self: stretch; }
 .esk-instrument { display: grid; gap: .45rem; text-align: left; width: 100%; margin-top: .7rem; padding: 1.2rem; }
 .esk-connections { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; }
-.esk-connections form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; margin-block: .5rem; }
+.esk-connections form, #esk-name-form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; margin-block: .5rem; }
 .esk-instrument:disabled { opacity: .55; cursor: default; }
-.esk-connections label { display: grid; gap: .25rem; }
+.esk-connections label, #esk-name-form label { display: grid; gap: .25rem; }
 .esk-new-tab { display: inline-block; margin-block: .4rem; color: var(--foreground); }
 .esk-instrument strong { font-size: 1.15rem; }
 .esk-instrument span { color: var(--muted-foreground); }
