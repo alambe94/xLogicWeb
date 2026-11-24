@@ -61,6 +61,7 @@ export const zhCN: Messages = {
   'home.boardAddress': '开发板 IP 地址',
   'home.invalidAddress': '请输入 IPv4 地址，可附加端口。',
   'home.newLogic': '在新标签页打开 Logic',
+  'home.analysisDemo': '试用波形分析演示',
   'home.newBridge': '在新标签页打开 Bridge',
   'esk.captureBank': '采集通道',
   'esk.changeDevice': '更换 USB 设备',

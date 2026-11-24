@@ -67,6 +67,7 @@ export const en = {
   'home.boardAddress': 'Board IP address',
   'home.invalidAddress': 'Enter an IPv4 address, optionally followed by a port.',
   'home.newLogic': 'Open Logic in a new tab',
+  'home.analysisDemo': 'Try the analysis demo',
   'home.newBridge': 'Open Bridge in a new tab',
   'esk.captureBank': 'Capture channels',
   'esk.changeDevice': 'Change USB device',

@@ -63,6 +63,7 @@ export const fr: Messages = {
   'home.boardAddress': 'Adresse IP de la carte',
   'home.invalidAddress': 'Entrez une adresse IPv4, avec un port facultatif.',
   'home.newLogic': 'Ouvrir Logic dans un nouvel onglet',
+  'home.analysisDemo': 'Essayer la démo d’analyse',
   'home.newBridge': 'Ouvrir Bridge dans un nouvel onglet',
   'esk.captureBank': 'Voies à acquérir',
   'esk.changeDevice': 'Changer de périphérique USB',

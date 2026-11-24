@@ -37,7 +37,13 @@ export class TraceTools {
       this.refresh(true);
     };
   }
-  refresh(force = false): void {
+  openPulseSearch(channel: number): void {
+    this.mode = 'pulse';
+    this.root.hidden = false;
+    document.getElementById('btn-trace-tools')!.setAttribute('aria-expanded', 'true');
+    this.refresh(true, channel);
+  }
+  refresh(force = false, pulseChannel = 0): void {
     if (this.root.hidden && !force) return;
     const source = this.root.hidden ? null : this.source();
     if (!force && source?.key === this.key && this.root.childNodes.length) return;
@@ -47,7 +53,17 @@ export class TraceTools {
     this.redraw();
     this.root.replaceChildren();
     if (this.root.hidden) return;
-    if (!source) { this.root.textContent = 'Open or stop a digital capture to analyze it.'; return; }
+    if (!source) {
+      this.root.textContent = 'Open or stop a four- or eight-channel digital capture to analyze it.';
+      const demo = document.querySelector<HTMLAnchorElement>('#esk-analysis-demo')!;
+      if (!demo.hidden) {
+        const link = document.createElement('a');
+        link.href = demo.href; link.target = demo.target; link.rel = demo.rel;
+        link.textContent = demo.textContent;
+        this.root.append(link);
+      }
+      return;
+    }
     const channels: SelectOptionTuple[] = Array.from({length: source.channels}, (_, i) => [String(i), 'D' + (i + source.firstChannel)]);
     const modes: SelectOptionTuple[] = [['pulse','Pulse search'],['filter','Glitch filter'],['protocol','Protocol search']];
     const tool = selectControl('analysis-tool', 'Analysis', modes, this.mode);
@@ -83,6 +99,7 @@ export class TraceTools {
       return;
     }
     const channel = choice('pulse-channel', 'Channel', channels);
+    channel.value = String(pulseChannel);
     const level = choice('level', 'Pulse', [['1', 'High'], ['0', 'Low']]);
     const compare = choice('comparison', 'Width', [['lt', 'Shorter than'], ['gt', 'Longer than']]);
     const width = document.createElement('input');
