@@ -127,9 +127,19 @@ export function readUsbBoardStatus(device: USBDevice): Promise<BoardStatus> {
   return withUsbInterface(device, session, async () => { await session.openConnection(); return session.status(); });
 }
 
-export function restartUsbBoard(device: USBDevice, expected: BoardStatus): Promise<void> {
+export async function restartUsbBoard(device: USBDevice, expected: BoardStatus): Promise<void> {
   const session = new HomeSession(device, 2, 0x60, 1);
-  return withUsbInterface(device, session, async () => { await session.openConnection(); await session.restart(expected); });
+  let accepted = false;
+  try {
+    await withUsbInterface(device, session, async () => {
+      await session.openConnection();
+      await session.restart(expected);
+      accepted = true;
+    });
+  } catch (error) {
+    // A disconnect after the verified EXECUTE reply can race USB cleanup.
+    if (!accepted) throw error;
+  }
 }
 
 export function usbBoardName(device: USBDevice, expected: BoardStatus, name?: string): Promise<{name: string; advertised?: string}> {
