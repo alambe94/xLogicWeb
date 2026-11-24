@@ -124,35 +124,46 @@ export class RecordingActivity {
   }
 
   draw(rows: readonly RowBox[], colors: readonly string[]): void {
-    const c = this.canvas, w = c.clientWidth, h = c.clientHeight, dpr = devicePixelRatio || 1;
-    if (!w || !h) return;
-    if (c.width !== Math.round(w*dpr) || c.height !== Math.round(h*dpr)) {
-      c.width = Math.round(w*dpr); c.height = Math.round(h*dpr);
-    }
-    const ctx = c.getContext('2d')!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
     const last = Math.min(this.end, this.start + this.span);
-    const b = this.detail && this.detail.first <= this.start && this.detail.end >= last ? this.detail : this.history;
-    const from = Math.max(0, Math.floor((this.start - b.first) / b.stride));
-    const to = Math.min(b.bins.length, Math.ceil((last - b.first) / b.stride));
-    const x = (i: number) => (Math.min(last, b.first + i*b.stride) - this.start) * w / this.span;
-    for (const {spec, top, band} of rows) {
-      if (spec.kind !== 'channel') continue;
-      const bit = 1 << spec.channel;
-      const state = (i: number) => b.bins[i]! & bit ? 1 : b.bins[i]! & (bit << 8) ? 2 : 0;
-      ctx.fillStyle = colors[spec.channel]!;
-      const high = top + band * 0.23, low = top + band * 0.76;
-      for (let i = from; i < to;) {
-        const level = state(i), left = x(i);
-        let j = i + 1;
-        while (j < to && state(j) === level) j++;
-        ctx.globalAlpha = level === 2 ? 0.75 : 1;
-        ctx.fillRect(left, level === 0 ? low : high, Math.max(1 / dpr, x(j)-left), level === 2 ? low-high+1 : 1.5);
-        if (level !== 2 && j < to && state(j) !== 2) ctx.fillRect(x(j), high, 1, low-high);
-        i = j;
-      }
-    }
-    ctx.globalAlpha = 1;
+    const bins = this.detail && this.detail.first <= this.start && this.detail.end >= last ? this.detail : this.history;
+    drawActivity(this.canvas, rows, colors, bins, this.start, this.span, last);
   }
+}
+
+export function drawActivity(c: HTMLCanvasElement, rows: readonly RowBox[], colors: readonly string[],
+    b: {first: number; stride: number; bins: ArrayLike<number>}, start: number, span: number, last: number,
+    physicalChannel?: (index: number) => number): void {
+  const w = c.clientWidth, h = c.clientHeight, dpr = devicePixelRatio || 1;
+  if (!w || !h) return;
+  if (c.width !== Math.round(w*dpr) || c.height !== Math.round(h*dpr)) {
+    c.width = Math.round(w*dpr); c.height = Math.round(h*dpr);
+  }
+  const ctx = c.getContext('2d')!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const from = Math.max(0, Math.floor((start - b.first) / b.stride));
+  const to = Math.min(b.bins.length, Math.ceil((last - b.first) / b.stride));
+  const x = (i: number) => (Math.min(last, b.first + i*b.stride) - start) * w / span;
+  const right = x(to);
+  for (const {spec, top, band} of rows) {
+    const channel = spec.kind === 'channel' ? spec.channel : physicalChannel && spec.kind === 'blank' ? spec.shows : undefined;
+    if (channel === undefined) continue;
+    const input = physicalChannel ? physicalChannel(channel) : channel;
+    if (input >= 8) continue;
+    const bit = 1 << input;
+    const state = (i: number) => b.bins[i]! & bit ? 1 : b.bins[i]! & (bit << 8) ? 2 : 0;
+    ctx.fillStyle = colors[channel]!;
+    const high = top + band * 0.23, low = top + band * 0.76;
+    for (let i = from; i < to;) {
+      const level = state(i), left = x(i);
+      let j = i + 1;
+      while (j < to && state(j) === level) j++;
+      ctx.globalAlpha = level === 2 ? 0.75 : 1;
+      const width = Math.min(right - left, Math.max(1 / dpr, x(j) - left));
+      ctx.fillRect(left, level === 0 ? low : high, width, level === 2 ? low-high+1 : 1.5);
+      if (level !== 2 && j < to && state(j) !== 2) ctx.fillRect(x(j), high, Math.min(1, right-x(j)), low-high);
+      i = j;
+    }
+  }
+  ctx.globalAlpha = 1;
 }

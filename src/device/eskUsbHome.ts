@@ -2,6 +2,7 @@
 import { eskBusInterface, EskUsbSession, requireField, withUsbInterface } from './eskUsbSession.js';
 import { bulkCommand, i2cCommand, type BridgeCommand } from './eskBridgeFrames.js';
 import type { BoardStatus } from './eskPairedBoard.js';
+import { restartBoard } from './eskRestart.js';
 import { readBoardPolicy, saveBoardName, type NetworkManagement } from './eskBoardName.js';
 
 const names = ['', 'Device', 'Logic', 'DAP', 'UART', 'I2C', 'SPI', 'GPIO', 'USB analyzer',
@@ -75,6 +76,17 @@ class HomeSession extends EskUsbSession {
     } finally { await this.release(); }
   }
 
+  async restart(expected: BoardStatus) {
+    await this.verifyIdentity(expected);
+    await this.control(2, 10000n);
+    // Closing the connection retires DEVICE/0. An accepted restart owns the
+    // exclusion until reset and cannot be reaped like a regular grant.
+    await restartBoard(async command => {
+      const reply = await this.exchange(7, command, 1, this.session);
+      return new Uint8Array(reply.buffer, reply.byteOffset + 48, reply.byteLength - 48);
+    });
+  }
+
   async transactions(intf: USBAlternateInterface, expected: BoardStatus, service: 'I2C' | 'SPI', commands: BridgeCommand[]) {
     await this.verifyIdentity(expected);
     const ep = (dir: USBDirection) => intf.endpoints.find(e => e.type === 'bulk' && e.direction === dir)?.endpointNumber;
@@ -113,6 +125,11 @@ export function decodeBoardId(bytes: Uint8Array): string {
 export function readUsbBoardStatus(device: USBDevice): Promise<BoardStatus> {
   const session = new HomeSession(device, 2, 0x60, 0);
   return withUsbInterface(device, session, async () => { await session.openConnection(); return session.status(); });
+}
+
+export function restartUsbBoard(device: USBDevice, expected: BoardStatus): Promise<void> {
+  const session = new HomeSession(device, 2, 0x60, 1);
+  return withUsbInterface(device, session, async () => { await session.openConnection(); await session.restart(expected); });
 }
 
 export function usbBoardName(device: USBDevice, expected: BoardStatus, name?: string): Promise<{name: string; advertised?: string}> {

@@ -12,7 +12,7 @@ for (const s of ['https://a.local', 'a.local@elsewhere', 'a.local:0', 'a.local:6
 assert.ok(validBoardName('a'.repeat(33)));
 for (const invalid of ['a'.repeat(34), 'Foo', 'a.local', '-a', 'a-', 'a_b', 'a\n']) assert.ok(!validBoardName(invalid));
 
-function model({active = 'lab-bench-2', ready = true, configured = 'factory', failure = ''} = {}) {
+function model({active = 'lab-bench-2', ready = true, configured = 'factory', failure = '', stageBeforeSave = false} = {}) {
   const encoder = new TextEncoder();
   let policy = new Uint8Array(96), revision = 11, attempt = 0, applied = ready, now = 0;
   const events = [];
@@ -20,6 +20,7 @@ function model({active = 'lab-bench-2', ready = true, configured = 'factory', fa
   policy.set(encoder.encode(configured), 28);
   const previous = policy.slice();
   const port = {
+    stageBeforeSave,
     async service(packet) {
       const q = new DataView(packet.buffer), action = packet[2];
       events.push(action === 3 && packet[3] ? 'desired' : action);
@@ -67,6 +68,9 @@ assert.equal(await renamed.run(), 'lab-bench-2');
 assert.deepEqual(renamed.events.filter(v=>v!=='status'), ['desired',1,2,3,'desired',5]);
 assert.ok(renamed.events.filter(v=>v==='status').length >= 4);
 const same = model({configured:'lab-bench', active:'lab-bench'});
+const sameLan = model({configured:'lab-bench', stageBeforeSave: true});
+await sameLan.run();
+assert.deepEqual(sameLan.events.filter(v=>v!=='status'), ['desired',1,2,3,'desired',5]);
 await same.run(); assert.deepEqual(same.events.filter(v=>v!=='status'), ['desired','desired',5]);
 const staged = model({configured:'lab-bench', ready:false});
 await staged.run(); assert.deepEqual(staged.events.filter(v=>v!=='status'), ['desired',2,3,'desired',5]);

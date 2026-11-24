@@ -152,14 +152,15 @@ import { TraceTools } from './traceTools.js';
 import { filteredTrace } from './traceFilter.js';
 import { scanBlock } from './traceSearch.js';
 import type { TraceInput, TraceHit } from './traceSearch.js';
-import { RecordingActivity } from './recordingActivity.js';
+import { RecordingActivity, drawActivity } from './recordingActivity.js';
+import { DownloadActivity } from './downloadActivity.js';
 import { deletionPrompt, displaySamples, removeStoredRecording, showEskRecorder, type SavedRecording } from './eskRecorder.js';
 import { loopRamMiB } from './browserArchiveSpace.js';
 import { formatBytes as recordingBytes } from './format.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
 import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
-import { boardCaptureMaximum, receiveBoardCapture } from '../device/eskPairedBoard.js';
+import { boardCaptureMaximum, boardCaptureRates, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
 import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_PACKED_RATE, type EskBank, requestEskDevice } from '../device/eskCapture.js';
 import { capturePackedEdge } from './eskPackedCapture.js';
@@ -509,6 +510,32 @@ export class App {
   } | null = null;
   private captureSessionId = 0;
   private recordingActivity: RecordingActivity | undefined;
+  private downloadPreview: {session: number; activity: DownloadActivity; canvas: HTMLCanvasElement} | undefined;
+
+  private startDownloadPreview(count: number, rate: number) {
+    const activity = new DownloadActivity(count, rate);
+    const canvas = document.createElement('canvas');
+    canvas.className = 'recording-activity download-activity';
+    canvas.setAttribute('aria-label', t('rec.ethernet'));
+    const preview = {session: this.captureSessionId, activity, canvas};
+    return {
+      append: (block: Uint8Array) => {
+        if (this.captureSessionId !== preview.session) return;
+        activity.append(block);
+        if (!canvas.isConnected) {
+          this.el.plot.append(canvas);
+          this.downloadPreview = preview;
+        }
+        this.dirty = true;
+      },
+      close: () => {
+        canvas.remove();
+        if (this.downloadPreview === preview) this.downloadPreview = undefined;
+        this.layerFingerprint = null;
+        this.dirty = true;
+      },
+    };
+  }
   private discardingRecording = false;
   private readonly recordingsAwaitingChoice = new WeakSet<SavedRecording>();
   private recordingTimeline = new RecordingTimeline(() => { this.dirty = true; }, () => this.dismissRecordingActivity(),
@@ -609,6 +636,7 @@ export class App {
     this.dirty = true;
   }
   private eskRate = ESK_RATE;
+  private eskLanRate = ESK_RATE;
   private eskBank: EskBank = 'lower';
   private displayedEskBank: EskBank | undefined;
   private selectedRowBank: EskBank | undefined;
@@ -4584,6 +4612,20 @@ export class App {
   }
 
   private draw(force = true): void {
+    if (this.downloadPreview && this.downloadPreview.session !== this.captureSessionId) {
+      this.downloadPreview.canvas.remove();
+      this.downloadPreview = undefined;
+    }
+    if (this.downloadPreview && this.viewMode === 'time') {
+      const {activity, canvas} = this.downloadPreview;
+      const width = this.el.plot.clientWidth;
+      this.drawAxisCanvas(computeTicks(0, activity.count / activity.rate * 1e12, width,
+        activity.rate, AXIS.minTickSpacing, this.axisLabelMetrics), width, false);
+      drawActivity(canvas, this.stack.boxes(), this.channels.map(ch => ch.color), activity,
+        0, activity.count, activity.end, i => this.physicalChannel(i));
+      this.renderCorner();
+      return;
+    }
     if (this.viewMode === 'fft') {
       this.el.hint.style.display = 'none';
       this.drawFftView();
@@ -4870,7 +4912,7 @@ export class App {
     this.layerDraws.overview += 1;
   }
 
-  private drawAxisCanvas(ticks: TickSet, wCss: number): void {
+  private drawAxisCanvas(ticks: TickSet, wCss: number, showCursors = true): void {
     const dpr = globalThis.devicePixelRatio || 1;
     const c = this.el.axis;
     const hCss = c.clientHeight || 29;
@@ -4881,6 +4923,7 @@ export class App {
     if (!ctx) throw new DiagnosticError('ui.axisContext');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawAxis(ctx, ticks, wCss, hCss, this.palette);
+    if (!showCursors) return;
     ctx.font = AXIS.markerChip.font;
     const placed = this.cursorChipPlacements(
       (label) => ctx.measureText(label).width + 2 * AXIS.markerChip.padX, wCss,
@@ -6474,7 +6517,10 @@ export class App {
   }
 
   private wireToolbar(): void {
-    window.addEventListener('esk-capture-capacity', () => this.renderSidebarContent());
+    window.addEventListener('esk-capture-capacity', () => {
+      if (!boardCaptureRates().includes(this.eskLanRate)) this.eskLanRate = ESK_RATE;
+      this.renderSidebarContent();
+    });
     this.el.connect.addEventListener('click', () => {
       // Connected: a device-info menu, not a second chooser. Idle: the WebUSB chooser.
       if (!this.device) { void this.connect(); return; }
@@ -7118,11 +7164,16 @@ export class App {
       profile.className = 'panel-note';
       const lan = !!eskLanMode();
       const max = lan ? boardCaptureMaximum() : undefined;
-      const rate = lan ? ESK_RATE : this.eskRate;
+      const rate = lan ? this.eskLanRate : this.eskRate;
       const rates = selectControl('esk-finite-rate', (lan ? 'Ethernet' : 'USB') + ' · ' + t('capturePanel.sampleRate'),
-        (lan ? [ESK_RATE] : [ESK_PACKED_RATE, ...ESK_FINITE_RATES]).map(hz => [String(hz), formatRate(hz)]), String(rate));
-      rates.disabled = lan || this.eskCapturePending;
+        (lan ? boardCaptureRates() : [ESK_PACKED_RATE, ...ESK_FINITE_RATES]).map(hz => [String(hz), formatRate(hz)]), String(rate));
+      rates.disabled = this.eskCapturePending || (lan && boardCaptureRates().length <= 1);
       rates.addEventListener('change', () => {
+        if (lan) {
+          this.eskLanRate = Number(rates.value);
+          this.renderSidebarContent();
+          return;
+        }
         this.eskRate = Number(rates.value);
         if (this.eskRate === ESK_PACKED_RATE) {
           this.eskBank = 'lower';
@@ -7447,11 +7498,13 @@ export class App {
     const cap = this.captureStore;
     const shown = this.store;
     const view = this.stack.view;
-    const samples = this.recordingActivity?.end ?? cap.length;
+    const download = this.downloadPreview?.activity;
+    const samples = download?.end ?? this.recordingActivity?.end ?? cap.length;
     const next = cornerView(
       samples > 0
-        ? { samples, samplerate: cap.samplerate, channels: cap.channelCount } : null,
-      { storeSamples: shown.length, spanSamples: view.end - view.start, samplerate: shown.samplerate },
+        ? { samples, samplerate: download?.rate ?? cap.samplerate, channels: download ? 8 : cap.channelCount } : null,
+      { storeSamples: download?.end ?? shown.length, spanSamples: download?.count ?? (view.end - view.start),
+        samplerate: download?.rate ?? shown.samplerate },
     );
     const last = this.renderedCorner;
     if (last !== null && cornerViewEqual(last, next)) return;
@@ -8020,7 +8073,7 @@ export class App {
     }
     const loop = !lan && this.eskLength === 'loop';
     if (n > ESK_SAMPLES || loop) {
-      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan, loop});
+      this.openEskRecorder(true, {count: n, rate: lan ? this.eskLanRate : this.eskRate, bank: this.eskBank, ethernet: lan, loop});
       return;
     }
     this.eskCapturePending = true;
@@ -8033,7 +8086,7 @@ export class App {
       if (!(await this.confirmDiscardCapture())) return;
       if (previous !== this.captureSessionId || this.running || this.stopping) return;
       this.endPendingRepeatSession();
-      const rate = device ? this.eskRate : ESK_RATE;
+      const rate = device ? this.eskRate : this.eskLanRate;
       const bank = this.eskBank;
       const packed = rate === ESK_PACKED_RATE;
       let samples: Uint8Array, ticks: string | undefined;
@@ -8055,7 +8108,13 @@ export class App {
       }
       else if (max) {
         samples = new Uint8Array(n);
-        ticks = await receiveBoardCapture(n, new AbortController().signal, async (block, offset) => { samples.set(block, offset); });
+        const preview = this.startDownloadPreview(n, rate);
+        try {
+          ticks = await receiveBoardCapture(n, controller.signal, async (block, offset) => {
+            samples.set(block, offset);
+            preview.append(block);
+          }, rate);
+        } finally { preview.close(); }
       } else ({samples, ticks} = await captureEskLan());
       // Another open or acquisition can replace the display while the capture is in progress.
       if (previous !== this.captureSessionId || this.running || this.stopping) return;
@@ -8249,7 +8308,7 @@ export class App {
         return confirmed;
       }, key => {
         if (this.recordingTimeline.current?.key === key) this.clearDisplayedRecording();
-      }, options, () => this.captureSessionId !== previous);
+      }, options, () => this.captureSessionId !== previous, (count, rate) => this.startDownloadPreview(count, rate));
     }
   }
 
