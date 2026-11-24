@@ -39,7 +39,7 @@ export class TraceTools {
   }
   refresh(force = false): void {
     if (this.root.hidden && !force) return;
-    const source = this.source();
+    const source = this.root.hidden ? null : this.source();
     if (!force && source?.key === this.key && this.root.childNodes.length) return;
     this.key = source?.key;
     this.job?.abort();
