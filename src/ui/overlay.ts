@@ -940,6 +940,19 @@ export class Overlay {
     c.restore();
   }
 
+  drawTraceHit(start: number, end: number, top: number, height: number): void {
+    if (end < 0 || start > this.wCss) return;
+    const left = Math.max(0, start);
+    const width = Math.max(2, Math.min(this.wCss, end) - left);
+    this.ctx.save();
+    this.ctx.fillStyle = this.ctx.strokeStyle = this.palette.warning;
+    this.ctx.globalAlpha = 0.25;
+    this.ctx.fillRect(left, top, width, height);
+    this.ctx.globalAlpha = 1;
+    this.ctx.strokeRect(left, top + 1, width, height - 2);
+    this.ctx.restore();
+  }
+
   /** Label the live frontier or ring the selected transition on its channel. */
   drawRecordingGuide(x: number, label: string, rowY?: number): void {
     if (x < 0 || x > this.wCss) return;

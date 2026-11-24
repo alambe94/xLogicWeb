@@ -42,6 +42,18 @@ class RecordingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.window(self.key, 0, WINDOW + 1)
 
+    def test_analysis_window_is_bounded_and_saved_only(self):
+        size = 1024 * 1024 + 1
+        self.complete(RATES[0], size, bytes(size), 255)
+        request = dict(op="analysis_window", id=self.key, start=0)
+        self.assertEqual(len(self.store.request(dict(request, end=size-1))), size-1)
+        with self.assertRaises(ValueError):
+            self.store.request(dict(request, end=size))
+        row = self.store.metadata(self.key)
+        self.store.save(dict(row, state="failed"))
+        with self.assertRaises(ValueError):
+            self.store.request(dict(request, end=1))
+
     def test_overview_counts_a_single_sample_pulse_and_final_partial_bin(self):
         stride = 1 << ((RATES[0] // 1024).bit_length() - 1)
         data = bytearray([2]) * (stride + 3)

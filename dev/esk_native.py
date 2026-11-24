@@ -218,11 +218,11 @@ class Recordings:
             self.process.stdin.close()
         return self.status(key)
 
-    def window(self, key, start, end, *, preview=False):
+    def window(self, key, start, end, *, preview=False, analysis=False):
         row = self.status(key)
         readable = row["state"] == "saved" or (preview and row["state"] == "recording" and key == self.active)
         if not readable or type(start) is not int or type(end) is not int or not (
-                0 <= start < end <= row["samples"] and end - start <= WINDOW):
+                0 <= start < end <= row["samples"] and end - start <= (1024 * 1024 if analysis else WINDOW)):
             raise ValueError("Invalid recording window")
         return self.read_samples(row, start, end)
 
@@ -361,8 +361,8 @@ class Recordings:
                     path = self.path(row["id"], ".bin")
                     row["bytes"] = path.stat().st_size if path.exists() else 0
                 return sorted(rows, key=lambda row: row["title"], reverse=True)
-            if op in ("window", "preview"):
-                return self.window(key, body.get("start"), body.get("end"), preview=op == "preview")
+            if op in ("window", "preview", "analysis_window"):
+                return self.window(key, body.get("start"), body.get("end"), preview=op == "preview", analysis=op == "analysis_window")
             if op == "edge":
                 return self.edge(key, body.get("position"), body.get("channel"), body.get("direction"))
             raise ValueError("Unknown recorder operation")
@@ -410,7 +410,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         data = path.read_bytes()
         if path == self.server.dist / "index.html":
-            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview>', 1)
+            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis>', 1)
         self.reply(200, data, mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
 
