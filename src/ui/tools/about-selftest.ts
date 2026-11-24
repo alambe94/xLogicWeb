@@ -124,6 +124,10 @@ function aboutPane(settingsWindow: string, app: string, about: string): boolean 
 
 {
   const app = read('src/ui/app.ts');
+  const html = read('index.html');
+  const ids = Array.from(html.matchAll(/\sid="([^"]+)"/g), m => m[1]);
+  check('Home version rows and viewer dialogs have distinct IDs',
+    ids.length === new Set(ids).size, ids.filter((id, i) => ids.indexOf(id) !== i).join(', '));
   const settingsWindow = read('src/ui/settingsDialog.ts');
   const about = read('src/ui/about.ts');
   const inline = aboutPane(settingsWindow, app, about);
