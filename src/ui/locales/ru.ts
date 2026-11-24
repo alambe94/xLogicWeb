@@ -149,7 +149,7 @@ export const ru: Messages = {
   'open.eskHint': '65 536 отсчётов',
   'capture.esk': 'ESK xLOGIC · {samples} отсчётов при {rate}',
   'open.example': 'Открыть пример',
-  'open.exampleHint': 'Захват UART, без устройства',
+  'open.exampleHint': 'Пример анализа ESK на 8 каналах',
   'save.vcd': 'Экспорт в .vcd',
   'save.vcdHint': 'Value change dump, только цифровые',
   'save.csv': 'Экспорт в .csv',

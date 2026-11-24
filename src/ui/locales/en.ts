@@ -153,7 +153,7 @@ export const en = {
   'open.eskHint': '65,536 samples',
   'capture.esk': 'ESK xLOGIC · {samples} samples at {rate}',
   'open.example': 'Open example',
-  'open.exampleHint': 'UART capture, no device needed',
+  'open.exampleHint': '8-channel ESK analysis demo',
   'save.vcd': 'Export .vcd',
   'save.vcdHint': 'Value change dump, digital only',
   'save.csv': 'Export .csv',

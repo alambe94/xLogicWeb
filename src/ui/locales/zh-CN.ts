@@ -147,7 +147,7 @@ export const zhCN: Messages = {
   'open.eskHint': '65,536 个采样点',
   'capture.esk': 'ESK xLOGIC · {samples} 个采样点，采样率 {rate}',
   'open.example': '打开示例',
-  'open.exampleHint': 'UART 采集，无需设备',
+  'open.exampleHint': '8 通道 ESK 分析演示',
   'save.vcd': '导出 .vcd',
   'save.vcdHint': '值变化转储，仅数字通道',
   'save.csv': '导出 .csv',

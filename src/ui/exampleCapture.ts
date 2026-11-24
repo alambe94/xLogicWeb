@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
- * The bundled example capture ("Open example"): fixtures/uart.sr, a small sigrok session
- * with a UART stream, so the app can be tried - view, measure, auto-decode - without a
+ * The bundled example capture ("Open example"): public/examples/esk-analysis.sr, a small sigrok session
+ * with eight ESK channels, so the app can be tried - view, measure, auto-decode - without a
  * device. app.ts imports the fixture with `?url&inline`, which makes it a `data:` URL in
  * every build (the hosted one and the portable single file, which must not fetch a
  * sibling file over file://); the dev server may hand out a plain URL instead.
@@ -11,7 +11,7 @@
  */
 
 /** The name the example opens under (and the default base name a Save offers). */
-export const EXAMPLE_CAPTURE_NAME = 'example-uart.sr';
+export const EXAMPLE_CAPTURE_NAME = 'esk-analysis.sr';
 
 /** The bytes of a base64 `data:` URL, or null when the URL is not one. */
 export function dataUrlBytes(url: string): Uint8Array<ArrayBuffer> | null {

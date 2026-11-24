@@ -163,7 +163,7 @@ import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_
 import { capturePackedEdge } from './eskPackedCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
-import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';
+import exampleCaptureUrl from '../../public/examples/esk-analysis.sr?url&inline';
 import {
   classifyConnectFailure, connectFailureRetryable, connectGuidanceKey, refineWithPeerTabs,
 } from './connectFailure.js';
@@ -8212,28 +8212,13 @@ export class App {
       ...(!this.running && !this.stopping && !this.eskCapturePending ? [
         { label: t('rec.title'), onPick: () => this.openEskRecorder(false) },
       ] : []),
-      { label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openExample() },
+      { label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openAnalysisDemo() },
     ];
-  }
-
-  /**
-   * Open the bundled example (fixtures/uart.sr) through the ordinary file path, so it
-   * stops a running capture, replaces the view and auto-decodes like any opened file.
-   */
-  private async openExample(): Promise<void> {
-    let file: File;
-    try {
-      file = await exampleCaptureFile(exampleCaptureUrl);
-    } catch (e) {
-      this.fail('error.openCapture', e);
-      return;
-    }
-    await this.openFiles([file]);
   }
 
   async openAnalysisDemo(): Promise<void> {
     try {
-      const file = await exampleCaptureFile('./examples/esk-analysis.sr', 'esk-analysis.sr');
+      const file = await exampleCaptureFile(exampleCaptureUrl);
       await this.openFiles([file]);
       if (this.captureOrigin.fileName === file.name) this.traceTools.openPulseSearch(3);
     } catch (e) {
