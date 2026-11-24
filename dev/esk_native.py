@@ -22,6 +22,7 @@ EDGE_CHUNK = 4 * 1024 ** 2
 LOW_NIBBLE = bytes(i & 15 for i in range(256))
 HIGH_NIBBLE = bytes(i >> 4 for i in range(256))
 GIB = 1024 ** 3
+MAX_QUOTA_GIB = (2**53 - 1) // GIB
 
 
 @lru_cache(maxsize=256)
@@ -67,7 +68,13 @@ class Recordings:
         self.directory = directory
         self.executable = executable
         self.serial = serial
+        self.launch_budget = budget
+        self.preference = directory / ".archive-limit.json"
         self.budget = budget
+        if self.preference.exists():
+            saved = json.loads(self.preference.read_text(encoding="utf8"))
+            saved_bytes = self.quota_bytes(saved)
+            self.budget = saved_bytes if budget is None else min(saved_bytes, budget)
         self.lock = threading.RLock()
         self.process = None
         self.active = None
@@ -91,6 +98,31 @@ class Recordings:
             used = sum(p.stat().st_size for p in self.directory.iterdir() if p.is_file())
             free = min(free, self.budget - used)
         return max(0, free - 2**20)  # Leave room for the receipt and archive metadata.
+
+    @staticmethod
+    def quota_bytes(gib):
+        if type(gib) is not int or not 1 <= gib <= MAX_QUOTA_GIB:
+            raise ValueError("Enter a positive whole number of GiB")
+        return gib * GIB
+
+    def storage(self):
+        return dict(available=self.available(), budget=self.budget, launchBudget=self.launch_budget)
+
+    def set_quota(self, gib):
+        self.refresh()
+        if self.process:
+            raise ValueError("Stop the active recording before changing the archive limit")
+        budget = self.launch_budget if gib is None else self.quota_bytes(gib)
+        if self.launch_budget is not None and budget > self.launch_budget:
+            raise ValueError("Archive limit exceeds the launcher limit")
+        if gib is None:
+            self.preference.unlink(missing_ok=True)
+        else:
+            temp = self.preference.with_suffix(".tmp")
+            temp.write_text(json.dumps(gib), encoding="utf8")
+            temp.replace(self.preference)
+        self.budget = budget
+        return self.storage()
 
     def start(self, rate, bank, samples, serial=None):
         self.refresh()
@@ -318,7 +350,9 @@ class Recordings:
                 self.remove(key)
                 return {}
             if op == "storage":
-                return dict(available=self.available(), budget=self.budget)
+                return self.storage()
+            if op == "set_quota" and "gib" in body:
+                return self.set_quota(body["gib"])
             if op == "list":
                 for pending in self.directory.glob("*.removing"):
                     self.finish_removal(pending.stem)
@@ -390,8 +424,8 @@ def main():
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
-    if args.archive_limit_gib is not None and args.archive_limit_gib < 1:
-        parser.error("--archive-limit-gib must be a positive integer")
+    if args.archive_limit_gib is not None and not 1 <= args.archive_limit_gib <= MAX_QUOTA_GIB:
+        parser.error(f"--archive-limit-gib must be between 1 and {MAX_QUOTA_GIB}")
     if os.name != "nt" or not args.recorder.is_file() or not (args.dist / "index.html").is_file():
         parser.error("Requires Windows, xlogic_capture.exe and the built viewer")
     dist, store = args.dist.resolve(), args.store.resolve()

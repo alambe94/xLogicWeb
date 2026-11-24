@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from esk_native import Recordings, RATES, WINDOW
+from esk_native import GIB, Recordings, RATES, WINDOW
 
 
 class RecordingTests(unittest.TestCase):
@@ -150,6 +150,32 @@ class RecordingTests(unittest.TestCase):
             self.store.start(RATES[0], "lower", 4097)
         with self.assertRaisesRegex(ValueError, "ID"):
             self.store.status("../recording")
+
+    def test_saved_limit_survives_restart_and_respects_launch_ceiling(self):
+        folder = self.store.directory
+        original = Recordings(folder, None, None, None)
+        self.assertEqual(original.request({"op": "set_quota", "gib": 4})["budget"], 4 * GIB)
+        capped = Recordings(folder, None, None, 2 * GIB)
+        self.assertEqual(capped.storage()["budget"], 2 * GIB)
+        with self.assertRaisesRegex(ValueError, "launcher"):
+            capped.request({"op": "set_quota", "gib": 3})
+        self.assertEqual(Recordings(folder, None, None, None).budget, 4 * GIB)
+        self.assertEqual(capped.request({"op": "set_quota", "gib": None})["budget"], 2 * GIB)
+        self.assertIsNone(Recordings(folder, None, None, None).budget)
+
+    def test_quota_edit_validates_and_preserves_existing_recordings(self):
+        store = Recordings(self.store.directory, None, None, None)
+        capture = store.path(self.key, ".bin")
+        capture.write_bytes(b"saved")
+        for bad in (0, -1, 1.5, True, "8", 2**53):
+            with self.assertRaises(ValueError):
+                store.request({"op": "set_quota", "gib": bad})
+        store.process = Mock()
+        store.process.poll.return_value = None
+        with self.assertRaisesRegex(ValueError, "Stop"):
+            store.request({"op": "set_quota", "gib": 1})
+        self.assertIsNone(store.budget)
+        self.assertEqual(capture.read_bytes(), b"saved")
 
     @patch("esk_native.subprocess.Popen")
     @patch("esk_native.shutil.disk_usage")

@@ -3,6 +3,7 @@ import type { MessageKey } from './i18n.js';
 import { aboutView } from './about.js';
 import type { AboutLink } from './about.js';
 import { helpTip } from './helpTip.js';
+import { nativeRecorderAvailable, nativeRequest } from './nativeArchive.js';
 import { formatChord } from './chords.js';
 import {
   gestureNotation, referenceGestures, referenceGroups, shortcutActionText,
@@ -203,7 +204,8 @@ export class SettingsDialog {
       case 'appearance':
         return [this.labelsRow(), this.compactRowsRow(), this.hideIdleRow()];
       case 'behaviour':
-        return [this.quickScrollRow(), this.wheelZoomsRow(), this.fitRowsRow()];
+        return [this.quickScrollRow(), this.wheelZoomsRow(), this.fitRowsRow(),
+          ...(nativeRecorderAvailable() ? [this.archiveLimitForm()] : [])];
       case 'shortcuts':
         return this.shortcutBlocks();
       case 'developer':
@@ -211,6 +213,52 @@ export class SettingsDialog {
       case 'about':
         return [this.aboutBlock()];
     }
+  }
+
+  private archiveLimitForm(): HTMLFormElement {
+    const form = document.createElement('form');
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    const input = document.createElement('input');
+    input.id = 'archive-limit-gib';
+    input.dataset.settingsKey = 'archive-limit';
+    input.className = 'viewer-input';
+    input.type = 'number';
+    input.min = input.step = '1';
+    const save = document.createElement('button');
+    save.className = 'settings-action';
+    save.textContent = t('toolbar.save');
+    const status = document.createElement('output');
+    status.className = 'panel-note';
+    status.setAttribute('aria-live', 'polite');
+    const controls = document.createElement('div');
+    controls.className = 'archive-limit-controls';
+    controls.append(input, save);
+    row.append(this.rowLabel('settings.archiveLimit', input.id), controls);
+    form.append(row, status);
+    const update = async (apply: boolean) => {
+      input.disabled = save.disabled = true;
+      try {
+        const response = apply
+          ? await nativeRequest('set_quota', {gib: input.value === '' ? null : input.valueAsNumber})
+          : await nativeRequest('storage');
+        const data = await response.json();
+        if (!('launchBudget' in data)) throw new Error(t('settings.updateRecorder'));
+        const gib = 2 ** 30;
+        input.max = String(data.launchBudget === null ? Math.floor(Number.MAX_SAFE_INTEGER / gib) : data.launchBudget / gib);
+        input.value = data.budget === null ? '' : String(data.budget / gib);
+        input.placeholder = data.launchBudget === null ? t('settings.driveSpace') : String(data.launchBudget / gib);
+        status.textContent = data.launchBudget === null ? t('settings.blankDrive') :
+          t('settings.launchLimit', {limit: data.launchBudget / gib});
+        input.disabled = save.disabled = false;
+      } catch (err) {
+        status.textContent = err instanceof Error ? err.message : String(err);
+        if (apply) input.disabled = save.disabled = false;
+      }
+    };
+    form.onsubmit = event => { event.preventDefault(); void update(true); };
+    void update(false);
+    return form;
   }
 
   private shortcutBlocks(): HTMLElement[] {
