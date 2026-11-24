@@ -3203,3 +3203,6 @@ html[data-theme="light"] .bus-dialog::backdrop { background: var(--backdrop); }
 .edge-feedback output { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #trace-search .trace-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #trace-search .trace-search-actions, #trace-search output { grid-column: 1 / -1; }
+
+.esk-length-modes { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; grid-column: 1 / -1; }
+#esk-sample-count:disabled { background: var(--muted); color: var(--muted-foreground); opacity: .55; cursor: not-allowed; }

@@ -22,7 +22,7 @@ export class RecordingActivity {
   private lastFrame = performance.now();
 
   constructor(private readonly record: NativeRecord, stride: number, private readonly redraw: () => void) {
-    this.span = record.rate * 2;
+    this.span = record.loop && record.limit ? Math.min(record.rate * 2, record.limit) : record.rate * 2;
     this.history = { first: 0, end: 0, stride, bins: [] };
     const c = this.canvas;
     c.className = 'recording-activity';

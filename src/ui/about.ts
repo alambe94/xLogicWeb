@@ -16,7 +16,7 @@ export const LICENSE_URL = `${SOURCE_URL}/blob/main/LICENSE`;
 export const NOTICE_URL = `${SOURCE_URL}/blob/main/NOTICE.md`;
 export const APP_NAME = 'xEskWeb';
 /** Not translated: a legal notice reads the same in every locale. */
-export const COPYRIGHT = '© 2026 Sipeed Co., Ltd.';
+export const COPYRIGHT = '© 2026 Sipeed Co., Ltd. and contributors.';
 
 export interface BuildIdentity {
   readonly version: string;
@@ -56,7 +56,8 @@ export function aboutView(id: BuildIdentity = buildIdentity()): AboutView {
       { label: t('about.source'), href: SOURCE_URL },
       { label: t('about.licenseLink'), href: LICENSE_URL },
       { label: t('about.notice'), href: NOTICE_URL },
-      { label: 'Sipeed SLogicWeb', href: 'https://github.com/sipeed/SLogicWeb' },
+      { label: 'Sipeed SLogicWeb · original source', href: 'https://github.com/sipeed/SLogicWeb' },
+      { label: 'Bundled third-party license texts', href: './THIRD_PARTY_LICENSES.txt' },
     ],
   };
 }

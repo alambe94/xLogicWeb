@@ -11,11 +11,15 @@ export async function recordNative(options: EskRecordingOptions, preview: Record
   status.value = 'Starting USB recording…';
   try {
     let row = (await listNativeRecordings()).find(record => record.state === 'recording');
+    if (options.loop && !document.querySelector('meta[name="esk-native-recorder"][data-loop]'))
+      throw new Error('Update the local xEskWeb recorder to use Loop.');
+    if (row && (Boolean(row.loop) !== Boolean(options.loop) || (options.loop && row.limit !== options.count)))
+      throw Error('Another recording is active with different retention settings.');
     if (!row) {
       const selected = selectedEskUsbDevice();
       if (selected && !selected.serialNumber) throw new Error('The selected USB board has no serial number for native recording');
       row = await (await nativeRequest('start', {rate: options.rate, bank: options.bank,
-        samples: Number.isFinite(options.count) ? options.count : null, serial: selected?.serialNumber})).json();
+        samples: Number.isFinite(options.count) ? options.count : null, loop: options.loop === true, serial: selected?.serialNumber})).json();
     }
     if (!row) throw new Error('The recorder returned no recording');
     const id = row.id;
@@ -49,11 +53,12 @@ export async function recordNative(options: EskRecordingOptions, preview: Record
         }
         row = frame.record;
         if (row.state === 'failed') throw new Error(row.note);
+        if (row.state === 'saved' && row.loop) break;
         activity(frame);
         cursor = frame.end;
         if (row.state === 'saved' && cursor === row.samples) break;
         if (!stopping && now >= nextStatus) {
-          status.value = 'Live preview · ' + row.samples.toLocaleString() + ' samples on disk';
+          status.value = 'Live preview · ' + row.samples.toLocaleString() + (row.loop ? ' samples captured · retaining latest ' + row.limit?.toLocaleString() : ' samples on disk');
           nextStatus = now + 250;
         }
         if (row.samples - cursor < frame.stride) {
@@ -104,7 +109,7 @@ export async function recordNative(options: EskRecordingOptions, preview: Record
       }
       if (row.state !== 'recording') break;
       if (!stopping && now >= nextStatus) {
-        status.value = 'Live preview · ' + row.samples.toLocaleString() + ' samples on disk';
+        status.value = 'Live preview · ' + row.samples.toLocaleString() + (row.loop ? ' samples captured · retaining latest ' + row.limit?.toLocaleString() : ' samples on disk');
         nextStatus = now + 250;
       }
       // One read in flight. Include the time spent reading and preparing the frame.
