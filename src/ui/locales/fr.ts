@@ -81,6 +81,7 @@ export const fr: Messages = {
   'esk.diskRecording': 'Enregistre les voies sélectionnées sur disque jusqu’à l’arrêt.',
   'rec.fixedRate': 'Fréquence en continu via USB · 41,67 Méch/s',
   'rec.live': 'Enregistrement USB continu…',
+  'rec.ethernet': 'Téléchargement de la capture Ethernet',
   'rec.tail': '{samples} échantillons hors enregistrement à l’arrêt',
   'rec.title': 'Enregistrements sauvegardés…',
   'rec.import': 'Importer une session .sr',

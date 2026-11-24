@@ -507,9 +507,35 @@ class Recordings:
         for suffix in (".bin", ".log", ".json", ".tmp", ".removing"):
             self.path(key, suffix).unlink(missing_ok=True)
 
+    def board_names(self):
+        path = self.directory / ".board-names.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
     def request(self, body):
+        if body.get("op") == "discover":
+            from esk_discovery import discover
+            boards = discover()
+            with self.lock:
+                names = self.board_names()
+            return [dict(board, alias=names.get(board["id"], "")) for board in boards]
         with self.lock:
             op, key = body.get("op"), body.get("id")
+            if op == "name_board":
+                name = body.get("name")
+                if not isinstance(key, str) or not re.fullmatch("[0-9a-f]{12}", key) or not isinstance(name, str):
+                    raise ValueError("Invalid board identity or name")
+                name = name.strip()
+                if len(name) > 48 or (name and not name.isprintable()):
+                    raise ValueError("Use up to 48 printable characters")
+                names = self.board_names()
+                if name:
+                    names[key] = name
+                else:
+                    names.pop(key, None)
+                tmp = self.directory / ".board-names.tmp"
+                tmp.write_text(json.dumps(names), encoding="utf-8")
+                tmp.replace(self.directory / ".board-names.json")
+                return name
             if op == "version":
                 digest = hashlib.sha256(self.executable.read_bytes()).hexdigest()
                 version = None
@@ -610,7 +636,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         data = path.read_bytes()
         if path == self.server.dist / "index.html":
-            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis data-loop data-ram-loop>', 1)
+            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis data-loop data-ram-loop data-discovery>', 1)
         self.reply(200, data, mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
 

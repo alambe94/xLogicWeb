@@ -1086,6 +1086,7 @@ html[data-theme="light"] .channel-color-custom { background: var(--bg30); }
 }
 #esk-recorder { margin: auto 1rem 1rem auto; width: min(34rem, calc(100vw - 2rem)); }
 #esk-recorder::backdrop { background: transparent; }
+#esk-recorder[open]:not(:modal) { position: fixed; inset: auto 0 0 auto; z-index: 10; }
 #native-status { padding: 4px 12px; border-bottom: 1px solid var(--border-low); font-variant-numeric: tabular-nums; }
 #rec-storage { font-size: .8rem; }
 #rec-storage:empty, #rec-warnings:empty { display: none; }

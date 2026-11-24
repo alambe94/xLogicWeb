@@ -45,6 +45,45 @@ export function initEskHome(): void {
   usbSite.href = browserSite.href;
   const paired = fromBoard();
   const nativeHome = nativeRecorderAvailable();
+  const discovery = document.getElementById('esk-lan-boards')!;
+  if (nativeHome && document.querySelector('meta[data-discovery]')) {
+    discovery.hidden = false;
+    const scan = document.querySelector<HTMLButtonElement>('#esk-lan-scan')!;
+    const status = document.getElementById('esk-lan-scan-status')!;
+    const results = document.getElementById('esk-lan-results')!;
+    scan.onclick = async () => {
+      scan.disabled = true;
+      results.replaceChildren();
+      status.textContent = 'Searching the local network…';
+      try {
+        const boards: {id: string; name: string; address: string; port: number; alias: string}[] =
+          await (await nativeRequest('discover')).json();
+        status.textContent = boards.length ? '' : 'No boards found. Try again or enter the address below.';
+        for (const board of boards) {
+          const row = document.createElement('div');
+          const connect = document.createElement('button'), rename = document.createElement('button');
+          connect.className = rename.className = 'mini';
+          connect.type = rename.type = 'button';
+          connect.textContent = board.alias || board.name;
+          connect.title = board.name + '.local · ' + board.address + ':' + board.port;
+          connect.onclick = () => { address.value = board.address + ':' + board.port; address.setCustomValidity(''); form.requestSubmit(); };
+          rename.textContent = 'Rename on this laptop';
+          rename.onclick = async () => {
+            const value = window.prompt('Board name on this laptop', board.alias || board.name);
+            if (value === null) return;
+            try {
+              board.alias = await (await nativeRequest('name_board', {id: board.id, name: value})).json();
+              connect.textContent = board.alias || board.name;
+            } catch (error) { status.textContent = String(error); }
+          };
+          row.append(connect, rename);
+          results.append(row);
+        }
+      } catch (error) { status.textContent = String(error); }
+      finally { scan.disabled = false; }
+    };
+    lanChoice.addEventListener('toggle', () => { if (lanChoice.open && !scan.disabled) scan.click(); });
+  }
   const setFirmwareTarget = initFirmwareCheck();
   const firmware = document.getElementById('esk-firmware')!;
   const firmwareGuide = document.getElementById('esk-firmware-guide')!;
@@ -118,9 +157,9 @@ export function initEskHome(): void {
   let usbDevice: USBDevice | undefined, usbStatus: BoardStatus | undefined;
   let generation = 0, disconnected = false;
   function syncBridgeConnect(): void {
-    bridgeConnect.hidden = !!usbStatus || !navigator.usb;
+    bridgeConnect.hidden = paired || !!usbStatus || !navigator.usb;
     bridgeConnect.disabled = refresh.disabled;
-    if (!navigator.usb) result.value = t('diagnostic.usb.unavailable');
+    if (!paired && !navigator.usb) result.value = t('diagnostic.usb.unavailable');
   }
   bridgeConnect.onclick = () => {
     if (paired) newBridge.click();
@@ -160,7 +199,8 @@ export function initEskHome(): void {
       }
       const board = lan ? await readBoardStatus() : await readUsbBoardStatus(usbDevice!);
       if (token !== generation) return;
-      if (!lan) {
+      if (lan) setBridge(undefined, board);
+      else {
         if (usbStatus?.boot !== board.boot) result.value = '';
         disconnected = false;
         usbStatus = board;
@@ -186,6 +226,7 @@ export function initEskHome(): void {
       }
     } catch (error) {
       if (token !== generation) return;
+      if (lan) setBridge();
       if (!lan) {
         usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
         setBridge();
