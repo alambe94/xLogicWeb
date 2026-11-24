@@ -154,6 +154,8 @@ import { scanBlock } from './traceSearch.js';
 import type { TraceInput, TraceHit } from './traceSearch.js';
 import { RecordingActivity } from './recordingActivity.js';
 import { deletionPrompt, displaySamples, removeStoredRecording, showEskRecorder, type SavedRecording } from './eskRecorder.js';
+import { loopRamMiB } from './browserArchiveSpace.js';
+import { formatBytes as recordingBytes } from './format.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
 import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
@@ -1051,6 +1053,7 @@ export class App {
     this.lastWorkspaceSnapshot = serializeWorkspaceSnapshot(this.workspaceSnapshot());
     this.reflectDetailedLabels();
 
+    window.addEventListener('xesk-storage-change', () => this.renderSidebarContent());
     this.settingsDialog = new SettingsDialog({
       detailedLabels: () => this.detailedLabels,
       setDetailedLabels: (on) => this.setDetailedLabels(on),
@@ -7144,8 +7147,13 @@ export class App {
         const n = parseSampleCount(count.value, maximum);
         syncTrigger?.(n);
         count.setCustomValidity(n === undefined ? t('esk.invalidSamples', {max: formatCount(maximum)}) : '');
+        const packedRecording = !lan && nativeRecorderAvailable() && rate === ESK_PACKED_RATE &&
+          (this.eskLength === 'loop' || (n ?? 0) > ESK_SAMPLES);
+        const bytes = Math.ceil((n ?? 0) / (packedRecording ? 2 : 1));
+        const ramCap = !nativeRecorderAvailable() || document.querySelector('[data-ram-loop]') ? loopRamMiB() * 2 ** 20 : 0;
+        const destination = !lan && this.eskLength === 'loop' ? (bytes <= ramCap ? ' · RAM' : ' · ' + t('settings.disk')) : '';
         profile.textContent = !lan && this.eskLength === 'untilStop' ? t('esk.diskRecording') :
-          n !== undefined ? formatDuration(n / rate) + ' · ' + formatCount(n) + ' B' : '';
+          n !== undefined ? formatDuration(n / rate) + ' · ' + recordingBytes(bytes) + destination : '';
       };
       count.oninput = () => {
         if (lan) this.eskLanCount = count.value;
@@ -7802,7 +7810,7 @@ export class App {
   /** The unsaved-capture rule (fileGuards.ts) for the displayed capture. */
   private hasUnsavedCapture(): boolean {
     const store = this.captureStore;
-    return captureUnsaved({
+    return !!this.recordingTimeline?.current?.persist || captureUnsaved({
       labelKind: this.captureLabel.kind,
       length: store.length,
       running: this.running || this.stopping,
@@ -7994,7 +8002,7 @@ export class App {
       return;
     }
     const archive = this.recordingTimeline.current;
-    if ((archive && this.recordingsAwaitingChoice.has(archive)) ||
+    if ((archive && (archive.persist || this.recordingsAwaitingChoice.has(archive))) ||
         (this.captureLabel.kind === 'esk' && this.hasUnsavedCapture())) {
       this.eskCapturePending = true;
       this.renderToolbarState();
@@ -8075,7 +8083,7 @@ export class App {
     const current = () => !this.running && !this.stopping &&
       (archive ? this.recordingTimeline.current === archive : this.captureStore === store);
     const choice = await this.confirmDialog.choose({
-      title: t('rec.previousTitle'), body: t(archive?.stored ? 'rec.previousArchive' : 'rec.previousFile'),
+      title: t('rec.previousTitle'), body: t(archive?.stored && !archive.persist ? 'rec.previousArchive' : 'rec.previousFile'),
       confirm: t('rec.discardShort'), cancel: t('reset.cancel'),
     }, this.el.transport, t('toolbar.shortSave'));
     if (choice === 'cancel' || !current()) return false;
@@ -8089,7 +8097,9 @@ export class App {
       if (!current()) return false;
       this.clearDisplayedRecording();
     } else {
-      if (!archive?.stored && !await this.save(archive ? 'sr' : 'lwcap', archive)) return false;
+      if (archive?.persist) {
+        if (!await this.persistRecording(archive)) return false;
+      } else if (!archive?.stored && !await this.save(archive ? 'sr' : 'lwcap', archive)) return false;
       if (!current()) return false;
       if (archive) this.recordingsAwaitingChoice.delete(archive);
     }
@@ -8260,8 +8270,24 @@ export class App {
    * sigrok, then the text exports `.vcd` and `.csv` (textExport.ts). Every format except
    * `.lwcap` writes the enabled digital channels.
    */
+  private async persistRecording(record: SavedRecording): Promise<boolean> {
+    try {
+      await record.persist?.();
+      this.recordingsAwaitingChoice.delete(record);
+      this.syncUnloadGuard();
+      return true;
+    } catch (error) {
+      this.fail('error.save', error);
+      return false;
+    }
+  }
+
   private saveItems(): SettingsMenuItem[] {
+    const record = this.recordingTimeline.current;
+    const keep = {label: t('rec.saveArchive'), onPick: () => { if (record) void this.persistRecording(record); }};
+    if (record?.persist) return [keep];
     return [
+      ...(record?.stored && this.recordingsAwaitingChoice.has(record) ? [keep] : []),
       { label: t('save.lwcap'), hint: t('save.lwcapHint'), onPick: () => void this.save('lwcap') },
       { label: t('save.sr'), hint: t('save.srHint'), onPick: () => void this.save('sr') },
       { label: t('save.vcd'), hint: t('save.vcdHint'), onPick: () => void this.save('vcd') },

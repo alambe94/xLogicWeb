@@ -8,7 +8,7 @@
   <!-- --bg10, the default dark shell. A hosted build also gains the web manifest link
        and its build stamp here (src/pwa/shell.mjs); the portable build does not. -->
   <meta name="theme-color" content="#1B1B1C" />
-  <title data-i18n="app.title">xLogicWeb · xEskWeb</title>
+  <title data-i18n="app.title">xEskWeb</title>
   <!--
     Declaring an icon is what stops the browser probing /favicon.ico at the DOMAIN root -
     which, for a project page served from a subdirectory, is not this site's to serve and
@@ -97,12 +97,12 @@
       </section>
       <h2 data-i18n="home.instruments">Instruments</h2>
       <button id="esk-logic" class="pill esk-instrument" type="button">
-        <strong>xLogicWeb</strong><span data-i18n="home.logic">Capture waveforms and decode protocols</span>
+        <strong>xLogic</strong><span data-i18n="home.logic">Capture waveforms and decode protocols</span>
       </button>
       <a id="esk-logic-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newLogic" hidden>Open Logic in a new tab</a>
       <a id="esk-analysis-demo" class="esk-new-tab" href="?view=logic&amp;example=analysis" target="_blank" rel="noopener noreferrer" data-i18n="home.analysisDemo" hidden>Try the analysis demo</a>
       <button id="esk-bridge" class="pill esk-instrument" type="button">
-        <strong>xBridgeWeb</strong><span data-i18n="bridge.description">I²C, UART, SPI, CAN, GPIO and PWM</span>
+        <strong>xBridge</strong><span data-i18n="bridge.description">I²C, UART, SPI, CAN, GPIO and PWM</span>
       </button>
       <a id="esk-bridge-tab" class="esk-new-tab" target="_blank" rel="noopener noreferrer" data-i18n="home.newBridge" hidden>Open Bridge in a new tab</a>
     </div>
@@ -117,7 +117,7 @@
         </span>
         <span class="toolbar-item-label" id="bridge-home-label" data-i18n="home.button">Home</span>
       </button>
-      <h1 id="bridge-title" class="panel-title" tabindex="-1">xBridgeWeb</h1>
+      <h1 id="bridge-title" class="panel-title" tabindex="-1">xBridge</h1>
     </header>
     <div class="bridge-workspace">
       <section id="bridge-controls" class="panel-section-body">
@@ -189,13 +189,13 @@
         </span>
         <span class="toolbar-item-label" id="esk-home-label" data-i18n="home.button">Home</span>
       </button>
-      <button id="btn-bridge-panel" class="toolbar-item" type="button" title="xBridgeWeb" aria-label="xBridgeWeb" aria-controls="bridge-dock" aria-expanded="false">
+      <button id="btn-bridge-panel" class="toolbar-item" type="button" title="xBridge" aria-label="xBridge" aria-controls="bridge-dock" aria-expanded="false">
         <span class="toolbar-item-media" aria-hidden="true">
           <svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 8h17l-4-4 M21 16H4l4 4"></path>
           </svg>
         </span>
-        <span class="toolbar-item-label">xBridgeWeb</span>
+        <span class="toolbar-item-label">xBridge</span>
       </button>
       <button id="btn-connect" class="toolbar-item toolbar-device" title="Connect device" aria-label="Device">
         <span class="toolbar-item-media">
@@ -371,7 +371,7 @@
       </button>
     </div>
 
-    <aside id="bridge-dock" aria-label="xBridgeWeb" hidden></aside>
+    <aside id="bridge-dock" aria-label="xBridge" hidden></aside>
     <template id="trace-tools-template">
       <aside id="trace-tools" aria-label="Trace analysis">
         <section class="trace-edges panel-section" aria-label="Edges">

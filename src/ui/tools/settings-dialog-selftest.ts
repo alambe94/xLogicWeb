@@ -745,7 +745,7 @@ const ABOUT_BLOCK_NEEDLES: readonly string[] = [
   "block.className = 'settings-about';",
   "block.dataset.settingsKey = 'about';",
   'const view = aboutView();',
-  "this.aboutLine('about-name', `${view.name} — ${view.subtitle}`, false),",
+  "this.aboutLine('about-name', view.name, false),",
   "this.aboutLine('about-meta', view.version, false),",
   "this.aboutLine('about-meta', view.license),",
   "this.aboutLine('about-meta', view.copyright, false),",

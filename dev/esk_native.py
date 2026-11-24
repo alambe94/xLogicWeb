@@ -3,6 +3,7 @@ from contextlib import nullcontext
 import argparse
 import json
 import mimetypes
+import mmap
 import os
 import re
 import shutil
@@ -66,7 +67,8 @@ def stop_note(row, receipt):
 
 class LoopSink:
     """The CLI writes its original wire bytes to a local pipe. Bound only the disk sink."""
-    def __init__(self, path, capacity):
+    def __init__(self, path, capacity, memory=None):
+        self.memory = memory
         import ctypes
         from ctypes import wintypes
         self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -103,7 +105,7 @@ class LoopSink:
             self.connected.set()
             fd = msvcrt.open_osfhandle(self.handle, os.O_RDONLY | os.O_BINARY)
             self.handle = None  # fd now owns it
-            with os.fdopen(fd, "rb", buffering=0) as source, self.path.open("w+b", buffering=0) as sink:
+            with os.fdopen(fd, "rb", buffering=0) as source, (nullcontext(self.memory) if self.memory is not None else self.path.open("w+b", buffering=0)) as sink:
                 while True:
                     data = source.read(1024**2)
                     if not data:
@@ -145,6 +147,7 @@ class Recordings:
             saved = json.loads(self.preference.read_text(encoding="utf8"))
             saved_bytes = self.quota_bytes(saved)
             self.budget = saved_bytes if budget is None else min(saved_bytes, budget)
+        self.ram_loops = {}
         self.lock = threading.RLock()
         self.loop_sink = None
         self.process = None
@@ -195,7 +198,7 @@ class Recordings:
         self.budget = budget
         return self.storage()
 
-    def start(self, rate, bank, samples, serial=None, loop=False):
+    def start(self, rate, bank, samples, serial=None, loop=False, ram_mib=0):
         self.refresh()
         if self.process:
             raise ValueError("Another native recording is active")
@@ -212,13 +215,24 @@ class Recordings:
         factor = 2 if rate == RATES[-1] else 1
         available = self.available()
         limit = min(available, (2**53 - 1) // factor) if samples is None else (samples + factor - 1) // factor
-        if limit < 1 or limit > available:
+        if type(ram_mib) is not int or not 0 <= ram_mib <= (2**53 - 1) // 2**20:
+            raise ValueError("Invalid Loop RAM budget")
+        in_ram = loop and limit <= ram_mib * 2**20
+        if in_ram and self.ram_loops:
+            raise ValueError("Save or discard the pending RAM loop first")
+        if limit < 1 or (not in_ram and limit > available):
             raise ValueError("Recording exceeds available capture storage")
         key = uuid.uuid4().hex
         row = dict(id=key, title=datetime.now().isoformat(timespec="seconds"), rate=rate, bank=bank,
                    state="recording", samples=0, limit=samples or limit * factor, note="")
         if loop:
             row["loop"] = True
+        if in_ram:
+            try:
+                memory = mmap.mmap(-1, limit)
+            except (OSError, OverflowError, MemoryError) as exc:
+                raise ValueError("RAM allocation failed. Reduce Samples or the Loop RAM limit to use disk.") from exc
+            row["volatile"] = True
         self.save(row)
         wire_limit = (2**53 - 1) // factor if loop else limit
         # The CLI needs a deadline. Allow long recordings to reach their byte limit.
@@ -231,7 +245,9 @@ class Recordings:
             cmd += ["--serial", serial or self.serial]
         try:
             if loop:
-                self.loop_sink = LoopSink(self.path(key, ".bin"), limit)
+                self.loop_sink = LoopSink(self.path(key, ".bin"), limit, memory) if in_ram else LoopSink(self.path(key, ".bin"), limit)
+                if in_ram:
+                    self.ram_loops[key] = memory
                 cmd[cmd.index("--output") + 1] = self.loop_sink.name
             with self.path(key, ".log").open("wb") as log:
                 self.process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=log, stderr=log,
@@ -239,6 +255,9 @@ class Recordings:
             if self.loop_sink:
                 self.loop_sink.start(self.process)
         except OSError:
+            if in_ram:
+                self.ram_loops.pop(key, None)
+                memory.close()
             if self.loop_sink:
                 self.loop_sink.close_pipe()
                 self.loop_sink = None
@@ -267,7 +286,7 @@ class Recordings:
         try:
             if ring and ring.error:
                 raise ValueError(ring.error)
-            size = self.path(key, ".bin").stat().st_size
+            size = min(ring.total, ring.capacity) if key in self.ram_loops else self.path(key, ".bin").stat().st_size
             received = ring.total if ring else size
             receipt = json.loads(self.path(key, ".json").read_text())
             packed = row["rate"] == RATES[-1]
@@ -288,6 +307,8 @@ class Recordings:
             row["state"] = "saved"
             row["note"] = stop_note(row, receipt)
         except (OSError, KeyError, ValueError) as exc:
+            if key in self.ram_loops:
+                self.ram_loops.pop(key).close()
             row.update(state="failed", note=f"{exc}. See {key}.log and the capture receipt.")
         self.save(row)
         self.process = self.active = self.loop_sink = None
@@ -295,6 +316,8 @@ class Recordings:
     def status(self, key):
         self.refresh()
         row = self.metadata(key)
+        if row.get("volatile") and row["state"] == "saved" and key not in self.ram_loops:
+            row.update(state="failed", note="Unsaved RAM loop expired when the recorder closed.")
         if row["state"] == "saved" and not row["note"]:
             # Earlier helpers left the note empty when all Windows reads retired cleanly.
             try:
@@ -336,7 +359,8 @@ class Recordings:
         with (ring.lock if ring else nullcontext()):
             if ring and start < max(0, ring.total * (2 if packed else 1) - row["limit"]):
                 raise ValueError("Live loop window has advanced")
-            with self.path(row["id"], ".bin").open("rb") as stream:
+            memory = self.ram_loops.get(row["id"])
+            with (nullcontext(memory) if memory is not None else self.path(row["id"], ".bin").open("rb")) as stream:
                 size = finish - begin
                 if row.get("loop"):
                     capacity = (row["limit"] + 1) // 2 if packed else row["limit"]
@@ -442,10 +466,35 @@ class Recordings:
         resume = (end - 1 if end < row["samples"] else None) if forward else (start + 1 if start else None)
         return dict(match=match, resume=None if match is not None else resume)
 
+    def persist_loop(self, key):
+        row = self.status(key)
+        if row["state"] != "saved":
+            raise ValueError("Stop the recording before saving")
+        if not row.get("volatile"):
+            return row
+        memory = self.ram_loops[key]
+        size = min(len(memory), (row["samples"] + 1) // 2 if row["rate"] == RATES[-1] else row["samples"])
+        if size > self.available():
+            raise ValueError("Insufficient archive space. The recording is still in RAM.")
+        dest = self.path(key, ".bin")
+        try:
+            with dest.open("wb") as stream:
+                for start in range(0, size, 1024**2):
+                    stream.write(memory[start:min(size, start + 1024**2)])
+            row.pop("volatile")
+            self.save(row)
+        except OSError:
+            dest.unlink(missing_ok=True)
+            raise
+        self.ram_loops.pop(key).close()
+        return row
+
     def remove(self, key):
         self.refresh()
         if key == self.active:
             raise ValueError("Stop the recording before deleting it")
+        if key in self.ram_loops:
+            self.ram_loops.pop(key).close()
         path = self.path(key, ".record")
         pending = self.path(key, ".removing")
         if path.exists():
@@ -461,7 +510,9 @@ class Recordings:
         with self.lock:
             op, key = body.get("op"), body.get("id")
             if op == "start":
-                return self.start(body.get("rate"), body.get("bank"), body.get("samples"), body.get("serial"), body.get("loop", False))
+                return self.start(body.get("rate"), body.get("bank"), body.get("samples"), body.get("serial"), body.get("loop", False), body.get("ramMiB", 0))
+            if op == "save_loop":
+                return self.persist_loop(key)
             if op == "stop":
                 return self.stop(key)
             if op == "overview":
@@ -546,7 +597,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         data = path.read_bytes()
         if path == self.server.dist / "index.html":
-            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis data-loop>', 1)
+            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis data-loop data-ram-loop>', 1)
         self.reply(200, data, mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
 
