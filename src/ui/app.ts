@@ -7807,6 +7807,11 @@ export class App {
     }, this.el.open);
   }
 
+  canReloadForUpdate(): boolean {
+    return !this.running && !this.stopping && !this.repeatTimer.pending && !this.eskCapturePending &&
+      !this.stopNativeRecording && !this.hasUnsavedCapture();
+  }
+
   /** The unsaved-capture rule (fileGuards.ts) for the displayed capture. */
   private hasUnsavedCapture(): boolean {
     const store = this.captureStore;

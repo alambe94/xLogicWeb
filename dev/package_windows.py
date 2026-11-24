@@ -5,12 +5,14 @@ receives xEskWeb-Windows-x64.zip and SHA256SUMS.txt.
 """
 import argparse
 import hashlib
+import json
 from pathlib import Path, PurePosixPath
 from zipfile import ZIP_DEFLATED, ZipFile
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--recorder-version", help="Release version of the supplied recorder executable")
     for name in ("dist", "recorder", "runtime-zip", "recorder-notices", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
@@ -40,7 +42,12 @@ def main():
                 out.write(root / name, name)
             for name in ("Start xEskWeb.cmd", "esk_native.py"):
                 out.write(root / "dev" / name, name)
-            out.write(args.recorder, "xlogic_capture.exe")
+            recorder = args.recorder.read_bytes()
+            out.writestr("xlogic_capture.exe", recorder)
+            if args.recorder_version:
+                out.writestr("xlogic_capture.version.json", json.dumps({
+                    "version": args.recorder_version, "sha256": hashlib.sha256(recorder).hexdigest(),
+                }))
         with ZipFile(partial) as archive:
             if archive.testzip():
                 raise ValueError("ZIP verification failed")

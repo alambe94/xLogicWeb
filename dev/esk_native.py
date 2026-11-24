@@ -1,6 +1,7 @@
 """Serve xEskWeb and its disk-backed Windows recorder on one loopback origin."""
 from contextlib import nullcontext
 import argparse
+import hashlib
 import json
 import mimetypes
 import mmap
@@ -509,6 +510,18 @@ class Recordings:
     def request(self, body):
         with self.lock:
             op, key = body.get("op"), body.get("id")
+            if op == "version":
+                digest = hashlib.sha256(self.executable.read_bytes()).hexdigest()
+                version = None
+                manifest = self.executable.with_suffix(".version.json")
+                if manifest.is_file():
+                    try:
+                        metadata = json.loads(manifest.read_text(encoding="utf-8"))
+                        if isinstance(metadata, dict) and metadata.get("sha256") == digest:
+                            version = metadata.get("version")
+                    except (ValueError, OSError):
+                        pass
+                return {"version": version, "sha256": digest}
             if op == "start":
                 return self.start(body.get("rate"), body.get("bank"), body.get("samples"), body.get("serial"), body.get("loop", False), body.get("ramMiB", 0))
             if op == "save_loop":
