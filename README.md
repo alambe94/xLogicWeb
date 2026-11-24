@@ -109,8 +109,12 @@ and a compatible Windows recorder on a machine with the ESK application USB conn
 py -3 dev/esk_native.py --dist dist --recorder C:\ESK\xlogic_capture.exe --store D:\ESK\recordings
 ```
 
-Use `--archive-limit-gib 8` to share a test drive with other tools and limit
-the entire recording archive to 8 GiB. Omit it to use the available drive space.
+In the Windows viewer, choose **Logic → Settings → Behaviour → Recording archive limit (GiB)**.
+Enter a whole number and save. The helper remembers it for that recording folder.
+To set a ceiling for a launch, run `& ".\Start xEskWeb.cmd" --archive-limit-gib 8` in PowerShell.
+The same flag works with the Python helper. Clearing the field and saving uses the launch ceiling,
+or available drive space when no ceiling was supplied. Stop an active recording before editing
+the limit. Lowering it preserves existing recordings and restricts subsequent captures.
 Use `--serial SERIAL` to select a particular board. The hosted viewer continues
 to offer WebUSB and Ethernet. The optional PulseView client and sigrok-cli share a Windows ZIP
 on the [PulseView fork's releases page](https://github.com/alambe94/pulseview/releases/tag/xsdk-bundle-22).

@@ -3179,3 +3179,5 @@ html[data-theme="light"] .bus-dialog::backdrop { background: var(--backdrop); }
 
 /* index.html's static "Starting…" line, removed by main.ts once App has constructed. */
 .empty-hint-starting { font-size: 12px; opacity: 0.8; color: var(--text50); }
+#settings-dialog .archive-limit-controls { display: flex; align-items: center; gap: 6px; }
+#settings-dialog .archive-limit-controls input { width: 7em; }
