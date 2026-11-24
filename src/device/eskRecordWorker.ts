@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { ESK_PACKED_RATE, recordEskUsb, unpackEsk, type EskBank } from './eskCapture.js';
 import { OpfsRecordController } from '../data/recordController.js';
-import { createLoop, finishLoop, type LoopRecording } from '../data/loopRecording.js';
+import { createLoop, createMemoryLoop, finishLoop, type LoopRecording } from '../data/loopRecording.js';
 import { createOpfsRecordStorage } from '../data/opfsStorage.js';
 
-export type LiveRequest = { type: 'start'; directory: FileSystemDirectoryHandle; serial: string; loop?: boolean; limit: number; rate: number; bank: EskBank; title: string } |
+export type LiveRequest = { type: 'start'; directory: FileSystemDirectoryHandle | undefined; ram?: boolean; serial: string; loop?: boolean; limit: number; rate: number; bank: EskBank; title: string } |
   { type: 'stop' | 'displayed' };
 export type LiveReply = { type: 'preview'; data: Uint8Array; accepted: number; saved: number; queue: number } |
-  { type: 'end'; accepted: number; saved: number; wire: bigint | undefined; error: string | undefined };
+  { type: 'end'; memory: Uint8Array<ArrayBuffer> | undefined; accepted: number; saved: number; wire: bigint | undefined; error: string | undefined };
 
 const stop = new AbortController();
 let displaying = false;
@@ -21,14 +21,17 @@ async function record(request: Extract<LiveRequest, { type: 'start' }>) {
   let writer: OpfsRecordController | undefined, accepted = 0, wire: bigint | undefined;
   let error: string | undefined;
   let loop: LoopRecording | undefined;
+  let memory: Uint8Array<ArrayBuffer> | undefined;
   try {
     const devices = (await navigator.usb.getDevices()).filter(d =>
       d.vendorId === 0x1209 && d.productId === 3 && (d.serialNumber ?? '') === request.serial);
     if (devices.length !== 1) throw new Error('Selected xESK device is unavailable or ambiguous');
-    if (request.loop) {
-      loop = await createLoop(request.directory, request.limit);
+    if (request.loop && request.ram) {
+      ({memory, ring: loop} = createMemoryLoop(request.limit));
+    } else if (request.loop) {
+      loop = await createLoop(request.directory!, request.limit);
     } else {
-      writer = new OpfsRecordController(await createOpfsRecordStorage(request.directory), {
+      writer = new OpfsRecordController(await createOpfsRecordStorage(request.directory!), {
         profile: { profileId: request.title, calibrationId: null, channels: request.rate === ESK_PACKED_RATE ? 4 : 8, sampleRateHz: request.rate, bytesPerSample: 1 },
         maxBytes: request.limit,
       });
@@ -60,10 +63,10 @@ async function record(request: Extract<LiveRequest, { type: 'start' }>) {
   finally {
     try {
       loop?.close();
-      if (loop && !error && accepted) await finishLoop(request.directory, {total: accepted, capacity: request.limit, rate: request.rate, title: request.title});
+      if (loop && !memory && !error && accepted) await finishLoop(request.directory!, {total: accepted, capacity: request.limit, rate: request.rate, title: request.title});
       await writer?.close();
     } catch (e) { error ??= String(e); }
-    self.postMessage({ type: 'end', accepted, saved: loop ? Math.min(accepted, request.limit) : writer?.bytes ?? 0, wire,
-      error: error ?? writer?.lastError ?? undefined } satisfies LiveReply);
+    self.postMessage({ type: 'end', memory, accepted, saved: loop ? Math.min(accepted, request.limit) : writer?.bytes ?? 0, wire,
+      error: error ?? writer?.lastError ?? undefined } satisfies LiveReply, {transfer: memory ? [memory.buffer] : []});
   }
 }

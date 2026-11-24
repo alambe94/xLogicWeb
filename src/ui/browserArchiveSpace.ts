@@ -37,3 +37,17 @@ export async function setBrowserLimit(value: number | null) {
     return browserArchiveSpace();
   });
 }
+
+const ramKey = 'xesk.loopRamMiB';
+export function loopRamMiB(): number {
+  const raw = localStorage.getItem(ramKey);
+  const value = raw === null ? 256 : Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 && Number.isSafeInteger(value * 2**20) ? value : 0;
+}
+
+export function setLoopRamMiB(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0 || !Number.isSafeInteger(value * 2**20))
+    throw Error('Enter a whole number of MiB, or 0 for disk only.');
+  localStorage.setItem(ramKey, String(value));
+  window.dispatchEvent(new Event('xesk-storage-change'));
+}

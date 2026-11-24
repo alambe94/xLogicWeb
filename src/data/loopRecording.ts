@@ -30,6 +30,17 @@ export class LoopRecording {
   close(): void { try { this.file.flush(); } finally { this.file.close(); } }
 }
 
+export function createMemoryLoop(capacity: number) {
+  let memory: Uint8Array<ArrayBuffer>;
+  try { memory = new Uint8Array(capacity); }
+  catch { throw Error('Could not allocate the RAM loop. Reduce Samples or select disk in Storage.'); }
+  const ring = new LoopRecording({
+    write(block, {at}) { memory.set(block, at); return block.length; },
+    close() {}, flush() {},
+  }, capacity);
+  return {memory, ring};
+}
+
 export async function createLoop(dir: FileSystemDirectoryHandle, capacity: number): Promise<LoopRecording> {
   const file = await dir.getFileHandle('loop.bin', {create: true});
   const sync = await (file as FileSystemFileHandle & {createSyncAccessHandle(): Promise<SyncSink>}).createSyncAccessHandle();
