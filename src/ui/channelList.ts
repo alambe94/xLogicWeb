@@ -54,6 +54,7 @@ export interface ChannelLaneLabel {
 
 export interface ChannelCell {
   channel: ChannelState;
+  physicalIndex?: number;
   /** Total CSS height, base row plus every lane this channel carries. */
   heightCss: number;
   /**
@@ -145,6 +146,7 @@ class ChannelSettingsDialog {
   private readonly saveButton: HTMLButtonElement;
   private selectedColor = '#000000';
   private channel = -1;
+  private physicalIndex = -1;
   private opener: HTMLButtonElement | null = null;
 
   constructor(
@@ -183,7 +185,7 @@ class ChannelSettingsDialog {
     this.resetNameButton.appendChild(resetNameIcon());
     this.resetNameButton.addEventListener('click', () => {
       if (this.channel < 0) return;
-      this.nameInput.value = defaultChannelName(this.channel);
+      this.nameInput.value = defaultChannelName(this.physicalIndex);
       this.nameInput.focus();
       this.nameInput.select();
     });
@@ -270,7 +272,7 @@ class ChannelSettingsDialog {
     this.colorResetButton.appendChild(resetNameIcon());
     this.colorResetButton.addEventListener('click', () => {
       if (this.channel < 0) return;
-      this.selectedColor = channelColor(this.channel);
+      this.selectedColor = channelColor(this.physicalIndex);
       this.colorPicker.setColor(this.selectedColor);
       this.syncColorSelection();
     });
@@ -308,7 +310,8 @@ class ChannelSettingsDialog {
     if (this.dialog.open) this.close();
     this.channel = cell.channel.index;
     this.opener = opener;
-    this.renderStrings(cell.channel.index);
+    this.physicalIndex = cell.physicalIndex ?? this.channel;
+    this.renderStrings(this.physicalIndex);
     this.nameInput.value = cell.channel.name;
     this.selectedColor = cell.channel.color;
     this.colorPicker.setColor(cell.channel.color);
@@ -649,14 +652,15 @@ export class ChannelList {
       tag.textContent = cell.channel.name;
       const original = document.createElement('span');
       original.className = 'ch-original-id';
-      original.textContent = `D${cell.channel.index}`;
-      original.hidden = cell.channel.name === defaultChannelName(cell.channel.index);
+      const physical = cell.physicalIndex ?? cell.channel.index;
+      original.textContent = defaultChannelName(physical);
+      original.hidden = cell.channel.name === defaultChannelName(physical);
 
       const settings = document.createElement('button');
       settings.type = 'button';
       settings.className = 'ch-settings';
       settings.dataset['channel'] = String(cell.channel.index);
-      settings.title = t('channels.settings', { index: cell.channel.index });
+      settings.title = t('channels.settings', { index: physical });
       settings.setAttribute('aria-label', settings.title);
       settings.setAttribute('aria-haspopup', 'dialog');
       settings.appendChild(settingsIcon());

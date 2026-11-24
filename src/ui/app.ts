@@ -517,6 +517,8 @@ export class App {
   private nativePreviewStart: number | null = null;
   private eskRate = ESK_RATE;
   private eskBank: EskBank = 'lower';
+  private displayedEskBank: EskBank | undefined;
+  private selectedRowBank: EskBank | undefined;
   private eskCountText = String(ESK_SAMPLES);
   private eskUntilStop = false;
   private eskLanCount = String(ESK_SAMPLES);
@@ -1102,7 +1104,27 @@ export class App {
    */
   private visibleChannels(): ChannelState[] {
     const hidden = new Set(this.busViews.filter((b) => b.hideSources).flatMap((b) => b.spec.bits));
-    return this.enabledChannels().filter((c) => !hidden.has(c.index));
+    return this.order.map(i => this.channels[i]!).filter(c =>
+      this.channelAvailable(c.index) && this.rowSelected(c) && !hidden.has(c.index));
+  }
+
+  // The upper bank stores D4–D7 at bits 0–3. Swapping the two groups maps both
+  // from storage to physical channel and back; the other four rows have no samples.
+  private physicalChannel(index: number): number {
+    return this.displayedEskBank === 'upper' ? index ^ 4 : index;
+  }
+
+  private rowSelected(c: ChannelState): boolean {
+    if (!this.selectedRowBank) return c.enabled;
+    return Math.floor(this.physicalChannel(c.index) / 4) === (this.selectedRowBank === 'upper' ? 1 : 0);
+  }
+
+  private updateEskBankView(): void {
+    if (this.captureLabel.kind === 'none' || this.captureOrigin.model === 'ESK xLOGIC') {
+      this.selectedRowBank = this.eskRate === ESK_PACKED_RATE ? this.eskBank : undefined;
+      this.relayout();
+    }
+    this.renderSidebarContent();
   }
 
   /**
@@ -1125,7 +1147,7 @@ export class App {
     const hidden = new Set(this.busViews.filter((b) => b.hideSources).flatMap((b) => b.spec.bits));
     const width = this.renderChannelCount();
     const rows = this.order.map((i) => this.channels[i]!).filter((c) =>
-      c.enabled && !hidden.has(c.index) && c.index < width &&
+      this.rowSelected(c) && !hidden.has(c.index) && c.index < width &&
       (this.channelAvailable(c.index) || c.index >= this.store.channelCount));
     if (!this.hideIdleChannels || this.running || this.stopping || this.store.length === 0) {
       return { shown: rows, hidden: 0 };
@@ -4102,6 +4124,7 @@ export class App {
         : { kind: 'blank', channel: 0, shows: c.index, heightCss: base });
       cells.push({
         channel: c,
+        physicalIndex: this.physicalChannel(c.index),
         heightCss: base + mine.length * ROWS.laneHeight,
         laneCss: mine.length * ROWS.laneHeight,
         lanes: mine.map((l) => this.laneLabel(l)),
@@ -4506,6 +4529,9 @@ export class App {
       this.overlay.syncSize(width, this.el.plot.clientHeight);
       this.overlay.beginFrame({ grid: true, top: true });
       this.overlay.drawGrid(ticks);
+      for (const box of this.stack.boxes()) {
+        if (box.spec.kind === 'blank') this.overlay.drawBlankRow(box.top, box.band, t('plot.notCaptured'));
+      }
       this.recordingActivity.draw(this.stack.boxes(), this.channels.map(ch => ch.color));
       this.renderCorner();
       this.layerFingerprint = null;
@@ -6999,7 +7025,7 @@ export class App {
           this.eskBank = 'lower';
           this.eskTriggerChannel %= 4;
         }
-        this.renderSidebarContent();
+        this.updateEskBankView();
       });
       const samplesLabel = document.createElement('label');
       samplesLabel.textContent = t('esk.samples');
@@ -7099,16 +7125,17 @@ export class App {
             if (!input.checked) return;
             this.eskBank = bank;
             this.eskTriggerChannel = this.eskTriggerChannel % 4 + (bank === 'upper' ? 4 : 0);
-            this.renderSidebarContent();
+            this.updateEskBankView();
           };
           label.append(input, bank === 'lower' ? 'D0–D3' : 'D4–D7');
           choices.append(label);
         }
       } else {
         choices.className = 'chip-grid channel-bank-grid';
-        for (const ch of this.channels.slice(0, this.displayChannelCount())) {
-          const chip = channelChip(ch, (index, enabled) => this.setChannelEnabled(index, enabled));
-          chip.id = 'esk-channel-' + ch.index;
+        for (let physical = 0; physical < Math.min(this.channels.length, this.displayChannelCount()); physical++) {
+          const ch = this.channels[this.physicalChannel(physical)]!;
+          const chip = channelChip({...ch, index: physical}, (_, enabled) => this.setChannelEnabled(ch.index, enabled));
+          chip.id = 'esk-channel-' + physical;
           choices.append(chip);
         }
       }
@@ -7736,7 +7763,7 @@ export class App {
     this.dirty = true;
   }
 
-  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false, keepVisibility = label.kind === 'esk', preview = false): void {
+  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false, keepVisibility = label.kind === 'esk', preview = false, packedBank?: EskBank): void {
     const previousView = this.stack.viewport;
     if (!sameRecording) this.recordingTimeline.clear();
     this.stopQuickScroll();
@@ -7756,11 +7783,20 @@ export class App {
     // the one already set aside, never the previous file's rows.
     if (!this.loadedCapture()) this.deviceLayout = { channels: this.channels, order: this.order };
     if (!sameRecording) {
-      const enabled = keepVisibility && this.displayChannelCount() === ESK_CHANNELS
-        ? this.channels.slice(0, ESK_CHANNELS).map(channel => channel.enabled) : [];
-      this.channels = defaultChannels(store.channelCount);
-      if (enabled.some(Boolean)) this.channels.forEach((channel, index) => { channel.enabled = enabled[index]!; });
-      this.order = this.channels.map((c) => c.index);
+      const enabled = (keepVisibility || packedBank) && this.channels.length === ESK_CHANNELS
+        ? this.channels.map((_, physical) => this.channels[this.physicalChannel(physical)]!.enabled) : [];
+      const restoreVisibility = enabled.some(Boolean);
+      this.displayedEskBank = this.selectedRowBank = packedBank;
+      this.channels = defaultChannels(packedBank ? ESK_CHANNELS : store.channelCount);
+      this.order = this.channels.map((_, physical) => this.physicalChannel(physical));
+      for (const channel of this.channels) {
+        const physical = this.physicalChannel(channel.index);
+        if (packedBank) {
+          channel.name = defaultChannelName(physical);
+          channel.color = channelColor(physical);
+        }
+        if (restoreVisibility) channel.enabled = enabled[physical]!;
+      }
     }
     for (let i = 0; i < names.length && i < this.channels.length; i++) {
       // Keep real names ("SDA"); drop auto-generated ones that would just repeat the
@@ -7883,8 +7919,7 @@ export class App {
       this.statusError = null;
       this.renderErrorBanner();
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: null };
-      const names = packed && bank === 'upper' ? ['D4', 'D5', 'D6', 'D7'] : [];
-      this.adoptCapture(store, names, { kind: 'esk', samples: store.length, rate: store.samplerate, ticks }, false, !packed);
+      this.adoptCapture(store, [], { kind: 'esk', samples: store.length, rate: store.samplerate, ticks }, false, !packed, false, packed ? bank : undefined);
       if (triggerIndex !== undefined) this.triggerSampleIndex = triggerIndex;
       const vars = { samples: formatCount(store.length), rate: formatRate(store.samplerate) };
       this.setFileNotice(ticks === undefined ? { key: 'capture.esk', vars } :
@@ -7985,13 +8020,14 @@ export class App {
         this.storeRef.set(store);
         this.dirty = true;
       } else {
-        this.adoptCapture(store, packed && name.endsWith('D4–D7') ? ['D4', 'D5', 'D6', 'D7'] : [],
-          { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording || previewShown, !packed, preview);
+        this.adoptCapture(store, [],
+          { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording || previewShown, !packed, preview,
+          packed ? (name.endsWith('D4–D7') ? 'upper' : 'lower') : undefined);
         if (preview) {
           // Choose the initial scale once. A quiet input starts with the full preview window.
           const tail = Math.min(store.length, 2048);
           let edges = 0;
-          for (const channel of this.channels) {
+          for (const channel of this.channels.slice(0, store.channelCount)) {
             if (channel.enabled) edges = Math.max(edges, store.edges(channel.index, store.length - tail, store.length).length);
           }
           const span = edges >= 16 ? Math.ceil(16 * tail / edges) : displaySamples;
@@ -8040,9 +8076,8 @@ export class App {
             }, stop => { this.stopNativeRecording = stop; this.renderToolbarState(); }, frame => {
               if (!overview) {
                 const row = frame.record, packed = row.rate === ESK_PACKED_RATE;
-                const names = packed && row.bank === 'upper' ? ['D4', 'D5', 'D6', 'D7'] : [];
-                this.adoptCapture(createSampleStore(packed ? 4 : 8, row.rate), names,
-                  {kind: 'loaded', source: 'xLOGIC USB', ms: 0}, false, !packed, true);
+                this.adoptCapture(createSampleStore(packed ? 4 : 8, row.rate), [],
+                  {kind: 'loaded', source: 'xLOGIC USB', ms: 0}, false, !packed, true, packed ? row.bank : undefined);
                 this.setFileNotice(null);
                 overview = new RecordingActivity(row, frame.stride, () => { this.dirty = true; });
                 this.recordingActivity = overview;
@@ -8171,7 +8206,7 @@ export class App {
           // Streamed: bounded parts straight to the file, never one whole-file buffer.
           // .lwcap goes through the progress writer; the rest are generated on demand.
           if (chosen === 'lwcap') {
-            const plan = planLwcap(store, this.channels.map((c) => c.name));
+            const plan = planLwcap(store, this.channels.slice(0, store.channelCount).map(c => c.name));
             await this.writeLwcapWithProgress(plan, (part) => writable.write(part));
           } else {
             for await (const p of parts(chosen)) await writable.write(p);
@@ -8190,7 +8225,7 @@ export class App {
       if (format === 'lwcap') {
         // The download fallback still never builds one buffer: the Blob holds the bounded
         // parts, which the browser may keep on disk.
-        const plan = planLwcap(store, this.channels.map((c) => c.name));
+        const plan = planLwcap(store, this.channels.slice(0, store.channelCount).map(c => c.name));
         const blobParts: BlobPart[] = [];
         await this.writeLwcapWithProgress(plan, (part) => { blobParts.push(part); });
         blob = new Blob(blobParts, { type: 'application/octet-stream' });
@@ -8591,6 +8626,7 @@ export class App {
       this.viewIntent = false;
       if (newSession) {
         this.recordingTimeline.clear();
+        this.displayedEskBank = this.selectedRowBank = undefined;
         this.repeatMissed = false;
         this.captureSessionId += 1;
         this.measurementStats = emptyMeasurementStats();
@@ -10307,7 +10343,7 @@ export class App {
     roundTripLwcap: async () => {
       const store = this.captureStore;
       const before = { n: store.channelCount, sr: store.samplerate, len: store.length };
-      const blob = saveLwcap(store, this.channels.map((c) => c.name));
+      const blob = saveLwcap(store, this.channels.slice(0, store.channelCount).map(c => c.name));
       const back = loadLwcap(await blob.arrayBuffer(), 'round-trip');
       const problems: string[] = [];
       if (back.store.channelCount !== before.n) problems.push('channelCount');
