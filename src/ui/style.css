@@ -245,8 +245,27 @@ html, body {
 #esk-features th, #esk-features td { font-variant-numeric: tabular-nums; }
 #esk-features tbody tr:nth-child(even) { background: var(--background); }
 #toolbar #btn-bridge-panel[hidden], #toolbar #btn-discard[hidden], #bridge-dock[hidden] { display: none; }
-#bridge-dock { max-height: 40vh; overflow: auto; border-bottom: 1px solid var(--border-low); }
-#bridge-dock #bridge-controls { max-width: 32rem; }
+#bridge-dock {
+  flex: none; min-width: 0; overflow-x: auto; scrollbar-width: thin;
+  background: var(--bg20); border-bottom: 1px solid var(--border-low);
+}
+#bridge-dock #bridge-controls, #bridge-dock form, #bridge-dock fieldset:not([hidden]) {
+  display: flex; flex-direction: row; align-items: flex-end; gap: 10px;
+}
+#bridge-dock #bridge-controls { padding: 5px 12px; width: max-content; min-width: 100%; }
+#bridge-dock #bridge-controls fieldset { margin: 0; padding: 0; border: 0; }
+#bridge-dock legend, #bridge-dock .panel-note {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+}
+#bridge-dock .field { flex: none; white-space: nowrap; }
+#bridge-dock .field input { width: 12ch; min-width: 100%; }
+#bridge-dock .select-trigger { width: auto; min-width: 6ch; }
+#bridge-dock #bridge-controls button:not(.select-trigger) { align-self: flex-end; white-space: nowrap; }
+#bridge-dock #bridge-controls output {
+  overflow-x: auto; white-space: nowrap; scrollbar-width: thin;
+}
+#bridge-dock #bus-uart-rx { min-height: 1.6em; max-width: 26ch; }
+#bridge-dock #bridge-result { flex: 1 0 14ch; width: 14ch; }
 .esk-capture-fields { display: grid; gap: .5rem; }
 .esk-capture-fields label { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .esk-capture-fields [hidden] { display: none; }

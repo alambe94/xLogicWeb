@@ -30,7 +30,6 @@ export function initBridgeTools() {
   const canAction = picker('bus-can-action', 'Operation', [['loopback', 'Internal loopback'], ['listen', 'Listen for one frame'], ['send', 'Send frame']]);
   const bitrate = picker('bus-bitrate', 'Bitrate (bit/s)', choices('125000', '250000', '500000', '1000000'), '500000');
   const form = byId<HTMLFormElement>('bridge-form'), run = byId<HTMLButtonElement>('bus-run');
-  const hint = byId('bridge-usb-hint');
   const port = byId<HTMLButtonElement>('bus-port'), result = byId<HTMLOutputElement>('bridge-result');
   const rx = byId<HTMLOutputElement>('bus-uart-rx');
   let device: USBDevice | undefined, board: BoardStatus | undefined, epoch = 0, busy = false;
@@ -60,7 +59,6 @@ export function initBridgeTools() {
     port.textContent = uart ? 'Close UART port' : 'Open UART port';
     run.textContent = ({ I2C: 'Run transaction', SPI: receive ? 'Receive' : 'Transfer', UART: 'Send bytes', CAN: ({listen: 'Listen for one frame', loopback: 'Internal loopback', send: 'Send frame'}[canAction.value] ?? 'Run') })[name] ?? 'Run';
     run.disabled = busy || !available(name) || (name === 'UART' && !uart);
-    hint.hidden = available(name);
   }
   const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
   async function operate(action: (d: USBDevice, b: BoardStatus, token: number) => Promise<string>) {
