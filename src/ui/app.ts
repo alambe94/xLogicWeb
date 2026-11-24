@@ -7165,7 +7165,7 @@ export class App {
         fields.append(useMax);
       }
       const trigger = document.createElement('details');
-      trigger.className = 'trace-trigger';
+      trigger.className = 'trace-trigger advanced';
       const triggerTitle = document.createElement('summary');
       triggerTitle.textContent = t('overview.originTrigger');
       trigger.open = this.eskTriggerExpanded;
@@ -7255,7 +7255,10 @@ export class App {
         }
       }
       const focused = panel.contains(document.activeElement) ? document.activeElement?.id : undefined;
-      panel.replaceChildren(fields, channels, profile, this.traceTools.edges);
+      const acquisition = document.createElement('div');
+      acquisition.className = 'panel-section';
+      acquisition.append(fields, channels, profile);
+      panel.replaceChildren(acquisition, this.traceTools.edges);
       if (!lan) panel.append(trigger);
       panel.append(this.traceTools.root);
       if (focused) document.getElementById(focused)?.focus({ preventScroll: true });

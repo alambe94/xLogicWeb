@@ -13,11 +13,14 @@ function action(text: string, click: () => void) {
   button.onclick = click;
   return button;
 }
-function field(name: string, element: HTMLInputElement) {
+function field(id: string, name: string, element: HTMLInputElement) {
+  const container = document.createElement('div');
+  container.className = 'field';
   const label = document.createElement('label');
-  label.className = 'field';
-  label.append(name, element);
-  return label;
+  element.id = label.htmlFor = id;
+  label.textContent = name;
+  container.append(label, element);
+  return container;
 }
 export class TraceTools {
   readonly root = document.querySelector<HTMLTemplateElement>('#trace-tools-template')!.content.firstElementChild as HTMLElement;
@@ -151,7 +154,7 @@ export class TraceTools {
         'D' + (source.firstChannel + bit) + ' ≥ ' + Number((n * 1e9 / source.rate).toPrecision(6)) + ' ns').join(', ');
       const n = this.filters().get(Number(ch.value));
       width.value = n ? String(n * 1e9 / source.rate) : '0';
-      result.value = n ? 'Minimum retained width: ' + n + ' samples' : 'Raw signal';
+      result.value = '';
     };
     ch.addEventListener('change', sync); sync();
     const apply = async () => {
@@ -172,7 +175,7 @@ export class TraceTools {
       width.value = '0';
       void apply();
     }));
-    body.append(ch.el, field('Minimum width (ns)', width), buttons, result);
+    body.append(ch.el, field('trace-filter-width', 'Minimum width (ns)', width), buttons, result);
   }
 
   private renderSearch(): void {
@@ -238,6 +241,6 @@ export class TraceTools {
     const buttons = document.createElement('div');
     buttons.className = 'trace-search-actions';
     buttons.append(previous, next, stop);
-    this.searchFields.append(channel.el, level.el, compare.el, field('Width (ns)', width), buttons, result);
+    this.searchFields.append(channel.el, level.el, compare.el, field('trace-pulse-width', 'Width (ns)', width), buttons, result);
   }
 }
