@@ -107,7 +107,6 @@ export const en = {
   'rec.duration': 'Recording · {duration}',
   'rec.range': 'Samples {start}–{end} of {total}',
   'rec.empty': 'This recording has no saved samples.',
-  'rec.label': '{name} · samples {start}–{end}{note}',
   'home.button': 'Home',
   'home.instruments': 'Instruments',
   'home.details': 'Device details',

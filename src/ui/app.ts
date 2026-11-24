@@ -7860,7 +7860,6 @@ export class App {
   private async openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions): Promise<void> {
     if (this.eskCapturePending || this.running || this.stopping) return;
     let previewShown = false;
-    let recordingNote = '';
     const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false, preview = false) => {
       this.endPendingRepeatSession();
       const packed = rate === ESK_PACKED_RATE && (name === 'xLOGIC USB D4–D7' || name === 'xLOGIC USB D0–D3');
@@ -7889,12 +7888,11 @@ export class App {
           this.stack.setViewport(store.length - this.stack.view.span, store.length);
         }
       }
+      if (!previewShown && !sameRecording) this.setFileNotice(null);
       previewShown = preview;
-      this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1, note: recordingNote } });
       this.syncUnloadGuard();
     };
     const display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: import('./eskRecorder.js').SavedRecording) => {
-      recordingNote = saved?.summary ? ' · ' + saved.summary : '';
       showWindow(bytes, rate, start, name);
       if (saved) this.recordingTimeline.open(saved, rate, start, this.captureStore!.channelCount,
         name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true),

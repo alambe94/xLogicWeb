@@ -90,8 +90,8 @@ Press **Stop** to inspect the recording, select an **Edge channel**, and use
 The guide labels the channel and direction and marks the edge on its waveform.
 The archive has a cumulative 16 GiB limit. **Open → Saved recordings…**
 shows free space and each trace's size. Use **Delete recording** to reclaim space.
-The timeline reports whether the recorder
-verified the hardware end of the stream. With the current SK-AM64B application,
+Hover over the recording duration to read the recorder's completion note.
+With the current SK-AM64B application,
 Stop can leave additional samples on the board or in pending USB reads. A
 count-limited recording can still contain the full requested sample count.
 
