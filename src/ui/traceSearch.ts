@@ -7,6 +7,7 @@ export interface TraceInput {
   rate: number;
   channels: number;
   firstChannel: number;
+  readSize?: number;
   gaps: readonly GapSpan[];
   read(start: number, end: number): Promise<Uint8Array>;
 }
@@ -57,4 +58,3 @@ export async function findPulse(source: TraceInput, bit: number, level: number, 
   }
   return null;
 }
-

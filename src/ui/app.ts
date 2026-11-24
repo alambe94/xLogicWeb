@@ -540,6 +540,7 @@ export class App {
         this.nativePreviewStart !== null) return null;
     const archive = this.recordingTimeline.current;
     return {key: archive ?? raw, length: archive?.samples ?? raw.length, rate: raw.samplerate,
+      ...(archive?.readSize ? {readSize: archive.readSize} : {}),
       channels: raw.channelCount, firstChannel: this.displayedEskBank === 'upper' ? 4 : 0,
       gaps: archive ? [] : raw.gaps(), read: archive ? archive.read : async (start, end) => {
         const bytes = new Uint8Array(end - start);
@@ -574,7 +575,9 @@ export class App {
     this.discardDecodeState();
     this.autoDecodeGen++;
     const decoded = this.analyzers.filter(a => a.result || this.autoDecode);
-    for (const a of this.analyzers) { a.result = null; a.index = null; a.status = 'idle'; }
+    for (const a of this.analyzers) {
+      a.result = null; a.index = null; a.status = 'idle'; a.note = { kind: 'pending' };
+    }
     this.resetBusBuilds();
     this.layerFingerprint = null;
     this.relayout();

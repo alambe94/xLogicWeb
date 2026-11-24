@@ -3184,3 +3184,4 @@ html[data-theme="light"] .bus-dialog::backdrop { background: var(--backdrop); }
 #trace-tools:not([hidden]), .trace-options { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
 #trace-tools { flex: 0 0 auto; padding: 5px 12px; border-bottom: 1px solid var(--border-low); }
 #trace-tools input { width: 8em; }
+.trace-hits:not(:empty) { flex-basis: 100%; display: flex; gap: 4px; flex-wrap: wrap; overflow: auto; max-height: 5em; }

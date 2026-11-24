@@ -22,6 +22,7 @@ async function preceding(source: TraceInput, lo: number, first: number, bit: num
       if (run >= n) return {stable: last, prefix};
     }
     end = start;
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
   return {stable: last, prefix};
 }
@@ -35,12 +36,14 @@ async function qualifiesAtEnd(source: TraceInput, end: number, hi: number, bit: 
     for (const byte of bytes) if ((byte >> bit & 1) !== level) return false;
     needed -= next - end;
     end = next;
+    if (needed > 0) await new Promise(resolve => setTimeout(resolve, 0));
   }
   return needed <= 0;
 }
 
 export function filteredTrace(source: TraceInput, widths: FilterWidths, signal: AbortSignal): TraceInput {
   if (!widths.size) return source;
+  const previous = new Map<number, {lo: number; end: number; stable: number; level: number; tail: number}>();
   return {...source, read: async (start, end) => {
     signal.throwIfAborted();
     const raw = await source.read(start, end);
@@ -53,7 +56,10 @@ export function filteredTrace(source: TraceInput, widths: FilterWidths, signal: 
         if (n <= 1) continue;
         const mask = 1 << bit;
         const initial = raw[first - start]! >> bit & 1;
-        let {stable, prefix} = await preceding(source, lo, first, bit, n, initial, signal);
+        const saved = previous.get(bit);
+        let {stable, prefix} = saved?.lo === lo && saved.end === first
+          ? {stable: saved.stable, prefix: saved.level === initial ? saved.tail : 0}
+          : await preceding(source, lo, first, bit, n, initial, signal);
         for (let i = first; i < stop;) {
           const level = raw[i - start]! >> bit & 1;
           let j = i + 1;
@@ -62,6 +68,7 @@ export function filteredTrace(source: TraceInput, widths: FilterWidths, signal: 
           if (seen >= n || (level !== stable && j === stop &&
               await qualifiesAtEnd(source, j, hi, bit, level, n - seen, signal))) stable = level;
           if (stable !== level) for (let k = i - start; k < j - start; k++) out[k] ^= mask;
+          if (j === stop) previous.set(bit, {lo, end: stop, stable, level, tail: Math.min(n, seen)});
           prefix = 0; i = j;
         }
       }
@@ -69,4 +76,3 @@ export function filteredTrace(source: TraceInput, widths: FilterWidths, signal: 
     return out;
   }};
 }
-
