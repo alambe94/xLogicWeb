@@ -8,7 +8,12 @@ export async function restartBoard(exchange: (payload: Uint8Array) => Promise<Ui
       !prepare.subarray(8).some(value => value !== 0)) throw new Error('Invalid restart receipt.');
   const execute = prepare.slice();
   execute[6] = 2;
-  const confirmed = await exchange(execute);
+  let confirmed: Uint8Array;
+  try {
+    confirmed = await exchange(execute);
+  } catch (cause) {
+    throw new Error('Restart acknowledgement is uncertain. Reconnect to check the board.', {cause});
+  }
   if (confirmed.length !== execute.length || !execute.every((value, i) => confirmed[i] === value)) {
     throw new Error('Restart acknowledgement is uncertain. Reconnect to check the board.');
   }
