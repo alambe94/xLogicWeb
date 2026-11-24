@@ -28,6 +28,26 @@ class RecordingTests(unittest.TestCase):
         self.store.active = self.key
         return self.store.status(self.key)
 
+    def test_latest_window_survives_wrap_reopen_and_an_odd_nibble(self):
+        from esk_native import LoopSink
+        for packed in (False, True):
+            with self.subTest(packed=packed):
+                limit = 7
+                capacity = (limit + 1) // 2 if packed else limit
+                wire = bytes(range(47))
+                total = 0
+                with self.store.path(self.key, ".bin").open("w+b") as sink:
+                    for block in (wire[:2], wire[2:9], wire[9:11], wire[11:]):
+                        total = LoopSink.append(sink, capacity, total, block)
+                expanded = bytes(n for b in wire for n in (b & 15, b >> 4)) if packed else wire
+                for end in range(1, limit + 1):
+                    self.store.save(dict(id=self.key, loop=True, state="saved", samples=limit,
+                                         limit=limit, firstSample=len(expanded)-limit,
+                                         rate=RATES[-1] if packed else RATES[0], bank="lower", note="OK"))
+                    self.assertEqual(self.store.window(self.key, 0, end), expanded[-limit:][:end])
+                self.assertEqual(self.store.path(self.key, ".bin").stat().st_size, capacity)
+                self.assertEqual(total, len(wire))
+
     def test_upper_bank_odd_window_and_final_nibble(self):
         row = self.complete(RATES[-1], 5, bytes.fromhex("2143f5"), 240)
         self.assertEqual(row["samples"], 5)

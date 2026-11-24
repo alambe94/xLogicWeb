@@ -359,7 +359,7 @@
     <aside id="bridge-dock" aria-label="xBridgeWeb" hidden></aside>
     <template id="trace-tools-template">
       <aside id="trace-tools" aria-label="Trace analysis">
-        <section class="trace-edges" aria-label="Edges">
+        <section class="trace-edges panel-section" aria-label="Edges">
           <div class="recording-edges">
             <strong>Edges</strong><div id="rec-edge-channel"></div>
             <button type="button" id="rec-edge-previous" class="pill" aria-label="Previous edge" title="Previous edge">«</button>
@@ -370,8 +370,8 @@
             <button type="button" id="rec-edge-cancel" class="mini" hidden>Cancel</button>
           </div>
         </section>
-        <details id="trace-filter"><summary>Glitch filter<span class="trace-filter-summary"></span></summary><div class="trace-fields"></div></details>
-        <details id="trace-search"><summary>Search</summary><div class="trace-fields"></div></details>
+        <details class="advanced" id="trace-filter"><summary>Glitch filter<span class="trace-filter-summary"></span></summary><div class="trace-fields"></div></details>
+        <details class="advanced" id="trace-search"><summary>Search</summary><div class="trace-fields"></div></details>
       </aside>
     </template>
     <output id="native-status" hidden></output>

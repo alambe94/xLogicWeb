@@ -1,4 +1,5 @@
 """Serve xEskWeb and its disk-backed Windows recorder on one loopback origin."""
+from contextlib import nullcontext
 import argparse
 import json
 import mimetypes
@@ -54,13 +55,82 @@ def activity_masks(data, packed, odd):
 def stop_note(row, receipt):
     if receipt.get("finish_verified") is True:
         return "Hardware end of stream verified."
-    if row["samples"] == row["limit"]:
+    if not row.get("loop") and row["samples"] == row["limit"]:
         message = "Recording limit reached."
     else:
         message = "Recording stopped."
     if receipt.get("cleanup_reads", {}).get("failed_reads"):
         message += " A USB read failed during Stop."
     return message + " The hardware tail is unverified."
+
+
+class LoopSink:
+    """The CLI writes its original wire bytes to a local pipe. Bound only the disk sink."""
+    def __init__(self, path, capacity):
+        import ctypes
+        from ctypes import wintypes
+        self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.kernel.CreateNamedPipeW.restype = wintypes.HANDLE
+        self.name = r"\\.\pipe\xesk-" + uuid.uuid4().hex
+        self.handle = self.kernel.CreateNamedPipeW(self.name, 0x80001, 8, 1, 0, 1024**2, 0, None)
+        if self.handle == wintypes.HANDLE(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+        self.path, self.capacity = path, capacity
+        self.total = 0
+        self.lock = threading.RLock()
+        self.error = None
+        self.thread = None
+        self.connected = threading.Event()
+
+    def close_pipe(self):
+        from ctypes import wintypes
+        if self.handle is not None:
+            self.kernel.CloseHandle(wintypes.HANDLE(self.handle))
+            self.handle = None
+
+    def start(self, process):
+        self.thread = threading.Thread(target=self.consume, args=(process,), daemon=True)
+        self.thread.start()
+
+    def consume(self, process):
+        import ctypes
+        from ctypes import wintypes
+        import msvcrt
+        try:
+            handle = wintypes.HANDLE(self.handle)
+            if not self.kernel.ConnectNamedPipe(handle, None) and ctypes.get_last_error() != 535:
+                raise ctypes.WinError(ctypes.get_last_error())
+            self.connected.set()
+            fd = msvcrt.open_osfhandle(self.handle, os.O_RDONLY | os.O_BINARY)
+            self.handle = None  # fd now owns it
+            with os.fdopen(fd, "rb", buffering=0) as source, self.path.open("w+b", buffering=0) as sink:
+                while True:
+                    data = source.read(1024**2)
+                    if not data:
+                        break
+                    with self.lock:
+                        self.total = self.append(sink, self.capacity, self.total, data)
+        except OSError as exc:
+            self.error = str(exc)
+            if process.poll() is None:
+                process.terminate()
+        finally:
+            self.close_pipe()
+
+    @staticmethod
+    def append(sink, capacity, total, data):
+        end = total + len(data)
+        data = memoryview(data)[-capacity:]
+        pos = (end - len(data)) % capacity
+        first = min(len(data), capacity - pos)
+        sink.seek(pos)
+        if sink.write(data[:first]) != first:
+            raise OSError("Short loop write")
+        if first < len(data):
+            sink.seek(0)
+            if sink.write(data[first:]) != len(data) - first:
+                raise OSError("Short loop write")
+        return end
 
 
 class Recordings:
@@ -76,6 +146,7 @@ class Recordings:
             saved_bytes = self.quota_bytes(saved)
             self.budget = saved_bytes if budget is None else min(saved_bytes, budget)
         self.lock = threading.RLock()
+        self.loop_sink = None
         self.process = None
         self.active = None
 
@@ -124,7 +195,7 @@ class Recordings:
         self.budget = budget
         return self.storage()
 
-    def start(self, rate, bank, samples, serial=None):
+    def start(self, rate, bank, samples, serial=None, loop=False):
         self.refresh()
         if self.process:
             raise ValueError("Another native recording is active")
@@ -136,6 +207,8 @@ class Recordings:
             raise ValueError("Unsupported USB profile")
         if samples is not None and (type(samples) is not int or not 0 < samples < 2**53):
             raise ValueError("Invalid sample count")
+        if type(loop) is not bool or (loop and samples is None):
+            raise ValueError("Loop needs a sample window")
         factor = 2 if rate == RATES[-1] else 1
         available = self.available()
         limit = min(available, (2**53 - 1) // factor) if samples is None else (samples + factor - 1) // factor
@@ -144,20 +217,31 @@ class Recordings:
         key = uuid.uuid4().hex
         row = dict(id=key, title=datetime.now().isoformat(timespec="seconds"), rate=rate, bank=bank,
                    state="recording", samples=0, limit=samples or limit * factor, note="")
+        if loop:
+            row["loop"] = True
         self.save(row)
+        wire_limit = (2**53 - 1) // factor if loop else limit
         # The CLI needs a deadline. Allow long recordings to reach their byte limit.
-        duration = max(86400, (row["limit"] + rate - 1) // rate + 60)
+        duration = max(86400, (wire_limit * factor + rate - 1) // rate + 60)
         cmd = [str(self.executable), "--continuous", "--sample-rate", str(rate),
                "--channel-mask", str((15 if bank == "lower" else 240) if factor == 2 else 255),
-               "--duration", str(duration), "--record-bytes", str(limit), "--stop-on-stdin-close",
+               "--duration", str(duration), "--record-bytes", str(wire_limit), "--stop-on-stdin-close",
                "--output", str(self.path(key, ".bin")), "--json", str(self.path(key, ".json"))]
         if serial or self.serial:
             cmd += ["--serial", serial or self.serial]
         try:
+            if loop:
+                self.loop_sink = LoopSink(self.path(key, ".bin"), limit)
+                cmd[cmd.index("--output") + 1] = self.loop_sink.name
             with self.path(key, ".log").open("wb") as log:
                 self.process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=log, stderr=log,
                                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if self.loop_sink:
+                self.loop_sink.start(self.process)
         except OSError:
+            if self.loop_sink:
+                self.loop_sink.close_pipe()
+                self.loop_sink = None
             row.update(state="failed", note="Could not start the native recorder")
             self.save(row)
             raise
@@ -167,16 +251,30 @@ class Recordings:
     def refresh(self):
         if not self.process or self.process.poll() is None:
             return
+        ring = self.loop_sink
+        if ring and ring.thread.is_alive():
+            if not ring.connected.is_set():
+                # The recorder may have failed before opening its output pipe.
+                try:
+                    with open(ring.name, "wb"):
+                        pass
+                except OSError:
+                    pass
+            return
         proc, key = self.process, self.active
         proc.stdin.close()
         row = self.metadata(key)
         try:
+            if ring and ring.error:
+                raise ValueError(ring.error)
             size = self.path(key, ".bin").stat().st_size
+            received = ring.total if ring else size
             receipt = json.loads(self.path(key, ".json").read_text())
             packed = row["rate"] == RATES[-1]
             factor = 2 if packed else 1
             mask = (15 if row["bank"] == "lower" else 240) if packed else 255
-            if (proc.returncode or receipt["bytes"] != size or not 0 < size <= (row["limit"] + factor - 1) // factor
+            if (proc.returncode or receipt["bytes"] != received or not size
+                    or size != min(received, (row["limit"] + factor - 1) // factor)
                     or receipt["actual_sample_rate"] != row["rate"] or receipt["channel_mask"] != mask):
                 raise ValueError("Incomplete acquisition")
             if any(receipt[k] for k in ("overruns", "timing_errors", "ownership_errors", "usb_errors")):
@@ -184,13 +282,15 @@ class Recordings:
             cleanup = receipt["cleanup_reads"]
             if not cleanup["drain_completed"] or cleanup["unresolved_reads"]:
                 raise ValueError("USB cleanup is incomplete")
-            row["samples"] = min(row["limit"], size * factor)
+            row["samples"] = min(row["limit"], received * factor)
+            if ring:
+                row["firstSample"] = received * factor - row["samples"]
             row["state"] = "saved"
             row["note"] = stop_note(row, receipt)
         except (OSError, KeyError, ValueError) as exc:
             row.update(state="failed", note=f"{exc}. See {key}.log and the capture receipt.")
         self.save(row)
-        self.process = self.active = None
+        self.process = self.active = self.loop_sink = None
 
     def status(self, key):
         self.refresh()
@@ -209,7 +309,8 @@ class Recordings:
             else:
                 path = self.path(key, ".bin")
                 size = path.stat().st_size if path.exists() else 0
-                row["samples"] = min(row["limit"], size * (2 if row["rate"] == RATES[-1] else 1))
+                factor = 2 if row["rate"] == RATES[-1] else 1
+                row["samples"] = self.loop_sink.total * factor if self.loop_sink else min(row["limit"], size * factor)
         return row
 
     def stop(self, key):
@@ -228,10 +329,27 @@ class Recordings:
 
     def read_samples(self, row, start, end):
         packed = row["rate"] == RATES[-1]
+        start += row.get("firstSample", 0)
+        end += row.get("firstSample", 0)
         begin, finish = (start // 2, (end + 1) // 2) if packed else (start, end)
-        with self.path(row["id"], ".bin").open("rb") as stream:
-            stream.seek(begin)
-            data = stream.read(finish - begin)
+        ring = self.loop_sink if row.get("loop") and row["id"] == self.active else None
+        with (ring.lock if ring else nullcontext()):
+            if ring and start < max(0, ring.total * (2 if packed else 1) - row["limit"]):
+                raise ValueError("Live loop window has advanced")
+            with self.path(row["id"], ".bin").open("rb") as stream:
+                size = finish - begin
+                if row.get("loop"):
+                    capacity = (row["limit"] + 1) // 2 if packed else row["limit"]
+                    pos = begin % capacity
+                    stream.seek(pos)
+                    first = min(size, capacity - pos)
+                    data = stream.read(first)
+                    if first < size:
+                        stream.seek(0)
+                        data += stream.read(size - first)
+                else:
+                    stream.seek(begin)
+                    data = stream.read(size)
         if len(data) != finish - begin:
             raise ValueError("Recording was truncated")
         if packed:
@@ -245,6 +363,10 @@ class Recordings:
         row = self.status(key)
         rate = row["rate"]
         stride = 1 << ((rate // 1024).bit_length() - 1)
+        if row.get("loop"):
+            stride = min(stride, 1 << max(0, (row["limit"] // 256).bit_length() - 1))
+            if row["state"] == "saved":
+                return dict(record=row, first=0, end=0, stride=stride, bins=[])
         if row["state"] == "failed":
             return dict(record=row, first=0, end=0, stride=stride, bins=[])
         if type(start) is not int or start < 0 or start % stride or start > row["samples"]:
@@ -257,8 +379,22 @@ class Recordings:
         packed = rate == RATES[-1]
         factor = 2 if packed else 1
         end = min(end, start + 16 * 1024**2 * factor)
-        bins = self.activity_range(key, start, end, stride, packed)
+        if row.get("loop"):
+            ring = self.loop_sink if key == self.active else None
+            with (ring.lock if ring else nullcontext()):
+                if ring:
+                    row["samples"] = ring.total * factor
+                    oldest = max(0, row["samples"] - row["limit"])
+                    start = max(start, (oldest + stride - 1) // stride * stride)
+                    end = min(row["samples"] // stride * stride, start + 1024**2)
+                bins = self.loop_bins(row, start, end, stride)
+        else:
+            bins = self.activity_range(key, start, end, stride, packed)
         return dict(record=row, first=start, end=end, stride=stride, bins=bins)
+
+    def loop_bins(self, row, start, end, stride):
+        data = self.read_samples(row, start, end) if end > start else b""
+        return [activity_masks(data[i:i + stride], False, False) for i in range(0, len(data), stride)]
 
     def activity_range(self, key, start, end, stride, packed):
         bins = []
@@ -283,7 +419,7 @@ class Recordings:
         stride = 1 << max(1, ((end - first) // 2048).bit_length())
         first -= first % stride
         return dict(first=first, end=end, stride=stride,
-                    bins=self.activity_range(key, first, end, stride, row["rate"] == RATES[-1]))
+                    bins=self.loop_bins(row, first, end, stride) if row.get("loop") else self.activity_range(key, first, end, stride, row["rate"] == RATES[-1]))
 
     def edge(self, key, position, channel, direction):
         row = self.status(key)
@@ -325,7 +461,7 @@ class Recordings:
         with self.lock:
             op, key = body.get("op"), body.get("id")
             if op == "start":
-                return self.start(body.get("rate"), body.get("bank"), body.get("samples"), body.get("serial"))
+                return self.start(body.get("rate"), body.get("bank"), body.get("samples"), body.get("serial"), body.get("loop", False))
             if op == "stop":
                 return self.stop(key)
             if op == "overview":
@@ -410,7 +546,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         data = path.read_bytes()
         if path == self.server.dist / "index.html":
-            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis>', 1)
+            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis data-loop>', 1)
         self.reply(200, data, mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
 
@@ -454,6 +590,9 @@ def main():
                     server.records.process.stdin.close()
                     server.records.process.wait()
                     server.records.refresh()
+                    if server.records.loop_sink:
+                        server.records.loop_sink.thread.join()
+                        server.records.refresh()
 
 
 if __name__ == "__main__":

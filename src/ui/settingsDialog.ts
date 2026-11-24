@@ -1,5 +1,6 @@
 import { t } from './i18n.js';
 import type { MessageKey } from './i18n.js';
+import { browserArchiveSpace, setBrowserLimit } from './browserArchiveSpace.js';
 import { aboutView } from './about.js';
 import type { AboutLink } from './about.js';
 import { helpTip } from './helpTip.js';
@@ -21,12 +22,13 @@ export const SETTINGS_ROW_PADDING_Y = 3;
 export const SETTINGS_PANE_GAP = 4;
 export const SETTINGS_DIALOG_NARROW_MARGIN = 16;
 
-export const SETTINGS_SECTIONS = ['appearance', 'behaviour', 'shortcuts', 'developer', 'about'] as const;
+export const SETTINGS_SECTIONS = ['appearance', 'behaviour', 'storage', 'shortcuts', 'developer', 'about'] as const;
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number];
 
 const SECTION_LABELS: Record<SettingsSectionId, MessageKey> = {
   appearance: 'settings.sections.appearance',
   behaviour: 'settings.sections.behaviour',
+  storage: 'settings.sections.storage',
   shortcuts: 'settings.sections.shortcuts',
   developer: 'settings.sections.developer',
   about: 'settings.sections.about',
@@ -204,8 +206,9 @@ export class SettingsDialog {
       case 'appearance':
         return [this.labelsRow(), this.compactRowsRow(), this.hideIdleRow()];
       case 'behaviour':
-        return [this.quickScrollRow(), this.wheelZoomsRow(), this.fitRowsRow(),
-          ...(nativeRecorderAvailable() ? [this.archiveLimitForm()] : [])];
+        return [this.quickScrollRow(), this.wheelZoomsRow(), this.fitRowsRow()];
+      case 'storage':
+        return [this.archiveLimitForm()];
       case 'shortcuts':
         return this.shortcutBlocks();
       case 'developer':
@@ -239,10 +242,11 @@ export class SettingsDialog {
     const update = async (apply: boolean) => {
       input.disabled = save.disabled = true;
       try {
-        const response = apply
-          ? await nativeRequest('set_quota', {gib: input.value === '' ? null : input.valueAsNumber})
-          : await nativeRequest('storage');
-        const data = await response.json();
+        const native = nativeRecorderAvailable();
+        const value = input.value === '' ? null : input.valueAsNumber;
+        const data = native
+          ? await (await (apply ? nativeRequest('set_quota', {gib: value}) : nativeRequest('storage'))).json()
+          : await (apply ? setBrowserLimit(value) : browserArchiveSpace());
         if (!('launchBudget' in data)) throw new Error(t('settings.updateRecorder'));
         const gib = 2 ** 30;
         input.max = String(data.launchBudget === null ? Math.floor(Number.MAX_SAFE_INTEGER / gib) : data.launchBudget / gib);
@@ -250,6 +254,9 @@ export class SettingsDialog {
         input.placeholder = data.launchBudget === null ? t('settings.driveSpace') : String(data.launchBudget / gib);
         status.textContent = data.launchBudget === null ? t('settings.blankDrive') :
           t('settings.launchLimit', {limit: data.launchBudget / gib});
+        if (!native) status.textContent = 'Browser recordings on this site · ' +
+          (Number.isFinite(data.available) ? (data.available / gib).toFixed(2) + ' GiB available. ' : '') +
+          'Blank uses available browser storage.';
         input.disabled = save.disabled = false;
       } catch (err) {
         status.textContent = err instanceof Error ? err.message : String(err);
@@ -439,7 +446,10 @@ export class SettingsDialog {
       this.aboutLine('about-name', `${view.name} — ${view.subtitle}`, false),
       this.aboutLine('about-meta', view.version, false),
       this.aboutLine('about-meta', view.license),
+      this.aboutLine('about-meta', 'xEskWeb adapts Sipeed SLogicWeb for ESK Logic and Bridge devices.', false),
       this.aboutLine('about-meta', view.copyright, false),
+      this.aboutLine('about-meta', 'Protocol decoders are from libsigrokdecode and retain their individual author and license notices. The browser runtime includes Pyodide (MPL-2.0) and CPython (PSF License).', false),
+      this.aboutLine('about-meta', 'Assistant libraries include the Anthropic SDK, OpenTelemetry API, standardwebhooks, @stablelib/base64 and fast-sha256. Their license texts and copyright notices are included below.', false),
       this.aboutLinks(view.links),
     );
     return block;

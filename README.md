@@ -51,6 +51,10 @@ Numeric fields accept decimal multipliers in the displayed unit. For example, en
 
 ## ESK xLOGIC over USB
 
+With both recording options off, **Samples** is the capture length. **Record all** disables Samples and keeps data until Stop or the storage limit. **Loop** uses the same Samples field as the number to retain, accepts values such as `1M`, and keeps acquiring after the window fills. Stop freezes the most recent samples in chronological order for inspection and reopening. Loop and Record all are mutually exclusive and apply to USB. The Windows recorder stores packed 500 MS/s data at two samples per byte. Browser loop files store one byte per sample on this site's browser storage.
+
+**Settings → Storage** controls the recording budget for the current browser origin or the local Windows recorder. The native launch limit also applies. Existing recordings count toward the budget. A loop overwrites only its own oldest samples.
+
 Open xEskWeb directly in Chrome or Edge using HTTPS or localhost. Connect the ESK
 application USB cable, open **xLogicWeb**, press **Capture**, and select the board.
 Open the **Capture** panel by clicking the capture summary above the channel labels.
@@ -64,7 +68,7 @@ The viewer remembers your USB selection until the device disconnects or you chan
 At 41.67, 83.33, 166.67 and 333.33 MS/s the board samples all eight inputs.
 At 500 MS/s choose D0–D3 (the default) or D4–D7. For longer captures the viewer
 saves samples to browser storage and displays a window of the recording. Select
-**Until stopped** for an open-ended USB recording. The sustainable rate depends
+**Record all** for an open-ended USB recording. The sustainable rate depends
 on the board, USB link and host storage. After Stop, use the slider to browse the trace.
 
 ### Native USB recording on Windows
@@ -82,7 +86,7 @@ consent. The board loads that viewer from GitHub Pages.
 
 Choose the rate and sample count in Logic, then press **Capture** once. The waveform opens when the
 requested count is reached, or when you press **Stop**. Counts above 65,536 and
-**Until stopped** use the native recorder. Choose **Open → Saved recordings…**
+**Record all** use the native recorder. Choose **Open → Saved recordings…**
 to reopen a trace after restarting. The same list includes recordings saved in
 this browser profile at this viewer address.
 
@@ -103,7 +107,7 @@ space before acquisition. Cancel keeps the waveform open for inspection.
 Press **Stop** to inspect the recording, select an **Edge channel**, and use
 **Previous edge** or **Next edge** to highlight a transition at the current zoom.
 The guide labels the channel and direction and marks the edge on its waveform.
-For **Until stopped**, the native recorder uses the free space on the recording
+For **Record all**, the native recorder uses the free space on the recording
 drive at capture start and reserves 1 MiB for metadata. A requested sample count
 must fit in that space. **Open → Saved recordings…** shows available space,
 any configured archive quota and each trace's size. Use **Delete recording** to reclaim space.
@@ -119,7 +123,7 @@ and a compatible Windows recorder on a machine with the ESK application USB conn
 py -3 dev/esk_native.py --dist dist --recorder C:\ESK\xlogic_capture.exe --store D:\ESK\recordings
 ```
 
-In the Windows viewer, choose **Logic → Settings → Behaviour → Recording archive limit (GiB)**.
+On Pages or in the Windows viewer, choose **Logic → Settings → Storage → Recording archive limit (GiB)**.
 Enter a whole number and save. The helper remembers it for that recording folder.
 To set a ceiling for a launch, run `& ".\Start xEskWeb.cmd" --archive-limit-gib 8` in PowerShell.
 The same flag works with the Python helper. Clearing the field and saving uses the launch ceiling,
@@ -163,7 +167,7 @@ When the full viewer files are served at the board's numeric HTTP origin, open t
 
 ## Record and reopen ESK logic
 
-For live eight-channel recording, open the HTTPS viewer directly in desktop Chrome, enter Logic, choose the rate and sample count or **Until stopped**, press **Capture** and choose your xESK device. **Stop** ends acquisition and finishes pending disk writes. The status shows saved samples and the additional samples transmitted at the stop boundary. A storage backlog or device error ends recording and reports the failure. You can reopen the committed prefix.
+For live eight-channel recording, open the HTTPS viewer directly in desktop Chrome, enter Logic, choose a rate, then a fixed sample count, **Loop**, or **Record all**, press **Capture** and choose your xESK device. **Stop** ends acquisition and finishes pending disk writes. The status shows saved samples and the additional samples transmitted at the stop boundary. A storage backlog or device error ends recording and reports the failure. You can reopen the committed prefix.
 
 Open the HTTPS viewer directly, enter Logic and select **Open → Saved recordings… → Import a .sr session**. Choose an eight-channel sigrok `.sr` file, optionally set a recording limit in MiB, and select **Record**. Replay follows the file's sample rate and can slow down while browser storage drains. The Logic display shows up to the latest 65,536 samples. **Stop** finishes pending writes.
 

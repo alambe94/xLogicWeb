@@ -46,3 +46,19 @@ const inverted = {...source, read: async (a,b) => (await source.read(a,b)).map(x
 assert.deepEqual(await filteredTrace(inverted,new Map([[3,8]]),signal).read(scanBlock,scanBlock+3),new Uint8Array(3).fill(255));
 assert.deepEqual(raw, copy);
 console.log('Raw preservation, high/low glitch rejection, exact cutoff and cross-window filter context passed.');
+
+// Deliberately use uneven transfers, including a single transfer larger than the ring.
+const {LoopRecording} = await import('../data/loopRecording.js');
+for (const capacity of [1, 7, 16]) {
+  const file = new Uint8Array(capacity);
+  const ring = new LoopRecording({write(data,{at}) {file.set(data,at); return data.length;}}, capacity);
+  let count = 0;
+  for (const size of [2, 3, 12, 5, 21]) {
+    ring.append(Uint8Array.from({length:size}, (_,i) => count+i));
+    count += size;
+    const lo = Math.max(0,count-capacity);
+    assert.deepEqual(Array.from({length:count-lo},(_,i)=>file[(lo+i)%capacity]),
+      Array.from({length:count-lo},(_,i)=>lo+i));
+  }
+}
+console.log('Loop retains the exact bounded suffix through partial, multiple and oversized writes.');

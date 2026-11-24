@@ -611,7 +611,7 @@ export class App {
   private displayedEskBank: EskBank | undefined;
   private selectedRowBank: EskBank | undefined;
   private eskCountText = String(ESK_SAMPLES);
-  private eskUntilStop = false;
+  private eskLength: 'count' | 'untilStop' | 'loop' = 'count';
   private eskLanCount = String(ESK_SAMPLES);
   private eskCapturePending = false;
   private stopNativeRecording: (() => void) | undefined;
@@ -7128,7 +7128,7 @@ export class App {
         this.updateEskBankView();
       });
       const samplesLabel = document.createElement('label');
-      samplesLabel.textContent = t('esk.samples');
+      samplesLabel.textContent = t(!lan && this.eskLength === 'loop' ? 'esk.latestSamples' : 'esk.samples');
       const count = document.createElement('input');
       count.type = 'text';
       count.spellcheck = false;
@@ -7137,14 +7137,14 @@ export class App {
       count.className = 'viewer-input';
       count.required = true;
       count.value = lan ? (max === undefined ? String(ESK_SAMPLES) : this.eskLanCount) : this.eskCountText;
-      count.disabled = this.eskCapturePending || (lan ? !max : this.eskUntilStop);
+      count.disabled = this.eskCapturePending || (lan ? !max : this.eskLength === 'untilStop');
       samplesLabel.append(count);
       let syncTrigger: ((samples: number | undefined) => void) | undefined;
       const updateEstimate = () => {
         const n = parseSampleCount(count.value, maximum);
         syncTrigger?.(n);
         count.setCustomValidity(n === undefined ? t('esk.invalidSamples', {max: formatCount(maximum)}) : '');
-        profile.textContent = !lan && this.eskUntilStop ? t('esk.diskRecording') :
+        profile.textContent = !lan && this.eskLength === 'untilStop' ? t('esk.diskRecording') :
           n !== undefined ? formatDuration(n / rate) + ' · ' + formatCount(n) + ' B' : '';
       };
       count.oninput = () => {
@@ -7165,23 +7165,28 @@ export class App {
         fields.append(useMax);
       }
       const trigger = document.createElement('details');
-      trigger.className = 'trace-trigger';
+      trigger.className = 'trace-trigger advanced';
       const triggerTitle = document.createElement('summary');
       triggerTitle.textContent = t('overview.originTrigger');
       trigger.open = this.eskTriggerExpanded;
       trigger.ontoggle = () => { if (trigger.isConnected) this.eskTriggerExpanded = trigger.open; };
       trigger.append(triggerTitle);
       if (!lan) {
-        const until = document.createElement('label');
-        until.className = 'settings-toggle';
-        const checkbox = document.createElement('input');
-        checkbox.id = 'esk-until-stop';
-        checkbox.type = 'checkbox';
-        checkbox.checked = this.eskUntilStop;
-        checkbox.disabled = this.eskCapturePending;
-        checkbox.onchange = () => { this.eskUntilStop = checkbox.checked; this.renderSidebarContent(); };
-        until.append(document.createTextNode(t('esk.untilStop')), checkbox);
-        fields.append(until);
+        const modes = document.createElement('div');
+        modes.className = 'esk-length-modes';
+        for (const mode of ['untilStop', 'loop'] as const) {
+          const until = document.createElement('label');
+          until.className = 'settings-toggle';
+          const checkbox = document.createElement('input');
+          checkbox.id = mode === 'untilStop' ? 'esk-until-stop' : 'esk-loop';
+          checkbox.type = 'checkbox';
+          checkbox.checked = this.eskLength === mode;
+          checkbox.disabled = this.eskCapturePending;
+          checkbox.onchange = () => { this.eskLength = checkbox.checked ? mode : 'count'; this.renderSidebarContent(); };
+          until.append(document.createTextNode(t(mode === 'untilStop' ? 'esk.untilStop' : 'esk.loop')), checkbox);
+          modes.append(until);
+        }
+        fields.append(modes);
         const edge = selectControl('esk-trigger-edge', t('overview.originTrigger'),
           [['none', t('trigger.off')], ['rising', t('trigger.rising')], ['falling', t('trigger.falling')]], this.eskEdge);
         const packed = rate === ESK_PACKED_RATE;
@@ -7192,7 +7197,7 @@ export class App {
         const position = selectControl('esk-pre-trigger', t('capturePanel.preTriggerBuffer'),
           [0, 25, 50, 75].map(n => [String(n), n + '%']), String(this.eskPrePercent));
         syncTrigger = n => {
-          const available = !this.eskUntilStop && n !== undefined && n <= ESK_SAMPLES;
+          const available = this.eskLength === 'count' && n !== undefined && n <= ESK_SAMPLES;
           edge.disabled = this.eskCapturePending || !available;
           edge.value = available ? this.eskEdge : 'none';
           channel.el.hidden = edge.value === 'none';
@@ -7250,7 +7255,10 @@ export class App {
         }
       }
       const focused = panel.contains(document.activeElement) ? document.activeElement?.id : undefined;
-      panel.replaceChildren(fields, channels, profile, this.traceTools.edges);
+      const acquisition = document.createElement('div');
+      acquisition.className = 'panel-section';
+      acquisition.append(fields, channels, profile);
+      panel.replaceChildren(acquisition, this.traceTools.edges);
       if (!lan) panel.append(trigger);
       panel.append(this.traceTools.root);
       if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
@@ -7977,7 +7985,7 @@ export class App {
     if (this.eskCapturePending || this.discardingRecording || this.running || this.stopping) return;
     const lan = transport === 'ethernet';
     const max = lan ? boardCaptureMaximum() : undefined;
-    const untilStop = !lan && this.eskUntilStop;
+    const untilStop = !lan && this.eskLength === 'untilStop';
     const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity
       : parseSampleCount(lan ? this.eskLanCount : this.eskCountText, max);
     if (n === undefined) {
@@ -7997,8 +8005,9 @@ export class App {
         this.renderToolbarState();
       }
     }
-    if (n > ESK_SAMPLES) {
-      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan});
+    const loop = !lan && this.eskLength === 'loop';
+    if (n > ESK_SAMPLES || loop) {
+      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan, loop});
       return;
     }
     this.eskCapturePending = true;

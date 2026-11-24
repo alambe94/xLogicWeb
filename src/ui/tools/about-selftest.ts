@@ -83,15 +83,15 @@ function aboutPane(settingsWindow: string, app: string, about: string): boolean 
     view.name === 'xEskWeb' && view.subtitle === en['app.title'] &&
       view.version === 'Version 1.2.3 · build abc1234' &&
       view.license === 'GPL-3.0-or-later · no warranty' &&
-      view.copyright === '© 2026 Sipeed Co., Ltd.' && COPYRIGHT === view.copyright &&
+      view.copyright === '© 2026 Sipeed Co., Ltd. and contributors.' && COPYRIGHT === view.copyright &&
       !('title' in view) && !('close' in view),
     JSON.stringify(view));
   check('the About links are the source repository, its LICENSE and NOTICE.md (third-party decoders)',
-    view.links.length === 4 && view.links[3]!.href === 'https://github.com/sipeed/SLogicWeb' &&
+    view.links.length === 5 && view.links[3]!.href === 'https://github.com/sipeed/SLogicWeb' &&
       view.links[0]!.href === 'https://github.com/alambe94/xLogicWeb' && view.links[0]!.href === SOURCE_URL &&
       view.links[1]!.href === LICENSE_URL && LICENSE_URL.endsWith('/LICENSE') &&
       view.links[2]!.href === NOTICE_URL && NOTICE_URL.endsWith('/NOTICE.md') &&
-      view.links.every((l) => l.href.startsWith('https://') && l.label.length > 0),
+      view.links[4]!.href === './THIRD_PARTY_LICENSES.txt' && view.links.every(l => l.label.length > 0),
     JSON.stringify(view.links));
 }
 

@@ -3,6 +3,7 @@ import { ESK_PACKED_RATE } from '../device/eskCapture.js';
 import type { RecordingDisplay, SavedRecording } from './eskRecorder.js';
 
 export interface NativeRecord {
+  loop?: boolean; limit?: number;
   id: string; rate: number; bank: 'lower' | 'upper'; samples: number; bytes?: number;
   state: 'recording' | 'saved' | 'failed'; title: string; note: string;
 }
