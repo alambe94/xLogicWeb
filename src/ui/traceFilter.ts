@@ -11,7 +11,7 @@ async function preceding(source: TraceInput, lo: number, first: number, bit: num
   let last = initial, run = 0, prefix = 0, contiguous = true;
   for (let end = first; end > lo;) {
     signal.throwIfAborted();
-    const start = Math.max(lo, end - scanBlock);
+    const start = Math.max(lo, end - Math.min(scanBlock, source.readSize ?? scanBlock));
     const bytes = await source.read(start, end);
     for (let i = bytes.length - 1; i >= 0; i--) {
       const level = bytes[i]! >> bit & 1;
@@ -31,7 +31,7 @@ async function qualifiesAtEnd(source: TraceInput, end: number, hi: number, bit: 
     level: number, needed: number, signal: AbortSignal) {
   while (needed > 0 && end < hi) {
     signal.throwIfAborted();
-    const next = Math.min(hi, end + scanBlock, end + needed);
+    const next = Math.min(hi, end + (source.readSize ?? scanBlock), end + scanBlock, end + needed);
     const bytes = await source.read(end, next);
     for (const byte of bytes) if ((byte >> bit & 1) !== level) return false;
     needed -= next - end;
@@ -44,7 +44,7 @@ async function qualifiesAtEnd(source: TraceInput, end: number, hi: number, bit: 
 export function filteredTrace(source: TraceInput, widths: FilterWidths, signal: AbortSignal): TraceInput {
   if (!widths.size) return source;
   const previous = new Map<number, {lo: number; end: number; stable: number; level: number; tail: number}>();
-  return {...source, read: async (start, end) => {
+  return {...source, edge: undefined, read: async (start, end) => {
     signal.throwIfAborted();
     const raw = await source.read(start, end);
     const out = raw.slice();

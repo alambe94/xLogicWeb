@@ -41,7 +41,7 @@ directions. The controller ends the last read byte with a NACK and STOP.
 
 ## Analyze a stopped capture
 
-Open **Logic → Analyze** after opening a file or stopping a capture. These tools support the ESK four- and eight-channel layouts. [Try the analysis demo](https://alambe94.github.io/xLogicWeb/?view=logic&example=analysis) to open the example with D3 pulse search selected, or [download the synthetic trace](https://alambe94.github.io/xLogicWeb/examples/esk-analysis.sr).
+The **Capture** sidebar groups **Trigger**, **Glitch filter**, **Edges**, and **Search**. Use **« »** to step through the selected channel at the current zoom. **Logic → Analyze** opens **Search**, where you can choose **Pulse** or **Protocol** after opening a file or stopping a capture. These tools support the ESK four- and eight-channel layouts. [Try the analysis demo](https://alambe94.github.io/xLogicWeb/?view=logic&example=analysis) to open the example with D3 pulse search selected, or [download the synthetic trace](https://alambe94.github.io/xLogicWeb/examples/esk-analysis.sr).
 
 - **Pulse search** finds a complete high or low pulse strictly shorter or longer than the selected width. Previous and Next keep the zoom and highlight the pulse. In the example, search D3 for a high pulse shorter than 50 ns. The match is 40 ns at sample 65,534.
 - **Glitch filter** sets the minimum retained width per channel. Pulses at the cutoff survive. Apply 50 ns to D3 in the example and compare it with clean SCL on D0. The waveform, event search and protocol decoders use the filtered signal. **Show raw channel** removes that channel’s filter. Saved samples and exports retain the original data.
