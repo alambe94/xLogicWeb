@@ -107,7 +107,8 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean; loop?: boolean }
-export function showEskRecorder(live: boolean, display: RecordingDisplay, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions, captureChanged = () => false): void {
+type DownloadPreview = (count: number, rate: number) => {append(block: Uint8Array): void; close(): void};
+export function showEskRecorder(live: boolean, display: RecordingDisplay, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions, captureChanged = () => false, downloadPreview?: DownloadPreview): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
   if (dialog.open) return;
   const get = <T extends HTMLElement>(id: string) => dialog.querySelector<T>('#rec-' + id)!;
@@ -231,9 +232,11 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
     if (options?.ethernet) {
       abort = new AbortController();
       update();
-      const saved = await downloadBoardTrace(budget, abort.signal, bytes => {
+      const preview = downloadPreview?.(budget, rate);
+      const saved = await downloadBoardTrace(budget, rate, abort.signal, (bytes, block) => {
+        preview?.append(block);
         status.value = progress(bytes, bytes, 0);
-      });
+      }).finally(() => preview?.close());
       if (saved.samples) {
         const start = Math.max(0, saved.samples - displaySamples);
         try {

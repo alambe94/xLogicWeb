@@ -17,6 +17,7 @@ export function boardAddress(value: string): string | undefined {
 }
 
 export interface NetworkManagement {
+  stageBeforeSave?: boolean;
   service(request: Uint8Array): Promise<DataView>;
   status(): Promise<DataView>;
 }
@@ -76,7 +77,8 @@ export async function saveBoardName(port: NetworkManagement, name: string,
   requireField(!current.pending, 'Another network change is pending.');
   let revision = current.revision;
   const policy = current.policy;
-  if (name !== current.name) {
+  const stage = name !== current.name || port.stageBeforeSave === true;
+  if (stage) {
     requireField(revision < 0xffffffff, 'Network settings revision exhausted.');
     policy[6] = name.length;
     policy.fill(0, 28, 92);
@@ -84,7 +86,7 @@ export async function saveBoardName(port: NetworkManagement, name: string,
     const staged = await port.service(request(1, revision, policy));
     operation(staged, 1, ++revision);
   }
-  if (name !== current.name || !current.applied) {
+  if (stage || !current.applied) {
     let result = operation(await port.service(request(2, revision)), 2, revision);
     const attempt = result.attempt;
     requireField(attempt > 0n, 'Missing apply receipt.');

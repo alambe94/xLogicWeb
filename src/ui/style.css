@@ -1700,6 +1700,8 @@ html[data-theme="light"] .settings-dialog::backdrop { background: var(--backdrop
 
 .recording-activity { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 4; cursor: default; }
 .recording-activity[tabindex] { cursor: zoom-in; }
+.download-activity { background: var(--bg10); }
+#plot:is(.fft-active, .xy-active) > .download-activity { display: none; }
 #plot:has(> .recording-activity) :is(#empty-hint, #wave-stack, .overlay-canvas),
 #plot-col:has(.recording-activity) > #overview { visibility: hidden; }
 

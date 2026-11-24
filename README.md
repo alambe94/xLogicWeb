@@ -6,13 +6,16 @@ The viewer runs in your browser. [Open xEskWeb](https://alambe94.github.io/xLogi
 
 ### Name a board on the LAN
 
-With board firmware 0.40.0 or later, connect via USB on Home, expand **Network**,
-enter a **Board name** such as `lab-bench`, and select **Save to board**.
+With board firmware 0.41.0 or later, open the board address, select **Connect device**
+on Home, expand **Network**, enter a **Board name** such as `lab-bench`, and
+select **Save to board**. USB supports the same workflow starting with 0.40.0.
 Keep Ethernet connected. The viewer applies the new name, verifies the advertised
 name, and saves the setting in the board EEPROM. If another board already uses
 the name, the result includes the suffix the board selected for this LAN.
 Open the displayed address on the same LAN, for example
 `http://lab-bench.local:5555/`. Name resolution requires mDNS on that network.
+The name takes effect immediately. **Restart board** is a separate action for
+an idle board. Any connected client on a trusted lab LAN can request either operation.
 **Rename on this laptop** in the Windows chooser changes the local display name.
 
 The viewer builds on Sipeed SLogicWeb. **Other analyzer** opens the USB chooser for
@@ -170,11 +173,17 @@ on the [PulseView fork's releases page](https://github.com/alambe94/pulseview/re
 
 On Home, choose **Connect via Ethernet** and enter the board IP, or open the
 board IP directly on port 5555. Connect to the board, open **xLogicWeb**, and
-press **Capture**. Ethernet acquires a finite record at 333.33 MS/s. When the board
-advertises a capture capacity, enter a sample count or choose **Use board maximum**.
+select an advertised sample rate and press **Capture**. Finite Ethernet capture
+supports eight inputs at 41.67, 83.33, 166.67 or 333.33 MS/s on compatible
+firmware. Earlier firmware offers 333.33 MS/s. When the board advertises a
+capture capacity, enter a sample count or choose **Use board maximum**.
 Open xBridge in the Logic toolbar for I²C transfers when the board advertises Ethernet I²C.
-The bus and Logic use independent sessions. Earlier launchers provide 65,536 samples per capture. Longer records download to
-browser storage in blocks.
+The bus and Logic use independent sessions. The board collects the requested
+samples first. As blocks arrive, the waveform fills from left to right across
+the requested time span. A shaded band marks activity within that interval.
+Long captures download to browser storage. Stop keeps the samples received so
+far; use the time slider to inspect their edges. Earlier launchers provide
+65,536 samples in a single reply.
 For continuous recording use the USB connection on the hosted viewer.
 After Stop, use the time slider to browse the disk recording.
 

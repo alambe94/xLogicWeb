@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { ESK_SAMPLES } from './eskCapture.js';
+import { ESK_FINITE_RATES, ESK_RATE, ESK_SAMPLES } from './eskCapture.js';
+import { EskControlRejection } from './eskUsbSession.js';
 
 function boardWindow(): Window | null {
   if (window.parent !== window) return window.parent;
@@ -8,6 +9,9 @@ function boardWindow(): Window | null {
 
 let connected = false;
 let captureMaximum: number | undefined;
+const legacyRates = [ESK_RATE];
+let advertisedRates: number[] | undefined;
+export function boardCaptureRates(): readonly number[] { return advertisedRates ?? legacyRates; }
 export function boardCaptureMaximum(): number | undefined { return captureMaximum; }
 export function needsBoardConsent(): boolean {
   return fromBoard() && window.parent !== window && !connected;
@@ -67,7 +71,43 @@ export async function capturePairedBoard(): Promise<{ samples: Uint8Array; ticks
 interface Feature { name: string; instance: number; enabled: boolean; ownership: string }
 interface Catalog { services: string[][]; resources: string[][] }
 interface I2cLimits { write: number; writeRead: number; read: number }
-export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; captureMaxSamples?: number; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null }
+export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null }
+
+/** Keep a single DEVICE grant across read, apply, observation and EEPROM save. */
+export async function withBoardManagement<T>(board: BoardStatus, run: (exchange: (payload: Uint8Array) => Promise<Uint8Array>) => Promise<T>): Promise<T> {
+  const peer = boardWindow(), origin = launchingBoard();
+  if (!board.networkManagement || !origin || !peer) throw new Error('Reconnect to a board with Ethernet management support.');
+  const {port1, port2} = new MessageChannel();
+  let id = 0;
+  function reply(send: () => void, timeout: number): Promise<{id?: number; ready?: boolean; status?: number; payload?: Uint8Array}> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Board did not reply. Refresh before trying again.')), timeout);
+      port1.onmessageerror = () => { clearTimeout(timer); reject(new Error('Unreadable board reply')); };
+      port1.onmessage = ({data}) => {
+        clearTimeout(timer);
+        if (!data || data.error) reject(new Error(data?.error || 'Invalid board reply'));
+        else resolve(data);
+      };
+      try { send(); } catch (error) { clearTimeout(timer); reject(error); }
+    });
+  }
+  try {
+    const open = await reply(() => peer.postMessage({type: 'xesk.management.v1', deviceId: board.deviceId, boot: board.boot}, origin, [port2]), 20000);
+    if (open.ready !== true) throw new Error('Board did not grant management access.');
+    const result = await run(async payload => {
+      const expected = ++id;
+      const r = await reply(() => port1.postMessage({id: expected, payload}), 5000);
+      if (r.id === expected && typeof r.status === 'number' && Number.isInteger(r.status) && r.status > 0 && r.status <= 10)
+        throw new EskControlRejection(r.status, 7);
+      if (r.id !== expected || !(r.payload instanceof Uint8Array) || r.payload.length > 128) throw new Error('Invalid board management reply.');
+      return r.payload;
+    });
+    return result;
+  } finally {
+    port1.postMessage({id: ++id, close: true});
+    port1.close();
+  }
+}
 
 export async function transferBoardI2c(board: BoardStatus, address: number, data: Uint8Array, count: number): Promise<Uint8Array> {
   const limits = board.i2cLimits;
@@ -96,6 +136,7 @@ export async function readBoardStatus(): Promise<BoardStatus> {
     throw new Error('Invalid ESK device catalog');
   }
   const max = data.captureMaxSamples;
+  if (data.networkManagement !== undefined && typeof data.networkManagement !== 'boolean') throw new Error('Invalid Ethernet management capability');
   if (data.i2cLimits != null && ![data.i2cLimits.write, data.i2cLimits.writeRead, data.i2cLimits.read].every(
     n => Number.isInteger(n) && n > 0 && n <= 128)) throw new Error('Invalid board I²C limits');
   if (data.hardwareId !== undefined && (!Number.isInteger(data.hardwareId) || data.hardwareId < 0 || data.hardwareId > 0xffffffff)) {
@@ -104,7 +145,12 @@ export async function readBoardStatus(): Promise<BoardStatus> {
   if (max !== undefined && (!Number.isSafeInteger(max) || max < 0 || max > 0xffffffff || max % 64)) {
     throw new Error('Invalid board capture capacity');
   }
-  if (captureMaximum !== max) {
+  const rates = data.captureRates;
+  if (rates !== undefined && (!Array.isArray(rates) || rates.length > 32 || rates.some(rate => !Number.isSafeInteger(rate) || rate <= 0 || rate > 0xffffffff) ||
+      (!!rates.length !== !!max) || (max && !rates.includes(ESK_RATE)))) throw new Error('Invalid Ethernet sampling rates');
+  const supported = rates && ESK_FINITE_RATES.filter(hz => rates.includes(hz));
+  if (captureMaximum !== max || advertisedRates?.join() !== supported?.join()) {
+    advertisedRates = supported;
     captureMaximum = max;
     window.dispatchEvent(new Event('esk-capture-capacity'));
   }
@@ -113,13 +159,15 @@ export async function readBoardStatus(): Promise<BoardStatus> {
 
 /** Receive one board block at a time. Acknowledge only after the sink accepts it. */
 export async function receiveBoardCapture(count: number, signal: AbortSignal,
-    accept: (block: Uint8Array, offset: number) => Promise<void>): Promise<string> {
+    accept: (block: Uint8Array, offset: number) => Promise<void>, rate = ESK_RATE): Promise<string> {
   await connectBoard();
   signal.throwIfAborted();
   const origin = launchingBoard(), peer = boardWindow();
   if (!origin || !peer || !Number.isSafeInteger(count) || count < 1 || count > (captureMaximum ?? 0)) {
     throw new Error('Capture exceeds board capacity');
   }
+  const rated = advertisedRates !== undefined;
+  if (!boardCaptureRates().includes(rate)) throw new Error('Unsupported Ethernet capture rate');
   const {port1, port2} = new MessageChannel();
   return new Promise((resolve, reject) => {
     let bytes = 0, receiving = false, finished = false;
@@ -147,7 +195,7 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
         if (receiving || !data) throw new Error('Unexpected board capture reply');
         if (typeof data.error === 'string') throw new Error(data.error);
         if (data.done === true) {
-          if (bytes !== count || typeof data.ticks !== 'string' || !/^\d{1,20}$/.test(data.ticks)) throw new Error('Incomplete board capture');
+          if (bytes !== count || (rated && data.rate !== rate) || typeof data.ticks !== 'string' || !/^\d{1,20}$/.test(data.ticks)) throw new Error('Incomplete board capture');
           finish(); resolve(data.ticks); return;
         }
         const block = data.data;
@@ -165,7 +213,7 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
     port1.onmessageerror = () => fail(new Error('Unreadable capture block'));
     signal.addEventListener('abort', abort, {once: true});
     deadline();
-    try { peer.postMessage({type: 'xesk.capture.v2', count}, origin, [port2]); }
+    try { peer.postMessage(rated ? {type: 'xesk.capture.v3', count, rate} : {type: 'xesk.capture.v2', count}, origin, [port2]); }
     catch (error) { finish(); port2.close(); reject(error); }
   });
 }

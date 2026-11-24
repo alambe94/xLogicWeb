@@ -8,6 +8,7 @@ import { onLocaleChange, t } from './i18n.js';
 import { aboutView } from './about.js';
 import { initFirmwareCheck } from './eskFirmwareCheck.js';
 import { initBoardName } from './eskBoardName.js';
+import { initEskRestart } from './eskRestart.js';
 import { boardAddress } from '../device/eskBoardName.js';
 import { applyUpdate, getUpdateState, onUpdateStateChange } from './pwaUpdate.js';
 import { nativeRecorderAvailable, nativeRequest } from './nativeArchive.js';
@@ -87,7 +88,12 @@ export function initEskHome(): void {
     lanChoice.addEventListener('toggle', () => { if (lanChoice.open && !scan.disabled) scan.click(); });
   }
   const setFirmwareTarget = initFirmwareCheck();
-  const setNameTarget = initBoardName();
+  const setBoardName = initBoardName();
+  const setRestart = initEskRestart();
+  function setNetworkTarget(device?: USBDevice, board?: BoardStatus) {
+    setBoardName(device, board);
+    setRestart(device, board);
+  }
   const firmware = document.getElementById('esk-firmware')!;
   const firmwareGuide = document.getElementById('esk-firmware-guide')!;
   const webBuild = document.getElementById('esk-web-build')!;
@@ -200,7 +206,10 @@ export function initEskHome(): void {
       }
       const board = lan ? await readBoardStatus() : await readUsbBoardStatus(usbDevice!);
       if (token !== generation) return;
-      if (lan) setBridge(undefined, board);
+      if (lan) {
+        setBridge(undefined, board);
+        setNetworkTarget(undefined, board);
+      }
       else {
         if (usbStatus?.boot !== board.boot) result.value = '';
         disconnected = false;
@@ -208,7 +217,7 @@ export function initEskHome(): void {
         selectEskUsbDevice(usbDevice);
         change.hidden = false;
         setBridge(usbDevice, board);
-        setNameTarget(usbDevice, board);
+        setNetworkTarget(usbDevice, board);
       }
       refresh.dataset.i18n = 'capturePanel.tempRate';
       refresh.textContent = t('capturePanel.tempRate');
@@ -228,10 +237,10 @@ export function initEskHome(): void {
       }
     } catch (error) {
       if (token !== generation) return;
+      setNetworkTarget();
       if (lan) setBridge();
       if (!lan) {
         usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
-        setNameTarget();
         setBridge();
         result.value = '';
         refresh.dataset.i18n = 'home.connectUsb'; refresh.textContent = t('home.connectUsb');
@@ -253,7 +262,7 @@ export function initEskHome(): void {
     boardFirmware = undefined;
     renderVersions();
     usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
-    setNameTarget();
+    setNetworkTarget();
     setBridge();
     result.value = t('home.usbGone');
     identity.hidden = features.hidden = details.hidden = true;
@@ -302,7 +311,7 @@ export function initEskHome(): void {
     try {
       const device = await requestEskDevice(true);
       if (device !== usbDevice) {
-        setNameTarget();
+        setNetworkTarget();
         setBridge();
         usbStatus = undefined;
         result.value = '';

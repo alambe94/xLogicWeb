@@ -88,14 +88,17 @@
         </div>
         <p id="esk-connection" role="status"></p>
         <pre id="esk-identity" hidden></pre>
-        <details id="esk-network" hidden><summary data-i18n="home.network">Network</summary>
-          <form id="esk-name-form">
+        <details id="esk-network"><summary data-i18n="home.network">Network</summary>
+          <p id="esk-name-connect" data-i18n="home.nameConnect">Connect to the board to view network settings.</p>
+          <form id="esk-name-form" hidden>
             <label><span data-i18n="home.boardName">Board name</span>
               <input id="esk-name-input" class="viewer-input" required maxlength="33" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="esk-name-help" disabled></label>
             <button id="esk-name-save" class="mini" type="submit" data-i18n="home.saveBoardName" disabled>Save to board</button>
           </form>
-          <p id="esk-name-help" data-i18n="home.boardNameHint">Use 1–33 lowercase letters, digits or internal hyphens.</p>
+          <p id="esk-name-help" hidden data-i18n="home.boardNameHint">Use 1–33 lowercase letters, digits or internal hyphens.</p>
           <output id="esk-name-status" aria-live="polite"></output>
+          <button id="esk-restart" class="mini" type="button" data-i18n="home.restart" hidden disabled>Restart board</button>
+          <output id="esk-restart-status" aria-live="polite"></output>
         </details>
         <details id="esk-versions" open><summary id="esk-version-label" data-i18n="home.versions">Versions</summary>
           <div class="esk-catalog-scroll"><table aria-labelledby="esk-version-label"><tbody>
