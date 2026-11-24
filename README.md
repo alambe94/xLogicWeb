@@ -81,8 +81,10 @@ The viewer remembers your USB selection until the device disconnects or you chan
 
 At 41.67, 83.33, 166.67 and 333.33 MS/s the board samples all eight inputs.
 At 500 MS/s, boards advertising finite eight-channel USB capture offer D0–D7
-by default. Enter the desired count (for example `2G`) or choose **Use board maximum**.
-The board records in DDR, then downloads all eight channels over USB. Longer downloads
+by default for counts below `2G` (2,000,000,000 samples), subject to board capacity.
+Enter a count such as `1.5G` or choose **Use board maximum**. The board records in DDR,
+then downloads all eight channels over USB. At `2G` and above, or when **Record all**
+or **Loop** is selected, choose D0–D3 or D4–D7. The bank updates as you edit the count. Longer eight-channel downloads
 use this browser profile’s disk archive. Stop during download to inspect the received prefix.
 Choose D0–D3 or D4–D7 for packed USB capture, streaming, or the packed trigger.
 Earlier firmware offers the two four-channel banks. Select

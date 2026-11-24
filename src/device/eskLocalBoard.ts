@@ -39,7 +39,11 @@ export async function localCapture(boot: string, count: number, rate: number, si
     accept: (data: Uint8Array, offset: number) => Promise<void>): Promise<string> {
   const response = await localRequest('lan_capture', {boot, count, rate}, signal);
   const ticks = response.headers.get('X-ESK-Ticks') ?? '';
+  const reportedRate = response.headers.get('X-ESK-Rate');
+  const checkGeometry = rate === 500_000_000 || reportedRate !== null;
   if (response.headers.get('Content-Length') !== String(count) || !/^\d{1,20}$/.test(ticks) ||
+      (checkGeometry && (reportedRate !== String(rate) || response.headers.get('X-ESK-Format') !== 'raw8' ||
+        response.headers.get('X-ESK-Channel-Mask') !== '255')) ||
       response.headers.get('Content-Type') !== 'application/octet-stream' || !response.body) {
     await response.body?.cancel().catch(() => {});
     throw new Error('Invalid local capture header.');

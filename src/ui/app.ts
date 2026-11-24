@@ -164,6 +164,7 @@ import { boardCaptureMaximum, boardCaptureRates, receiveBoardCapture } from '../
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
 import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_PACKED_RATE, type EskBank, requestEskDevice, selectedEskUsbDevice } from '../device/eskCapture.js';
 import { inspectUsbDdr, receiveUsbDdr, usbDdrMaximum } from '../device/eskUsbDdr.js';
+import { supportsUsbEightChannelCount, USB_EIGHT_CHANNEL_MAXIMUM } from './eskUsbChannels.js';
 import { capturePackedEdge } from './eskPackedCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
@@ -641,8 +642,9 @@ export class App {
   private eskBank: EskBank = 'lower';
   private eskAllUsbChannels = true;
   private get eskDdrCapacity(): number | undefined {
-    if (this.eskRate === ESK_PACKED_RATE && this.eskLength === 'count')
-      return usbDdrMaximum(selectedEskUsbDevice()) || undefined;
+    const available = usbDdrMaximum(selectedEskUsbDevice());
+    if (available && supportsUsbEightChannelCount(this.eskRate, this.eskLength, this.eskCountText))
+      return Math.min(available, USB_EIGHT_CHANNEL_MAXIMUM);
   }
   private displayedEskBank: EskBank | undefined;
   private selectedRowBank: EskBank | undefined;
@@ -7171,7 +7173,7 @@ export class App {
       profile.className = 'panel-note';
       const lan = !!eskLanMode();
       const ddr = !lan && this.eskAllUsbChannels ? this.eskDdrCapacity : undefined;
-      const max = lan ? boardCaptureMaximum() : ddr;
+      const max = lan ? boardCaptureMaximum(this.eskLanRate) : ddr;
       const rate = lan ? this.eskLanRate : this.eskRate;
       const rates = selectControl('esk-finite-rate', (lan ? 'Ethernet' : 'USB') + ' · ' + t('capturePanel.sampleRate'),
         (lan ? boardCaptureRates() : [ESK_PACKED_RATE, ...ESK_FINITE_RATES]).map(hz => [String(hz), formatRate(hz)]), String(rate));
@@ -7183,10 +7185,7 @@ export class App {
           return;
         }
         this.eskRate = Number(rates.value);
-        if (this.eskRate === ESK_PACKED_RATE) {
-          this.eskBank = 'lower';
-          this.eskTriggerChannel %= 4;
-        }
+        if (this.eskRate === ESK_PACKED_RATE) this.eskTriggerChannel = this.eskTriggerChannel % 4 + (this.eskBank === 'upper' ? 4 : 0);
         this.updateEskBankView();
       });
       const samplesLabel = document.createElement('label');
@@ -7217,7 +7216,16 @@ export class App {
       };
       count.oninput = () => {
         if (lan) this.eskLanCount = count.value;
-        else this.eskCountText = count.value;
+        else {
+          const before = this.eskDdrCapacity;
+          this.eskCountText = count.value;
+          if (before !== this.eskDdrCapacity) {
+            const {selectionStart, selectionEnd, selectionDirection} = count;
+            this.updateEskBankView();
+            panel.querySelector<HTMLInputElement>('#esk-sample-count')?.setSelectionRange(selectionStart, selectionEnd, selectionDirection ?? 'none');
+            return;
+          }
+        }
         updateEstimate();
       };
       const fields = document.createElement('div');
@@ -7299,7 +7307,7 @@ export class App {
       if (!lan && rate === ESK_PACKED_RATE) {
         choices.className = 'segmented';
         legend.textContent = t('esk.captureBank');
-        const banks: readonly ('all' | EskBank)[] = this.eskDdrCapacity ? ['all','lower','upper'] : ['lower','upper'];
+        const banks: readonly ('all' | EskBank)[] = usbDdrMaximum(selectedEskUsbDevice()) ? ['all','lower','upper'] : ['lower','upper'];
         for (const bank of banks) {
           const label = document.createElement('label');
           const input = document.createElement('input');
@@ -7310,7 +7318,7 @@ export class App {
           input.id = 'esk-bank-' + bank;
           input.value = bank;
           input.checked = checked;
-          input.disabled = this.eskCapturePending;
+          input.disabled = this.eskCapturePending || (bank === 'all' && !this.eskDdrCapacity);
           input.onchange = () => {
             if (!input.checked) return;
             this.eskAllUsbChannels = bank === 'all';
@@ -8069,7 +8077,7 @@ export class App {
   private async openEskCapture(transport: 'usb' | 'ethernet'): Promise<void> {
     if (this.eskCapturePending || this.discardingRecording || this.running || this.stopping) return;
     const lan = transport === 'ethernet';
-    if (!lan && this.eskRate === ESK_PACKED_RATE && this.eskLength === 'count' && this.eskAllUsbChannels &&
+    if (!lan && supportsUsbEightChannelCount(this.eskRate, this.eskLength, this.eskCountText) && this.eskAllUsbChannels &&
         usbDdrMaximum(selectedEskUsbDevice()) === undefined) {
       this.eskCapturePending = true;
       try { await inspectUsbDdr(await requestEskDevice()); }
@@ -8079,7 +8087,7 @@ export class App {
       } finally { this.eskCapturePending = false; this.updateEskBankView(); }
     }
     const ddr = !lan && this.eskAllUsbChannels ? this.eskDdrCapacity : undefined;
-    const max = lan ? boardCaptureMaximum() : ddr;
+    const max = lan ? boardCaptureMaximum(this.eskLanRate) : ddr;
     const untilStop = !lan && this.eskLength === 'untilStop';
     const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity
       : parseSampleCount(lan ? this.eskLanCount : this.eskCountText, max);
