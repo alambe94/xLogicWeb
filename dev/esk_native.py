@@ -221,7 +221,19 @@ class Recordings:
             if op == "stop":
                 return self.stop(key)
             if op == "status":
-                return self.status(key)
+                row = self.status(key)
+                if "preview_after" in body and row["state"] == "recording":
+                    after, advance = body["preview_after"], body.get("advance")
+                    if type(after) is not int or after < 0 or type(advance) is not int or advance < 0:
+                        raise ValueError("Invalid preview cursor")
+                    written = row["samples"]
+                    if written > after:
+                        end = written if after == 0 else min(written, max(after + advance, written - row["rate"] * 75 // 1000))
+                        if end > after:
+                            data = self.read_samples(row, max(0, end - WINDOW), end)
+                            # The frame header carries the confirmed count and exclusive end as uint64 LE.
+                            return written.to_bytes(8, "little") + end.to_bytes(8, "little") + data
+                return row
             if op == "delete":
                 self.remove(key)
                 return {}

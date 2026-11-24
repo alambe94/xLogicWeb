@@ -10,7 +10,7 @@
  */
 
 import {
-  appendLostSamples, createSampleStore, MAX_SOFTWARE_TRIGGER_PREFIX_BYTES,
+  appendLostSamples, createSampleStore, MAX_SOFTWARE_TRIGGER_PREFIX_BYTES, PlanarSampleStore,
 } from '../data/index.js';
 import { DROP_FRONT_QUANTUM, type SampleStore } from '../data/types.js';
 import {
@@ -7863,7 +7863,10 @@ export class App {
     const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false, preview = false) => {
       this.endPendingRepeatSession();
       const packed = rate === ESK_PACKED_RATE && (name === 'xLOGIC USB D4–D7' || name === 'xLOGIC USB D0–D3');
-      const store = createSampleStore(packed ? 4 : 8, rate);
+      const channelCount = packed ? 4 : 8;
+      const store = preview
+        ? new PlanarSampleStore({ channelCount, samplerate: rate, compactBlocks: true })
+        : createSampleStore(channelCount, rate);
       store.append(bytes);
       this.nativePreviewStart = preview ? start : null;
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };

@@ -66,14 +66,11 @@ const DEFAULT_CORE_BINS = 32;
 
 const binSizeOf = (level: number): number => Math.pow(2, LEVEL_LOG * level);
 
-/** Block size for a pyramid level, shrinking with the level so tiny levels stay tiny. */
-function levelBlockBitsLog(level: number): number {
-  return Math.max(12, BASE_BLOCK_BITS_LOG - LEVEL_LOG * level);
-}
-
 export interface PlanarStoreOptions {
   channelCount: ChannelCount;
   samplerate: number;
+  /** Smaller allocation blocks for frequently replaced, 65,536-sample preview windows. */
+  compactBlocks?: boolean;
   /**
    * If true, query() snaps pixel column boundaries to whole level-k bins instead of
    * descending to the exact sample boundary. Faster, and each column is still an exact
@@ -153,12 +150,13 @@ export class PlanarSampleStore implements SampleStore {
     this.snapColumns = opts.snapColumns === true;
     this.coreBins = opts.coreBins ?? DEFAULT_CORE_BINS;
 
-    for (let c = 0; c < channelCount; c++) this.base.push(new BitPlane(BASE_BLOCK_BITS_LOG));
+    const baseLog = opts.compactBlocks ? 16 : BASE_BLOCK_BITS_LOG;
+    for (let c = 0; c < channelCount; c++) this.base.push(new BitPlane(baseLog));
     this.binSize[0] = 1;
     this.validBins[0] = 0;
     this.levelHead[0] = 0;
     for (let k = 1; k <= MAX_LEVEL; k++) {
-      const bbl = levelBlockBitsLog(k);
+      const bbl = Math.max(12, baseLog - LEVEL_LOG * k);
       const h: BitPlane[] = [];
       const l: BitPlane[] = [];
       for (let c = 0; c < channelCount; c++) {
@@ -224,7 +222,7 @@ export class PlanarSampleStore implements SampleStore {
     // stay stored (they summarize dropped samples, which queries never ask about).
     for (let k = 1; k <= MAX_LEVEL; k++) {
       const target = Math.floor(this.droppedTotal / this.binSize[k]!);
-      const blockBins = 1 << levelBlockBitsLog(k);
+      const blockBins = this.hi[k]![0]!.blockBits;
       const releasable = target - (target % blockBins);
       if (releasable > this.levelHead[k]!) {
         const bins = releasable - this.levelHead[k]!;
@@ -298,7 +296,7 @@ export class PlanarSampleStore implements SampleStore {
     const M = 0x01010101;
     const G = 0x10204080;
     const planes = this.base;
-    const bbl = BASE_BLOCK_BITS_LOG;
+    const bbl = this.base[0]!.blockBitsLog;
     const blockMask = (1 << bbl) - 1;
     const hb = this.baseHead();
 
@@ -367,7 +365,7 @@ export class PlanarSampleStore implements SampleStore {
     const M = 0x01010101;
     const G = 0x10204080;
     const nch = this.channelCount;
-    const bbl = BASE_BLOCK_BITS_LOG;
+    const bbl = this.base[0]!.blockBitsLog;
     const blockMask = (1 << bbl) - 1;
     const acc = new Int32Array(8);
 
@@ -434,7 +432,7 @@ export class PlanarSampleStore implements SampleStore {
     const M = 0x01010101;
     const G = 0x10204080;
     const planes = this.base;
-    const bbl = BASE_BLOCK_BITS_LOG;
+    const bbl = this.base[0]!.blockBitsLog;
     const blockMask = (1 << bbl) - 1;
     const hb = this.baseHead();
 
