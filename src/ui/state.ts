@@ -301,7 +301,7 @@ export function defaultChannels(n: number): ChannelState[] {
 }
 
 export function carryChannelState(
-  previous: readonly (ChannelState | undefined)[],
+  previous: readonly (Pick<ChannelState, 'name' | 'color' | 'enabled'> | undefined)[],
   count: number,
 ): ChannelState[] {
   return defaultChannels(count).map((fallback) => {
