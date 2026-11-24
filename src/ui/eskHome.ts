@@ -47,7 +47,7 @@ export function initEskHome(): void {
   const firmware = document.getElementById('esk-firmware')!;
   const firmwareGuide = document.getElementById('esk-firmware-guide')!;
   const webBuild = document.getElementById('esk-web-build')!;
-  const recorder = document.getElementById('esk-recorder')!;
+  const recorder = document.getElementById('esk-recorder-version')!;
   const update = document.querySelector<HTMLButtonElement>('#esk-web-update')!;
   let recorderBuild = '';
   let boardFirmware: number | undefined;
