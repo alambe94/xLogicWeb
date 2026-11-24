@@ -78,16 +78,14 @@ this browser profile at this viewer address.
 
 The recorder writes raw samples directly to the SSD. After recording, the viewer
 reads up to 65,536 samples at a time as you move the slider. Four-channel captures
-store two samples per byte. During native USB capture, the main Logic waveform
-follows the latest samples written to disk, targeting 60 updates per second
-while the tab is visible. Between disk writes the preview advances through
-confirmed samples at the selected sample rate. It holds at the last available
-sample if delivery pauses. The actual refresh rate depends on the laptop and
-USB delivery. Samples fill the plot from the left. Once the visible
-time span is full, the newest samples arrive at the right edge and older data
-scrolls left. A busy channel sets the initial zoom so individual pulses are
-visible. You can adjust the scale while recording and keep it when you stop.
-A short pulse between preview windows can still be inspected in the saved trace.
+store two samples per byte. With the current native USB helper, capture starts
+on a two-second time ruler. Activity fills from the left for 1.5 seconds, then
+scrolls with one quarter of the plot ahead of the newest summarized samples.
+A horizontal line means the channel held its level throughout that interval.
+A band means both levels occurred. Each summary includes every recorded sample.
+Stop freezes the overview. Scroll up over activity to zoom around the pointer,
+or click it to inspect the original samples immediately. Older native helpers
+use the rolling raw-sample preview.
 Press **Stop** to inspect the recording, select an **Edge channel**, and use
 **Previous edge** or **Next edge** to highlight a transition at the current zoom.
 The guide labels the channel and direction and marks the edge on its waveform.

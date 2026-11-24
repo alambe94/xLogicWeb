@@ -2,9 +2,10 @@
 import { selectedEskUsbDevice } from '../device/eskCapture.js';
 import { displaySamples, type EskRecordingOptions, type RecordingDisplay } from './eskRecorder.js';
 import { displayNativeRecording, listNativeRecordings, nativeRecordingTitle, nativeRequest, type NativeRecord } from './nativeArchive.js';
+import type { ActivityFrame } from './recordingActivity.js';
 
 export async function recordNative(options: EskRecordingOptions, preview: RecordingDisplay, display: RecordingDisplay,
-    setStop: (stop?: () => void) => void): Promise<void> {
+    setStop: (stop?: () => void) => void, activity: (frame: ActivityFrame) => void): Promise<void> {
   const status = document.querySelector<HTMLOutputElement>('#native-status')!;
   status.hidden = false;
   status.value = 'Starting USB recording…';
@@ -27,6 +28,41 @@ export async function recordNative(options: EskRecordingOptions, preview: Record
       catch (error) { status.value = String(error); stopping = false; }
     };
     setStop(stop);
+    if (document.querySelector('meta[name="esk-native-recorder"][data-overview]')) {
+      let cursor = 0, nextStatus = 0;
+      for (;;) {
+        const now = performance.now();
+        if (document.hidden && row.state === 'recording') {
+          await new Promise(resolve => setTimeout(resolve, 250));
+          row = await (await nativeRequest('status', {id})).json() as NativeRecord;
+          if (row.state === 'recording') continue;
+        }
+        let frame: ActivityFrame;
+        try {
+          frame = await (await nativeRequest('overview', {id, start: cursor})).json();
+        } catch {
+          row = await (await nativeRequest('status', {id})).json() as NativeRecord;
+          if (row.state !== 'recording') break;
+          if (!stopping) status.value = 'Live preview unavailable';
+          await new Promise(resolve => setTimeout(resolve, 250));
+          continue;
+        }
+        row = frame.record;
+        if (row.state === 'failed') throw new Error(row.note);
+        activity(frame);
+        cursor = frame.end;
+        if (row.state === 'saved' && cursor === row.samples) break;
+        if (!stopping && now >= nextStatus) {
+          status.value = 'Live preview · ' + row.samples.toLocaleString() + ' samples on disk';
+          nextStatus = now + 250;
+        }
+        if (row.samples - cursor < frame.stride) {
+          await new Promise(resolve => setTimeout(resolve, Math.max(0, now + 25 - performance.now())));
+        }
+      }
+      await displayNativeRecording(row, display, displaySamples);
+      return;
+    }
     let previousFrame = performance.now(), nextStatus = 0;
     while (row.state === 'recording') {
       const now = performance.now();

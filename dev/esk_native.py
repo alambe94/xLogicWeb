@@ -9,6 +9,7 @@ import subprocess
 import threading
 import uuid
 import webbrowser
+from functools import lru_cache
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,6 +22,32 @@ EDGE_CHUNK = 4 * 1024 ** 2
 LOW_NIBBLE = bytes(i & 15 for i in range(256))
 HIGH_NIBBLE = bytes(i >> 4 for i in range(256))
 GIB = 1024 ** 3
+
+
+@lru_cache(maxsize=256)
+def covered_bytes(low, high):
+    return bytes(b for b in range(256) if b & low == low and b | high == high)
+
+
+def activity_masks(data, packed, odd):
+    # Seed the masks from a short prefix. translate checks every remaining byte
+    # in C and returns only values that can change the masks (including rare pulses).
+    low, high = 255, 0
+    if odd:
+        last = data[-1] & 15
+        data = data[:-1]
+        low = high = last | (last << 4)
+    for value in set(data[:64]):
+        low &= value
+        high |= value
+    if low or high != 255:
+        for value in set(data.translate(None, covered_bytes(low, high))):
+            low &= value
+            high |= value
+    if packed:
+        low = low & (low >> 4) & 15
+        high = (high | (high >> 4)) & 15
+    return low | (high << 8)
 
 
 def stop_note(row, receipt):
@@ -177,6 +204,50 @@ class Recordings:
             return bytes(expanded[start % 2:start % 2 + end - start])
         return data
 
+    def overview(self, key, start):
+        row = self.status(key)
+        rate = row["rate"]
+        stride = 1 << ((rate // 1024).bit_length() - 1)
+        if row["state"] == "failed":
+            return dict(record=row, first=0, end=0, stride=stride, bins=[])
+        if type(start) is not int or start < 0 or start % stride or start > row["samples"]:
+            raise ValueError("Invalid overview cursor")
+        end = row["samples"]
+        if row["state"] == "recording":
+            end -= end % stride
+        # Only the newest two seconds can be visible after a tab resumes.
+        start = max(start, max(0, end - 2 * rate) // stride * stride)
+        packed = rate == RATES[-1]
+        factor = 2 if packed else 1
+        end = min(end, start + 16 * 1024**2 * factor)
+        bins = self.activity_range(key, start, end, stride, packed)
+        return dict(record=row, first=start, end=end, stride=stride, bins=bins)
+
+    def activity_range(self, key, start, end, stride, packed):
+        bins = []
+        factor = 2 if packed else 1
+        if end > start:
+            with self.path(key, ".bin").open("rb") as stream:
+                stream.seek(start // factor)
+                for offset in range(start, end, stride):
+                    count = min(stride, end - offset)
+                    size = (count + factor - 1) // factor
+                    data = stream.read(size)
+                    if len(data) != size:
+                        raise ValueError("Incomplete recording overview")
+                    bins.append(activity_masks(data, packed, packed and count % 2))
+        return bins
+
+    def overview_detail(self, key, first, end):
+        row = self.status(key)
+        if row["state"] != "saved" or type(first) is not int or type(end) is not int or not (
+                0 <= first < end <= row["samples"] and end - first <= 16 * 1024**2):
+            raise ValueError("Invalid saved overview range")
+        stride = 1 << max(1, ((end - first) // 2048).bit_length())
+        first -= first % stride
+        return dict(first=first, end=end, stride=stride,
+                    bins=self.activity_range(key, first, end, stride, row["rate"] == RATES[-1]))
+
     def edge(self, key, position, channel, direction):
         row = self.status(key)
         packed = row["rate"] == RATES[-1]
@@ -220,6 +291,10 @@ class Recordings:
                 return self.start(body.get("rate"), body.get("bank"), body.get("samples"), body.get("serial"))
             if op == "stop":
                 return self.stop(key)
+            if op == "overview":
+                return self.overview(key, body.get("start"))
+            if op == "overview_detail":
+                return self.overview_detail(key, body.get("first"), body.get("end"))
             if op == "status":
                 row = self.status(key)
                 if "preview_after" in body and row["state"] == "recording":
@@ -296,7 +371,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         data = path.read_bytes()
         if path == self.server.dist / "index.html":
-            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1">', 1)
+            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview>', 1)
         self.reply(200, data, mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
 

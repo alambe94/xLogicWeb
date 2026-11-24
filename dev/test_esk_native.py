@@ -42,6 +42,33 @@ class RecordingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.window(self.key, 0, WINDOW + 1)
 
+    def test_overview_counts_a_single_sample_pulse_and_final_partial_bin(self):
+        stride = 1 << ((RATES[0] // 1024).bit_length() - 1)
+        data = bytearray([2]) * (stride + 3)
+        data[stride - 1] |= 128
+        self.complete(RATES[0], len(data), data, 255)
+        frame = self.store.overview(self.key, 0)
+        self.assertEqual((frame["first"], frame["end"], frame["bins"]), (0, len(data), [0x8202, 0x0202]))
+        detail = self.store.overview_detail(self.key, stride-2, stride+2)
+        self.assertEqual(detail["bins"], [0x8202, 0x0202])
+
+    def test_packed_overview_ignores_the_unwritten_last_nibble(self):
+        self.complete(RATES[-1], 5, bytes.fromhex("22a2f2"), 240)
+        self.assertEqual(self.store.overview(self.key, 0)["bins"], [0x0a02])
+        self.assertEqual(self.store.overview_detail(self.key, 4, 5)["bins"], [0x0202])
+
+    def test_live_overview_advances_only_over_complete_bins(self):
+        self.store.save(dict(id=self.key, rate=RATES[0], bank="lower", state="recording", limit=200000, samples=0))
+        self.store.active = self.key
+        path = self.store.path(self.key, ".bin")
+        path.write_bytes(bytes(65535))
+        frame = self.store.overview(self.key, 0)
+        self.assertEqual(frame["bins"], [0])
+        self.assertEqual(self.store.overview(self.key, frame["end"])["bins"], [])
+        with path.open("ab") as f:
+            f.write(bytes([1]))
+        self.assertEqual(self.store.overview(self.key, frame["end"])["bins"], [0x0100])
+
     @patch("esk_native.subprocess.Popen")
     def test_selected_usb_serial_reaches_native_recorder(self, launch):
         self.store.request(dict(op="start", rate=RATES[0], bank="lower", samples=64, serial="xESK0123"))
