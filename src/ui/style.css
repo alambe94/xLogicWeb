@@ -1678,6 +1678,11 @@ html[data-theme="light"] .settings-dialog::backdrop { background: var(--backdrop
 #plot.marker-grab { cursor: grab; }
 #plot.marker-grabbing { cursor: grabbing; }
 
+.recording-activity { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 4; cursor: default; }
+.recording-activity[tabindex] { cursor: zoom-in; }
+#plot:has(> .recording-activity) :is(#empty-hint, #wave-stack, .overlay-canvas),
+#plot-col:has(.recording-activity) > #overview { visibility: hidden; }
+
 .fft-canvas {
   position: absolute; left: 0; top: 0; z-index: 4;
   display: block;

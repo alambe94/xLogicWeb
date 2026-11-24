@@ -13,11 +13,14 @@ export class RecordingTimeline {
   private archive: SavedRecording | undefined;
   windowStart = 0;
   edge: { sample: number; channel: number; bit: number } | null = null;
+  inspectSample: ((sample: number, span: number, fraction: number) => Promise<boolean>) | undefined;
 
-  constructor(private readonly redraw: () => void) {}
+  constructor(private readonly redraw: () => void, private readonly leaveOverview: () => void) {}
 
   clear(key?: string): void {
     if (key !== undefined && this.archive?.key !== key) return;
+    this.leaveOverview();
+    this.inspectSample = undefined;
     this.archive?.dispose?.();
     this.archive = undefined;
     this.windowStart = 0;
@@ -29,7 +32,7 @@ export class RecordingTimeline {
 
   open(archive: SavedRecording, rate: number, first: number, channels: number, firstChannel: number,
       display: (bytes: Uint8Array, start: number) => void, viewport: () => {start: number; end: number},
-      centerSample: (sample: number) => void): void {
+      centerSample: (sample: number, span?: number, fraction?: number) => void): void {
     this.archive = archive;
     this.windowStart = first;
     this.form.hidden = false;
@@ -89,6 +92,7 @@ export class RecordingTimeline {
       return reading;
     };
     const findEdge = async (direction: 'previous' | 'next') => {
+      this.leaveOverview();
       const selected = Number(channel.value), token = ++generation;
       const forward = direction === 'next';
       const view = viewport();
@@ -143,10 +147,19 @@ export class RecordingTimeline {
     next.onclick = () => void findEdge('next');
     channel.addEventListener('change', resetSearch);
     cancel.onclick = resetSearch;
-    this.slider.oninput = () => { resetSearch(); void seek(this.slider.valueAsNumber); };
+    this.inspectSample = async (sample, span, fraction) => {
+      resetSearch();
+      const target = Math.max(0, Math.min(last, Math.floor(sample - span * fraction - (displaySamples - span) / 2)));
+      await seek(target);
+      if (this.archive !== archive || displayed !== target) return false;
+      this.leaveOverview();
+      centerSample(sample - displayed, span, fraction);
+      return true;
+    };
+    this.slider.oninput = () => { this.leaveOverview(); resetSearch(); void seek(this.slider.valueAsNumber); };
     this.form.onsubmit = event => {
       event.preventDefault();
-      if (this.seconds.validity.valid) { resetSearch(); void seek(this.seconds.valueAsNumber * rate); }
+      if (this.seconds.validity.valid) { this.leaveOverview(); resetSearch(); void seek(this.seconds.valueAsNumber * rate); }
     };
   }
 }

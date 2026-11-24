@@ -148,6 +148,7 @@ import {
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
+import { RecordingActivity } from './recordingActivity.js';
 import { displaySamples, showEskRecorder } from './eskRecorder.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
 import { recordNative } from './eskNativeRecorder.js';
@@ -501,7 +502,16 @@ export class App {
     key: string; store: SampleStore; job: CaptureRangeJob; sources: CaptureJobSource[];
   } | null = null;
   private captureSessionId = 0;
-  private recordingTimeline = new RecordingTimeline(() => { this.dirty = true; });
+  private recordingActivity: RecordingActivity | undefined;
+  private recordingTimeline = new RecordingTimeline(() => { this.dirty = true; }, () => this.dismissRecordingActivity());
+
+  private dismissRecordingActivity(): void {
+    if (!this.recordingActivity) return;
+    this.recordingActivity.dispose();
+    this.recordingActivity = undefined;
+    this.stack.zoomToFit();
+    this.dirty = true;
+  }
   private nativePreviewStart: number | null = null;
   private eskRate = ESK_RATE;
   private eskBank: EskBank = 'lower';
@@ -4250,6 +4260,7 @@ export class App {
   private frame = (): void => {
     requestAnimationFrame(this.frame);
     const now = performance.now();
+    if (this.recordingActivity?.advance(now)) this.dirty = true;
     if (this.advanceQuickScroll(now)) this.dirty = true;
     const highRateLoop = this.running && this.captureIsLoop &&
       this.store.samplerate * bytesPerSampleForChannels(this.store.channelCount) >= LOOP_BUILD_SUSPEND_BYTES_PER_SEC;
@@ -4482,7 +4493,21 @@ export class App {
     this.releaseRepeatHold();
     this.applySessionView();
     this.applyTriggerViewAnchor(rescaled);
-    if (this.nativePreviewStart !== null) {
+    if (this.recordingActivity) {
+      const { start, span } = this.recordingActivity, rate = this.store.samplerate;
+      this.stack.restoreViewport(start, start + span);
+      const width = this.el.plot.clientWidth;
+      const ticks = computeTicks(start / rate * 1e12, (start + span) / rate * 1e12,
+        width, rate, AXIS.minTickSpacing, this.axisLabelMetrics);
+      this.drawAxisCanvas(ticks, width);
+      this.overlay.syncSize(width, this.el.plot.clientHeight);
+      this.overlay.beginFrame({ grid: true, top: true });
+      this.overlay.drawGrid(ticks);
+      this.recordingActivity.draw(this.stack.boxes(), this.channels.map(ch => ch.color));
+      this.renderCorner();
+      this.layerFingerprint = null;
+      return;
+    } else if (this.nativePreviewStart !== null) {
       // Fill from sample zero, then scroll the confirmed tail at the user's scale.
       const span = Math.min(this.stack.view.span, displaySamples);
       const end = Math.max(this.captureStore.length, span);
@@ -6090,6 +6115,7 @@ export class App {
 
   /** The displayed store's T: the current wave's trigger, or the held old wave's T. */
   private displayOriginSample(): number {
+    if (this.recordingActivity) return 0;
     return this.displayTriggerSample() ?? -(this.nativePreviewStart ?? this.recordingTimeline.windowStart);
   }
 
@@ -7255,9 +7281,10 @@ export class App {
     const cap = this.captureStore;
     const shown = this.store;
     const view = this.stack.view;
+    const samples = this.recordingActivity?.end ?? cap.length;
     const next = cornerView(
-      cap.length > 0
-        ? { samples: cap.length, samplerate: cap.samplerate, channels: cap.channelCount } : null,
+      samples > 0
+        ? { samples, samplerate: cap.samplerate, channels: cap.channelCount } : null,
       { storeSamples: shown.length, spanSamples: view.end - view.start, samplerate: shown.samplerate },
     );
     const last = this.renderedCorner;
@@ -7899,9 +7926,9 @@ export class App {
       showWindow(bytes, rate, start, name);
       if (saved) this.recordingTimeline.open(saved, rate, start, this.captureStore!.channelCount,
         name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true),
-        () => this.stack.viewport, sample => {
-          const view = this.stack.viewport, span = view.end - view.start;
-          const left = Math.max(0, Math.min(this.captureStore.length - span, sample - span / 2));
+        () => this.stack.viewport, (sample, requestedSpan, fraction = 0.5) => {
+          const view = this.stack.viewport, span = Math.min(this.captureStore.length, requestedSpan ?? (view.end - view.start));
+          const left = Math.max(0, Math.min(this.captureStore.length - span, sample - span * fraction));
           this.stack.setViewport(left, left + span);
           this.dirty = true;
         });
@@ -7914,10 +7941,33 @@ export class App {
         if (await this.confirmDiscardCapture()) {
           this.statusError = null;
           this.renderErrorBanner();
+          let overview: RecordingActivity | undefined;
+          let completeOverview = false;
           await recordNative(options, (data, hz, offset, title) => showWindow(data, hz, offset, title, false, true),
-            display, stop => { this.stopNativeRecording = stop; this.renderToolbarState(); });
+            (data, hz, offset, title, saved) => {
+              display(data, hz, offset, title, saved);
+              if (completeOverview && overview && this.recordingTimeline.inspectSample) {
+                this.recordingActivity = overview;
+                this.el.plot.append(overview.canvas);
+                overview.freeze(this.recordingTimeline.inspectSample);
+                this.dirty = true;
+              }
+            }, stop => { this.stopNativeRecording = stop; this.renderToolbarState(); }, frame => {
+              if (!overview) {
+                const row = frame.record, packed = row.rate === ESK_PACKED_RATE;
+                const names = packed && row.bank === 'upper' ? ['D4', 'D5', 'D6', 'D7'] : [];
+                this.adoptCapture(createSampleStore(packed ? 4 : 8, row.rate), names,
+                  {kind: 'loaded', source: 'xLOGIC USB', ms: 0}, false, !packed, true);
+                this.setFileNotice(null);
+                overview = new RecordingActivity(row, frame.stride, () => { this.dirty = true; });
+                this.recordingActivity = overview;
+                this.el.plot.append(overview.canvas);
+              }
+              overview.update(frame);
+              completeOverview = frame.record.state === 'saved' && frame.end === frame.record.samples;
+            });
         }
-      } catch (error) { this.fail('error.eskUsb', error); }
+      } catch (error) { this.dismissRecordingActivity(); this.fail('error.eskUsb', error); }
       finally {
         this.nativePreviewStart = null;
         this.dirty = true;
