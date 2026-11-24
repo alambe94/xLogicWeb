@@ -64,7 +64,7 @@ export async function capturePairedBoard(): Promise<{ samples: Uint8Array; ticks
 
 interface Feature { name: string; instance: number; enabled: boolean; ownership: string }
 interface Catalog { services: string[][]; resources: string[][] }
-export interface BoardStatus { deviceId: string; boot: string; firmware: number; captureMaxSamples?: number; features: Feature[]; catalog?: Catalog }
+export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; captureMaxSamples?: number; features: Feature[]; catalog?: Catalog }
 
 function validRows(rows: unknown, limit: number): boolean {
   return Array.isArray(rows) && rows.length <= limit && rows.every(row =>
@@ -82,6 +82,9 @@ export async function readBoardStatus(): Promise<BoardStatus> {
     throw new Error('Invalid ESK device catalog');
   }
   const max = data.captureMaxSamples;
+  if (data.hardwareId !== undefined && (!Number.isInteger(data.hardwareId) || data.hardwareId < 0 || data.hardwareId > 0xffffffff)) {
+    throw new Error('Invalid ESK hardware ID');
+  }
   if (max !== undefined && (!Number.isSafeInteger(max) || max < 0 || max > 0xffffffff || max % 64)) {
     throw new Error('Invalid board capture capacity');
   }

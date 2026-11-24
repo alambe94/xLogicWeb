@@ -73,6 +73,12 @@ on the board, USB link and host storage. After Stop, use the slider to browse th
 
 ### Update board firmware
 
+On a viewer provisioned with the team’s public signing key, connect the board and choose **Home → Versions → Check firmware files…**.
+Select the downloaded `.appimage` and its matching `.sig` together. The browser verifies the local files and compares the signed
+release version with the connected hardware. Older Ethernet connectors need an update to report the board hardware ID.
+For a private team build, configure `VITE_ESK_SIGNER_SPKI` with the Base64 DER SubjectPublicKeyInfo and `VITE_ESK_SIGNER_ID`
+with the exact key ID from the release authority. The published viewer can run without a configured signer.
+
 Home shows the connected board’s firmware version, the web app’s version and build, and the recorder build when using the Windows app. For a recorder without a release label, the build is the first 12 digits of its executable’s SHA-256. Older Windows helpers may show “Version unavailable”.
 
 When a new web app is ready, choose **Home → Versions → Update web app** after saving your capture. On a provisioned ESK board, firmware updates use the xSDK host CLI and a compatible application image:

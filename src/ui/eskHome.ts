@@ -6,6 +6,7 @@ import { readUsbBoardStatus } from '../device/eskUsbHome.js';
 import type { BoardStatus } from '../device/eskPairedBoard.js';
 import { onLocaleChange, t } from './i18n.js';
 import { aboutView } from './about.js';
+import { initFirmwareCheck } from './eskFirmwareCheck.js';
 import { applyUpdate, getUpdateState, onUpdateStateChange } from './pwaUpdate.js';
 import { nativeRecorderAvailable, nativeRequest } from './nativeArchive.js';
 
@@ -44,6 +45,7 @@ export function initEskHome(): void {
   usbSite.href = browserSite.href;
   const paired = fromBoard();
   const nativeHome = nativeRecorderAvailable();
+  const setFirmwareTarget = initFirmwareCheck();
   const firmware = document.getElementById('esk-firmware')!;
   const firmwareGuide = document.getElementById('esk-firmware-guide')!;
   const webBuild = document.getElementById('esk-web-build')!;
@@ -132,6 +134,7 @@ export function initEskHome(): void {
     if (!lan && !usbDevice) usbDevice = selectedEskUsbDevice();
     if (!lan && usbStatus && !userRequested) return;
     boardFirmware = undefined;
+    setFirmwareTarget();
     renderVersions();
     identity.hidden = features.hidden = details.hidden = true;
     refresh.hidden = !lan && !navigator.usb;
@@ -169,6 +172,7 @@ export function initEskHome(): void {
       refresh.textContent = t('capturePanel.tempRate');
       connection.textContent = lan ? 'Ethernet' : 'USB';
       boardFirmware = board.firmware;
+      setFirmwareTarget(board.hardwareId, board.firmware);
       renderVersions();
       identity.textContent = t('home.boardIdentity', {id: board.deviceId, boot: board.boot});
       identity.hidden = false;
@@ -201,6 +205,7 @@ export function initEskHome(): void {
     generation++;
     change.hidden = true;
     disconnected = true;
+    setFirmwareTarget();
     boardFirmware = undefined;
     renderVersions();
     usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();

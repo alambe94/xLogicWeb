@@ -19,7 +19,7 @@ class HomeSession extends EskUsbSession {
     const id = new Uint8Array(r.buffer, r.byteOffset + 60, 16);
     requireField(id.some(b => b !== 0), 'Empty ESK device ID');
     return {deviceId: Array.from(id, b => b.toString(16).padStart(2, '0')).join(''),
-      boot: this.boot.toString(), firmware: r.getUint32(84, true)};
+      boot: this.boot.toString(), firmware: r.getUint32(84, true), hardwareId: r.getUint32(88, true)};
   }
 
   async status(): Promise<BoardStatus> {
