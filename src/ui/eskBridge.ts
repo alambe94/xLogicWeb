@@ -36,7 +36,6 @@ export function initBridgeTools() {
   const release = byId<HTMLButtonElement>('bus-release');
   let outputs: OutputHandle | undefined;
   const form = byId<HTMLFormElement>('bridge-form'), run = byId<HTMLButtonElement>('bus-run');
-  const hint = byId('bridge-usb-hint');
   const port = byId<HTMLButtonElement>('bus-port'), result = byId<HTMLOutputElement>('bridge-result');
   const rx = byId<HTMLOutputElement>('bus-uart-rx');
   let device: USBDevice | undefined, board: BoardStatus | undefined, epoch = 0, busy = false;
@@ -81,7 +80,6 @@ export function initBridgeTools() {
     port.textContent = uart ? 'Close UART port' : 'Open UART port';
     run.textContent = commandLabel(name);
     run.disabled = busy || !available(name) || (name === 'UART' && !uart) || (name === 'GPIO' && gpioAction.value === 'write' && !outputs);
-    hint.hidden = available(name);
   }
   const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
   async function operate(action: (d: USBDevice, b: BoardStatus, token: number) => Promise<string>) {

@@ -124,8 +124,8 @@ const fixture: ChannelState[] = defaultChannels(8).map((c) => ({
   const adoptBody = bodyBetween('private adoptCapture(', 'private saveItems(');
 
   const sanctioned = [
-    'this.channels = (workspace.channels ?? defaultChannels(ESK_CHANNELS)).map((channel, index) => ({ ...channel, index }));',
-    'this.channels = defaultChannels(store.channelCount);',
+    'this.channels = carryChannelState(saved, Math.max(ESK_CHANNELS, saved.length));',
+    'this.channels = defaultChannels(packedBank ? ESK_CHANNELS : store.channelCount);',
     'this.channels = carryChannelState(this.channels, max);',
     'this.channels = carryChannelState(this.channels, model);',
     // An opened file set the device layout aside; the next Start restores it.
@@ -136,8 +136,7 @@ const fixture: ChannelState[] = defaultChannels(8).map((c) => ({
 
   const defaultSites = [
     'private channels: ChannelState[] = defaultChannels(ESK_CHANNELS);',
-    '(workspace.channels ?? defaultChannels(ESK_CHANNELS)).map(',
-    'this.channels = defaultChannels(store.channelCount);',
+    'this.channels = defaultChannels(packedBank ? ESK_CHANNELS : store.channelCount);',
   ];
   const strayDefaults = defaultSites.filter((site) => !occursOnce(site));
   const defaultCount = app.split('defaultChannels(').length - 1;
@@ -150,18 +149,18 @@ const fixture: ChannelState[] = defaultChannels(8).map((c) => ({
   };
   const deviceOrder = orderAfterCarry(deviceBody);
   const startOrder = orderAfterCarry(startBody);
-  const identityOrder = adoptBody.includes('this.order = this.channels.map((c) => c.index);');
+  const physicalOrder = adoptBody.includes('this.order = this.channels.map((_, physical) => this.physicalChannel(physical));');
   const noDefaultsInResize = !deviceBody.includes('defaultChannels(') &&
     !startBody.includes('defaultChannels(');
 
   check('every App channel-model rebuild is sanctioned and rebuilds the order after the carry',
-    siteCount === 5 && missing.length === 0 && defaultCount === 3 && strayDefaults.length === 0 &&
-    noDefaultsInResize && deviceOrder && startOrder && identityOrder,
+    siteCount === 5 && missing.length === 0 && defaultCount === 2 && strayDefaults.length === 0 &&
+    noDefaultsInResize && deviceOrder && startOrder && physicalOrder,
     `sites=${siteCount}, missing=${missing.length === 0 ? 'none' : missing.join(' | ')}, ` +
     `defaultChannels=${defaultCount}, strayDefaults=${strayDefaults.length}, ` +
     `noDefaultsInResize=${noDefaultsInResize}, ` +
     `orderWrites=${orderWrites(deviceBody)}/${orderWrites(startBody)}, deviceOrder=${deviceOrder}, ` +
-    `startOrder=${startOrder}, adoptIdentityOrder=${identityOrder}`);
+    `startOrder=${startOrder}, adoptPhysicalOrder=${physicalOrder}`);
 }
 
 // ---------------------------------------------------------------------- report

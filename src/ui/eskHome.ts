@@ -5,7 +5,7 @@ import { initBridgeTools } from './eskBridge.js';
 import { readUsbBoardStatus } from '../device/eskUsbHome.js';
 import type { BoardStatus } from '../device/eskPairedBoard.js';
 import { t } from './i18n.js';
-import { nativeRecorderAvailable } from './eskNativeRecorder.js';
+import { nativeRecorderAvailable } from './nativeArchive.js';
 
 function showRows(body: HTMLTableSectionElement, rows: string[][]): void {
   body.replaceChildren();
@@ -72,6 +72,7 @@ export function initEskHome(): void {
   const bridge = document.querySelector<HTMLElement>('#esk-bridge-page')!;
   const openBridge = document.querySelector<HTMLButtonElement>('#esk-bridge')!;
   const setBridge = initBridgeTools();
+  const bridgeConnect = document.querySelector<HTMLButtonElement>('#bridge-connect')!;
   const result = document.querySelector<HTMLOutputElement>('#bridge-result')!;
   const dock = document.querySelector<HTMLElement>('#bridge-dock')!;
   const toggle = document.querySelector<HTMLButtonElement>('#btn-bridge-panel')!;
@@ -80,9 +81,20 @@ export function initEskHome(): void {
   toggle.onclick = () => {
     dock.hidden = !dock.hidden;
     toggle.setAttribute('aria-expanded', String(!dock.hidden));
+    if (!dock.hidden && !paired) void updateStatus();
   };
   let usbDevice: USBDevice | undefined, usbStatus: BoardStatus | undefined;
   let generation = 0, disconnected = false;
+  function syncBridgeConnect(): void {
+    bridgeConnect.hidden = !!usbStatus || !navigator.usb;
+    bridgeConnect.disabled = refresh.disabled;
+    if (!navigator.usb) result.value = t('diagnostic.usb.unavailable');
+  }
+  bridgeConnect.onclick = () => {
+    if (paired) newBridge.click();
+    else void updateStatus(true);
+  };
+  syncBridgeConnect();
 
   async function updateStatus(userRequested = false): Promise<void> {
     if (refresh.disabled) return;
@@ -101,6 +113,7 @@ export function initEskHome(): void {
     }
     change.hidden = true;
     refresh.disabled = true;
+    syncBridgeConnect();
     connection.textContent = t('esk.reading');
     const token = ++generation;
     openLogic.disabled = !lan;
@@ -143,8 +156,9 @@ export function initEskHome(): void {
       }
       connection.textContent = error instanceof DOMException && error.name === 'NotFoundError' ? t('home.unpaired') :
         error instanceof Error ? error.message : String(error);
+      if (!lan) result.value = error instanceof DOMException && error.name === 'NotFoundError' ? '' : connection.textContent;
     } finally {
-      if (token === generation) { refresh.disabled = false; openLogic.disabled = false; }
+      if (token === generation) { refresh.disabled = false; openLogic.disabled = false; syncBridgeConnect(); }
     }
   }
 
@@ -158,6 +172,7 @@ export function initEskHome(): void {
     result.value = t('home.usbGone');
     identity.hidden = features.hidden = details.hidden = true;
     refresh.disabled = openLogic.disabled = false;
+    syncBridgeConnect();
     refresh.dataset.i18n = 'home.connectUsb'; refresh.textContent = t('home.connectUsb');
     connection.textContent = t('home.usbGone');
   });

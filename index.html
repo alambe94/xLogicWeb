@@ -107,64 +107,73 @@
     </div>
   </main>
   <main id="esk-bridge-page" hidden aria-labelledby="bridge-title">
-    <div class="esk-home-content">
-      <button class="mini" id="bridge-home" type="button" data-i18n="home.button">Home</button>
-      <h1 id="bridge-title" tabindex="-1">xBridgeWeb</h1>
-      <section id="bridge-controls" class="esk-device">
+    <header id="bridge-toolbar">
+      <button id="bridge-home" type="button" class="toolbar-item" aria-labelledby="bridge-home-label" title="xEskWeb">
+        <span class="toolbar-item-media" aria-hidden="true">
+          <svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+            <path d="M3 10 12 3l9 7v10H3z M9 20v-7h6v7"></path>
+          </svg>
+        </span>
+        <span class="toolbar-item-label" id="bridge-home-label" data-i18n="home.button">Home</span>
+      </button>
+      <h1 id="bridge-title" class="panel-title" tabindex="-1">xBridgeWeb</h1>
+    </header>
+    <div class="bridge-workspace">
+      <section id="bridge-controls" class="panel-section-body">
+        <button class="mini" id="bridge-connect" type="button" data-i18n="home.connectUsb" hidden>Connect via USB</button>
         <div id="bridge-protocol"></div>
         <form id="bridge-form">
-          <fieldset data-bus="I2C">
-            <legend>I²C transaction</legend>
-            <label>7-bit address (hex, 0x08–0x77) <input class="viewer-input" id="bus-address" maxlength="4" required></label>
+          <fieldset class="panel-section-body" data-bus="I2C">
+            <legend class="panel-section-head">I²C transaction</legend>
+            <label class="field"><span>7-bit address (hex, 0x08–0x77)</span><input class="viewer-input" id="bus-address" maxlength="4" required></label>
             <div id="bus-operation"></div>
-            <label>Write bytes (hex) <input class="viewer-input" id="bus-write" required></label>
-            <label>Read bytes <input class="viewer-input" id="bus-count" type="number" min="1" max="1024" value="16" required></label>
+            <label class="field"><span>Write bytes (hex)</span><input class="viewer-input" id="bus-write" required></label>
+            <label class="field"><span>Read bytes</span><input class="viewer-input" id="bus-count" type="number" min="1" max="1024" value="16" required></label>
           </fieldset>
-          <fieldset data-bus="UART" hidden disabled>
-            <legend>UART serial port</legend>
-            <p>Select this board’s ESK serial port in the browser picker.</p>
-            <label>Baud <input class="viewer-input" id="bus-baud" type="number" min="9600" max="115200" value="115200" required></label>
+          <fieldset class="panel-section-body" data-bus="UART" hidden disabled>
+            <legend class="panel-section-head">UART serial port</legend>
+            <p class="panel-note">Select this board’s ESK serial port in the browser picker.</p>
+            <label class="field"><span>Baud</span><input class="viewer-input" id="bus-baud" type="number" min="9600" max="115200" value="115200" required></label>
             <div id="bus-bits"></div>
             <div id="bus-parity"></div>
             <div id="bus-stop"></div>
             <button type="button" class="mini" id="bus-port">Open UART port</button>
-            <label>Transmit bytes (hex) <input class="viewer-input" id="bus-uart-tx" maxlength="3071"></label>
-            <label>Received bytes (latest 256) <output id="bus-uart-rx"></output></label>
+            <label class="field"><span>Transmit bytes (hex)</span><input class="viewer-input" id="bus-uart-tx" maxlength="3071"></label>
+            <label class="field"><span>Received bytes (latest 256)</span><output id="bus-uart-rx"></output></label>
           </fieldset>
-          <fieldset data-bus="SPI" hidden disabled>
-            <legend>SPI transfer · CS0</legend>
+          <fieldset class="panel-section-body" data-bus="SPI" hidden disabled>
+            <legend class="panel-section-head">SPI transfer · CS0</legend>
             <div id="bus-spi-action"></div>
             <div id="bus-mode"></div>
-            <label>Clock (Hz) <input class="viewer-input" id="bus-clock" type="number" min="100000" max="24000000" value="1000000" required></label>
-            <label>MOSI transmit bytes (hex) <input class="viewer-input" id="bus-spi-tx" required></label>
-            <label hidden>Receive length (bytes) <input class="viewer-input" id="bus-spi-count" type="number" min="1" max="1020" value="1" required disabled></label>
-            <label hidden>MOSI fill byte (hex) <input class="viewer-input" id="bus-spi-fill" maxlength="2" value="00" pattern="[0-9A-Fa-f]{2}" required disabled></label>
+            <label class="field"><span>Clock (Hz)</span><input class="viewer-input" id="bus-clock" type="number" min="100000" max="24000000" value="1000000" required></label>
+            <label class="field"><span>MOSI transmit bytes (hex)</span><input class="viewer-input" id="bus-spi-tx" required></label>
+            <label class="field" hidden><span>Receive length (bytes)</span><input class="viewer-input" id="bus-spi-count" type="number" min="1" max="1020" value="1" required disabled></label>
+            <label class="field" hidden><span>MOSI fill byte (hex)</span><input class="viewer-input" id="bus-spi-fill" maxlength="2" value="00" pattern="[0-9A-Fa-f]{2}" required disabled></label>
           </fieldset>
-          <fieldset data-bus="CAN" hidden disabled>
-            <legend>Classical CAN · standard ID</legend>
+          <fieldset class="panel-section-body" data-bus="CAN" hidden disabled>
+            <legend class="panel-section-head">Classical CAN · standard ID</legend>
             <div id="bus-can-action"></div>
             <div id="bus-bitrate"></div>
-            <label>Identifier (hex) <input class="viewer-input" id="bus-can-id" required></label>
-            <label>Data bytes (hex) <input class="viewer-input" id="bus-can-tx" maxlength="23"></label>
+            <label class="field"><span>Identifier (hex)</span><input class="viewer-input" id="bus-can-id" required></label>
+            <label class="field"><span>Data bytes (hex)</span><input class="viewer-input" id="bus-can-tx" maxlength="23"></label>
           </fieldset>
-          <fieldset data-bus="GPIO" hidden disabled>
-            <legend>GPIO outputs</legend>
+          <fieldset class="panel-section-body" data-bus="GPIO" hidden disabled>
+            <legend class="panel-section-head">GPIO outputs</legend>
             <div id="bus-gpio-action"></div>
-            <label>Output mask (hex, bits 0–6) <input class="viewer-input" id="bus-gpio-mask" maxlength="4" required></label>
-            <label>High bits (hex) <input class="viewer-input" id="bus-gpio-high" maxlength="4" value="0" required></label>
+            <label class="field"><span>Output mask (hex, bits 0–6)</span><input class="viewer-input" id="bus-gpio-mask" maxlength="4" required></label>
+            <label class="field"><span>High bits (hex)</span><input class="viewer-input" id="bus-gpio-high" maxlength="4" value="0" required></label>
           </fieldset>
-          <fieldset data-bus="PWM" hidden disabled>
-            <legend>PWM output</legend>
+          <fieldset class="panel-section-body" data-bus="PWM" hidden disabled>
+            <legend class="panel-section-head">PWM output</legend>
             <div id="bus-timer"></div>
             <div id="bus-pwm-mask"></div>
-            <label>Period (ns) <input class="viewer-input" id="bus-period" type="number" min="1" max="4294967295" value="1000000" required></label>
-            <label>Duty A (%) <input class="viewer-input" id="bus-duty-a" type="number" min="0" max="100" step="0.1" value="50" required></label>
-            <label>Duty B (%) <input class="viewer-input" id="bus-duty-b" type="number" min="0" max="100" step="0.1" value="0" required></label>
+            <label class="field"><span>Period (ns)</span><input class="viewer-input" id="bus-period" type="number" min="1" max="4294967295" value="1000000" required></label>
+            <label class="field"><span>Duty A (%)</span><input class="viewer-input" id="bus-duty-a" type="number" min="0" max="100" step="0.1" value="50" required></label>
+            <label class="field"><span>Duty B (%)</span><input class="viewer-input" id="bus-duty-b" type="number" min="0" max="100" step="0.1" value="0" required></label>
           </fieldset>
-          <button type="submit" class="mini" id="bus-run">Run transaction</button>
+          <button type="submit" class="primary" id="bus-run">Run transaction</button>
         </form>
         <button type="button" class="mini" id="bus-release" hidden>Stop and release outputs</button>
-        <p id="bridge-usb-hint" data-i18n="bridge.usbHint">Connect the application USB cable and choose Connect via USB on Home. The selected protocol must be available on the board and in this browser.</p>
         <output id="bridge-result" aria-live="polite"></output>
       </section>
     </div>
@@ -207,6 +216,14 @@
           </svg>
         </span>
         <span class="toolbar-item-label" aria-hidden="true" data-i18n="toolbar.shortStart">Capture</span>
+      </button>
+      <button id="btn-discard" class="toolbar-item" type="button" hidden data-i18n-title="rec.discard" title="Discard recording">
+        <span class="toolbar-item-media" aria-hidden="true">
+          <svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"></path>
+          </svg>
+        </span>
+        <span class="toolbar-item-label" data-i18n="rec.discardShort">Discard</span>
       </button>
       <button id="btn-open" class="toolbar-item" data-i18n-title="toolbar.openTitle" title="Load a sigrok .sr session or a .lwcap" aria-label="Open…" aria-controls="open-menu" aria-expanded="false">
         <span class="toolbar-item-media">
@@ -350,18 +367,24 @@
     </div>
 
     <aside id="bridge-dock" aria-label="xBridgeWeb" hidden></aside>
+    <output id="native-status" hidden></output>
     <form id="rec-timeline" hidden>
-      <label><span data-i18n="rec.position">Position (s)</span> <input id="rec-seconds" class="viewer-input" type="number" min="0" step="any" required></label>
-      <button class="pill" type="submit" data-i18n="rec.go">Go</button>
-      <input id="rec-slider" class="acquisition-time-slider" type="range" min="0" step="1" aria-labelledby="rec-duration">
-      <output id="rec-duration"></output>
-      <div id="rec-edge-channel"></div>
-      <button type="button" id="rec-edge-previous" class="pill">Previous edge</button>
-      <button type="button" id="rec-edge-next" class="pill">Next edge</button>
-      <button type="button" id="rec-edge-cancel" class="pill" hidden>Cancel search</button>
-      <output id="rec-edge-result"></output>
-      <small id="rec-summary"></small>
-      <span id="rec-seek-error" role="status"></span>
+      <div class="recording-position">
+        <label><span data-i18n="rec.position">Position (s)</span> <input id="rec-seconds" class="viewer-input" type="number" min="0" step="any" required></label>
+        <button class="pill" type="submit" data-i18n="rec.go">Go</button>
+        <input id="rec-slider" class="acquisition-time-slider" type="range" min="0" step="1" aria-labelledby="rec-duration">
+        <output id="rec-duration"></output>
+      </div>
+      <div class="recording-edges">
+        <div id="rec-edge-channel"></div>
+        <button type="button" id="rec-edge-previous" class="pill" aria-label="Previous edge" title="Previous edge">«</button>
+        <button type="button" id="rec-edge-next" class="pill" aria-label="Next edge" title="Next edge">»</button>
+      </div>
+      <div class="recording-feedback">
+        <output id="rec-edge-result"></output>
+        <button type="button" id="rec-edge-cancel" class="pill" hidden>Cancel search</button>
+        <span id="rec-seek-error" role="status"></span>
+      </div>
     </form>
     <div id="main">
       <div id="scroll-area">
@@ -450,35 +473,26 @@
   <input id="file-input" type="file" multiple hidden
          accept=".sr,.lwcap" />
   <script type="module" src="/src/ui/main.ts"></script>
-  <dialog id="native-recorder" class="shortcuts-dialog" aria-labelledby="native-heading">
-    <div class="shortcuts-form">
-      <header class="shortcuts-header"><h2 id="native-heading">Native USB recording</h2></header>
-      <p id="native-profile"></p>
-      <figure id="native-preview" hidden>
-        <figcaption>Live preview <span id="native-range"></span></figcaption>
-        <canvas id="native-wave" width="512" height="160" aria-label="Live digital waveforms"></canvas>
-      </figure>
-      <div><button id="native-record" class="primary">Record</button> <button id="native-stop" class="danger" disabled>Stop</button></div>
-      <div id="native-library">
-        <div id="native-archive"></div>
-        <button id="native-reopen" class="pill">Reopen</button>
-        <button id="native-delete" class="pill">Delete recording</button>
-        <p id="native-storage"></p>
-      </div>
-      <output id="native-status" role="status"></output>
-      <footer class="shortcuts-actions"><button id="native-close" class="shortcuts-close">Close</button></footer>
-    </div>
-  </dialog>
   <dialog id="esk-recorder" class="shortcuts-dialog" aria-labelledby="rec-heading">
     <div class="shortcuts-form esk-record-controls">
-      <header class="shortcuts-header"><h2 id="rec-heading" data-i18n="rec.title">Recording from a saved session</h2></header>
-      <label><span data-i18n="rec.source">Source (.sr, 8 digital channels)</span><input type="file" id="rec-source" accept=".sr"></label>
+      <header class="shortcuts-header"><h2 id="rec-heading" data-i18n="rec.title">Saved recordings…</h2></header>
+      <div id="rec-library" class="panel-section-body">
+        <div id="rec-archive"></div>
+        <label><span data-i18n="rec.first">First sample</span><input id="rec-first" class="viewer-input" type="number" value="0" min="0" step="1" required></label>
+        <div><button id="rec-reopen" class="pill" data-i18n="rec.reopen">Reopen</button> <button id="rec-delete" class="pill" data-i18n="rec.delete">Delete</button></div>
+        <small id="rec-storage"></small>
+      </div>
+      <details id="rec-import">
+        <summary data-i18n="rec.import">Import a .sr session</summary>
+        <div class="panel-section-body">
+          <label><span data-i18n="rec.source">Source (.sr, 8 digital channels)</span><input type="file" id="rec-source" accept=".sr"></label>
+          <label><span data-i18n="rec.limit">Recording limit (MiB, optional)</span><input type="number" min="1" step="1" id="rec-limit" class="viewer-input"></label>
+          <button id="rec-record" class="primary" data-i18n="rec.record">Record</button>
+        </div>
+      </details>
       <p id="rec-rate" data-i18n="rec.fixedRate" hidden>Continuous USB sample rate · 41.67 MS/s</p>
-      <label><span data-i18n="rec.limit">Recording limit (MiB, optional)</span><input type="number" min="1" step="1" id="rec-limit" class="viewer-input"></label>
-      <div><button id="rec-record" class="primary" data-i18n="rec.record">Record</button> <button id="rec-stop" class="danger" data-i18n="rec.stop">Stop</button></div>
-      <div id="rec-archive"></div>
-      <label><span data-i18n="rec.first">First sample</span><input id="rec-first" class="viewer-input" type="number" value="0" min="0" step="1" required></label>
-      <div><button id="rec-reopen" class="pill" data-i18n="rec.reopen">Reopen</button> <button id="rec-delete" class="pill" data-i18n="rec.delete">Delete</button></div>
+      <div><button id="rec-stop" class="danger" data-i18n="rec.stop" hidden>Stop</button></div>
+      <output id="rec-warnings" role="status"></output>
       <output id="rec-status" role="status"></output>
       <footer class="shortcuts-actions"><button id="rec-close" class="shortcuts-close" data-i18n="settings.close">Close</button></footer>
     </div>

@@ -35,7 +35,7 @@ function check(name: string, ok: boolean, detail = ''): void {
   }
 }
 
-const app = fs.readFileSync('src/ui/app.ts', 'utf8');
+const app = fs.readFileSync('src/ui/app.ts', 'utf8').replace(/\r\n/g, '\n');
 const html = fs.readFileSync('index.html', 'utf8');
 const css = fs.readFileSync('src/ui/style.css', 'utf8');
 
@@ -69,16 +69,17 @@ const css = fs.readFileSync('src/ui/style.css', 'utf8');
     ['fr', fr, /\(ou glissez-le ici\)/],
     ['ru', ru, /\(или перетащите его сюда\)/],
   ];
-  const keys = ['emptyHint.line2', 'emptyHint.line2Connected', 'emptyHint.line2NoUsb'] as const;
   const missing: string[] = [];
   for (const [name, m, re] of drag) {
-    for (const k of keys) if (!re.test(m[k])) missing.push(`${name}:${k}`);
+    if (!re.test(m['emptyHint.line2Connected'])) missing.push(`${name}:drag`);
+    if (!m['emptyHint.line2'].includes('.sr') || !m['emptyHint.line2'].includes('.lwcap') ||
+        !m['emptyHint.line2NoUsb'].includes('IP')) missing.push(`${name}:ESK open`);
     if (!m['drop.overlay'].includes('.sr') || !m['drop.overlay'].includes('.lwcap')) {
       missing.push(`${name}:drop.overlay`);
     }
     if (name !== 'en' && m['drop.overlay'] === en['drop.overlay']) missing.push(`${name}:untranslated`);
   }
-  check('every empty-hint variant says files can be dragged in, in all four locales',
+  check('empty hints cover ESK file open, board IP and connected drag-and-drop in all four locales',
     missing.length === 0, missing.join(', '));
   check('the connected hint still carries {device}; the no-USB hint still never says connect',
     [en, zhCN, fr, ru].every((m) => m['emptyHint.line2Connected'].includes('{device}')) &&
@@ -152,7 +153,12 @@ async function confirmDialogChecks(): Promise<void> {
     opened && safeFocus && yesAnswer && !host().open && doc.activeElement === invoker,
     `opened=${opened}, focus=${safeFocus}, answer=${yesAnswer}, open=${host().open}`);
 
+  const choice = dialog.choose(text, invoker as unknown as HTMLElement, 'Save');
+  const save = byText(host(), 'Save')[0]!;
+  save.click();
+  check('Save resolves independently of discard', await choice === 'alternative', 'Save choice');
   const no = dialog.ask(text, invoker as unknown as HTMLElement);
+  check('ordinary confirmations hide the optional action', save.hidden, 'optional action visibility');
   byText(host(), 'Keep')[0]!.click();
   const escape = dialog.ask(text, invoker as unknown as HTMLElement);
   const cancelEvent = fakeEvent('cancel');
@@ -178,8 +184,8 @@ async function confirmDialogChecks(): Promise<void> {
 
   const openBody = app.split('private async openFiles(files: File[], confirmed = false): Promise<void> {')[1]
     ?.split('\n  }\n')[0] ?? '';
-  const openGuard = openBody.trimStart().startsWith(
-    'if (!confirmed && !(await this.confirmDiscardCapture())) return;');
+  const ask = openBody.indexOf('if (!confirmed && !(await this.confirmDiscardCapture())) return;');
+  const openGuard = ask >= 0 && ask < openBody.indexOf('await loadFiles(files)');
   // Open is a two-row menu now; its "Open file..." entry routes through pickFiles, which
   // asks before the chooser opens. The example entry is guarded inside openFiles instead.
   const button = app.includes('this.openMenu.toggle(this.openItems());') &&
@@ -194,7 +200,7 @@ async function confirmDialogChecks(): Promise<void> {
     openGuard && button && pick && dropOpens,
     `open=${openGuard}, button=${button}, pick=${pick}, drop=${dropOpens}`);
 
-  const saveBody = app.split('private async save(format: CaptureFileFormat): Promise<void> {')[1]
+  const saveBody = app.split('private async save(format: CaptureFileFormat')[1]
     ?.split('\n  }\n')[0] ?? '';
   const savedMarks = saveBody.split('this.noteCaptureSaved(store, savedLength);').length - 1;
   const guard = app.includes("window.addEventListener('beforeunload', this.unloadGuard);") &&

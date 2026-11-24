@@ -11,8 +11,8 @@
  * flag clears without a separate reset. While unsaved, the page asks before unload and
  * before Open/drag-drop replaces the capture.
  *
- * Not guarded (deliberately, for now): starting a new capture over an unsaved one. Start
- * is the primary action and is pressed repeatedly; a confirm there would be noise.
+ * The ESK Capture command also resolves the previous acquisition's retention before
+ * starting another. Archived recordings use their full recording identity for that choice.
  */
 
 import type { SampleStore } from '../data/types.js';

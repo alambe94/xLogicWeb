@@ -74,20 +74,33 @@ consent. The board loads that viewer from GitHub Pages.
 
 Choose the rate and sample count in Logic, then press **Capture** once. The waveform opens when the
 requested count is reached, or when you press **Stop**. Counts above 65,536 and
-**Until stopped** use the native recorder. **Open → Native USB recording…**
-also lets you record a shorter trace or reopen a saved one after restarting.
+**Until stopped** use the native recorder. Choose **Open → Saved recordings…**
+to reopen a trace after restarting. The same list includes recordings saved in
+this browser profile at this viewer address.
 
 The recorder writes raw samples directly to the SSD. After recording, the viewer
 reads up to 65,536 samples at a time as you move the slider. Four-channel captures
-store two samples per byte. During capture, **Live preview** shows the latest
-written window, refreshed about four times a second while the tab is visible.
-A short pulse between preview windows can still be inspected in the saved trace.
+store two samples per byte. With the current native USB helper, capture starts
+on a two-second time ruler. Activity fills from the left for 1.5 seconds, then
+scrolls with one quarter of the plot ahead of the newest summarized samples.
+A horizontal line means the channel held its level throughout that interval.
+A band means both levels occurred. Each summary includes every recorded sample.
+Stop freezes the overview. Choose **Discard** beside **Capture** to delete the
+displayed recording after inspection. Scroll up over activity to zoom around the pointer,
+or click it to inspect the original samples immediately. Older native helpers
+use the rolling raw-sample preview.
+Starting the next capture offers **Save**, **Discard** and **Cancel**. Save
+keeps the full native recording in **Saved recordings**. Discard frees its
+space before acquisition. Cancel keeps the waveform open for inspection.
 Press **Stop** to inspect the recording, select an **Edge channel**, and use
-**Previous edge** or **Next edge** to center the waveform on a transition.
-The archive has a cumulative 16 GiB limit. **Open → Native USB recording…**
-shows free space and each trace's size. Use **Delete recording** to reclaim space.
-The timeline reports whether the recorder
-verified the hardware end of the stream. With the current SK-AM64B application,
+**Previous edge** or **Next edge** to highlight a transition at the current zoom.
+The guide labels the channel and direction and marks the edge on its waveform.
+For **Until stopped**, the native recorder uses the free space on the recording
+drive at capture start and reserves 1 MiB for metadata. A requested sample count
+must fit in that space. **Open → Saved recordings…** shows available space,
+any configured archive quota and each trace's size. Use **Delete recording** to reclaim space.
+Hover over the recording duration to read the recorder's completion note.
+With the current SK-AM64B application,
 Stop can leave additional samples on the board or in pending USB reads. A
 count-limited recording can still contain the full requested sample count.
 
@@ -98,6 +111,8 @@ and a compatible Windows recorder on a machine with the ESK application USB conn
 py -3 dev/esk_native.py --dist dist --recorder C:\ESK\xlogic_capture.exe --store D:\ESK\recordings
 ```
 
+Use `--archive-limit-gib 8` to share a test drive with other tools and limit
+the entire recording archive to 8 GiB. Omit it to use the available drive space.
 Use `--serial SERIAL` to select a particular board. The hosted viewer continues
 to offer WebUSB and Ethernet. The optional PulseView client and sigrok-cli share a Windows ZIP
 on the [PulseView fork's releases page](https://github.com/alambe94/pulseview/releases/tag/xsdk-bundle-22).
@@ -120,7 +135,7 @@ and the xSDK host tools. The phone only needs a browser on the same network.
 python dev/esk_lan.py --dist dist --xsdk /path/to/xSDK --bind <host-lan-ip> --locator tcp://<board-ip>:5555 --device-id <board-device-id> --board sk-am64b
 ```
 
-Open the printed `/esk.html` URL and choose **Open → Capture from ESK Ethernet…**.
+Open the printed `/esk.html` URL and choose **Capture**.
 Each request acquires a new eight-channel record using the board's TCP service.
 The capture title includes the board timestamp in ticks. Acquisition uses the
 same finite profile as USB. The bridge releases the board after each request.
@@ -128,19 +143,19 @@ Anyone who can open the bridge on the LAN can request a capture.
 
 ### Open from the board
 
-On current firmware, open the board IP to see xEskWeb Home in one tab. Select **Connect device** to read its identity and features. Choose **xLogicWeb** and then **Open → Capture from ESK Ethernet…** for a waveform. Returning to Home preserves the capture. The board handles local WebSocket requests and the viewer loads from GitHub Pages. If the viewer is unavailable, reconnect to the Internet and select **Retry**. Firmware with the older **Open xEskWeb** button continues to pair through its launcher tab. For USB, open the hosted viewer directly.
+On current firmware, open the board IP to see xEskWeb Home in one tab. Select **Connect device** to read its identity and features. Choose **xLogicWeb** and then **Capture** for a waveform. Returning to Home preserves the capture. The board handles local WebSocket requests and the viewer loads from GitHub Pages. If the viewer is unavailable, reconnect to the Internet and select **Retry**. Firmware with the older **Open xEskWeb** button continues to pair through its launcher tab. For USB, open the hosted viewer directly.
 
 ### Board-origin viewer
 
-When the full viewer files are served at the board's numeric HTTP origin, open the viewer with `?esk=board` and choose **Open → Capture from ESK Ethernet…**. It uses the board's existing `/control.mjs` and `/finite.mjs` and its same-origin `/api/capture` WebSocket. Each capture acquires and releases LOGIC/0. The current small firmware dashboard does not include the full viewer files. Opening the public Pages site alone does not enable Ethernet capture against a board IP.
+When the full viewer files are served at the board's numeric HTTP origin, open the viewer with `?esk=board` and choose **Capture**. It uses the board's existing `/control.mjs` and `/finite.mjs` and its same-origin `/api/capture` WebSocket. Each capture acquires and releases LOGIC/0. The current small firmware dashboard does not include the full viewer files. Opening the public Pages site alone does not enable Ethernet capture against a board IP.
 
 ## Record and reopen ESK logic
 
-For live eight-channel recording, open the HTTPS viewer directly in desktop Chrome, enter Logic and select **Open → Record live ESK USB (41.67 MS/s)**. Set an optional recording limit in MiB, select **Record** and choose your xESK device. **Stop** ends acquisition and finishes pending disk writes. The status shows saved samples and the additional samples transmitted at the stop boundary. A storage backlog or device error ends recording and reports the failure. You can reopen the committed prefix.
+For live eight-channel recording, open the HTTPS viewer directly in desktop Chrome, enter Logic, choose the rate and sample count or **Until stopped**, press **Capture** and choose your xESK device. **Stop** ends acquisition and finishes pending disk writes. The status shows saved samples and the additional samples transmitted at the stop boundary. A storage backlog or device error ends recording and reports the failure. You can reopen the committed prefix.
 
-Open the HTTPS viewer directly, enter Logic and select **Open → Recording from a saved session**. Choose an eight-channel sigrok `.sr` file, optionally set a recording limit in MiB, and select **Record**. Replay follows the file's sample rate and can slow down while browser storage drains. The Logic display shows up to the latest 65,536 samples. **Stop** finishes pending writes.
+Open the HTTPS viewer directly, enter Logic and select **Open → Saved recordings… → Import a .sr session**. Choose an eight-channel sigrok `.sr` file, optionally set a recording limit in MiB, and select **Record**. Replay follows the file's sample rate and can slow down while browser storage drains. The Logic display shows up to the latest 65,536 samples. **Stop** finishes pending writes.
 
-To inspect saved data, choose the recording, enter a zero-based first sample and select **Reopen**. Close the recording controls to inspect that window in Logic. Recordings occupy local browser storage for this site and profile until you delete them or clear site data. Live USB and Ethernet capture use their existing menu actions.
+To inspect saved data, choose the recording, enter a zero-based first sample and select **Reopen**. Close the recording controls to inspect that window in Logic. Recordings occupy local browser storage for this site and profile until you delete them or clear site data.
 
 ## Features
 

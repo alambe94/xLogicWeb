@@ -234,11 +234,27 @@ export function srExportParts(
   if (probes.length < 1 || probes.length > SR_MAX_PROBES) {
     throw new DiagnosticError('io.srProbes', { probes: probes.length, max: SR_MAX_PROBES });
   }
-  return zipParts(srSnapshot(store, probes), srMetadata(probes, store.samplerate), options);
+  return zipParts(srSampleChunks(srSnapshot(store, probes), options.chunkBytes), srMetadata(probes, store.samplerate), options);
+}
+
+/** Ethernet archives contain all eight digital channels as one byte per sample. */
+export function ethernetSrParts(
+  archive: { samples: number; read(start: number, end: number): Promise<Uint8Array> },
+  names: string[], rate: number, modified: LocalDateParts,
+): AsyncGenerator<Uint8Array<ArrayBuffer>> {
+  async function* chunks() {
+    for (let start = 0; start < archive.samples; start += SR_DEFAULT_CHUNK_BYTES) {
+      const end = Math.min(start + SR_DEFAULT_CHUNK_BYTES, archive.samples);
+      const bytes = await archive.read(start, end);
+      if (bytes.length !== end - start) throw new Error('Incomplete Ethernet recording');
+      yield new Uint8Array(bytes);
+    }
+  }
+  return zipParts(chunks(), srMetadata(names.map((name, index) => ({name, index})), rate), {modified});
 }
 
 async function* zipParts(
-  snap: SrSnapshot, metadata: string, options: SrExportOptions,
+  chunks: Iterable<Uint8Array<ArrayBuffer>> | AsyncIterable<Uint8Array<ArrayBuffer>>, metadata: string, options: SrExportOptions,
 ): AsyncGenerator<Uint8Array<ArrayBuffer>> {
   const want = options.compression ?? 'auto';
   const deflate = want === 'deflate' ||
@@ -279,7 +295,7 @@ async function* zipParts(
   yield* member('version', enc.encode('2'), false);
   yield* member('metadata', enc.encode(metadata), deflate);
   let pack = 1;
-  for (const chunk of srSampleChunks(snap, options.chunkBytes)) {
+  for await (const chunk of chunks) {
     yield* member(`logic-1-${pack++}`, chunk, deflate);
   }
   if (central.length > 0xffff) throw new DiagnosticError('io.srTooLarge');

@@ -22,7 +22,7 @@ import type { ChannelCount } from '../../types.js';
 import { diagnosticOf } from '../../diagnostics.js';
 import { openEskReplay, parseSr } from '../srLoad.js';
 import {
-  saveSr, srExportParts, srMetadata, srProbeName, srSamplerateString, type SrProbe,
+  ethernetSrParts, saveSr, srExportParts, srMetadata, srProbeName, srSamplerateString, type SrProbe,
 } from '../srSave.js';
 import {
   captureFileName, fileBaseName, formatForFileName, localDateParts, rateToken, saveFilePickerTypes,
@@ -157,6 +157,19 @@ async function main(): Promise<void> {
       for await (const _part of bad.blocks()) { /* exhaust the member and check its CRC */ }
     } catch (error) { rejected = String(error).includes('checksum'); }
     check('replay rejects a wrong ' + compression + ' member checksum', rejected);
+  }
+  {
+    const boundary = 4 * 1024 * 1024;
+    const archive = { samples: boundary + 17, read: async (start: number, end: number) =>
+      new Uint8Array(end - start).fill(start ? 0x80 : 0x01) };
+    const parts: BlobPart[] = [];
+    for await (const part of ethernetSrParts(archive, Array.from({length: 8}, (_, i) => 'D' + i),
+        333333333, localDateParts(new Date()))) parts.push(part);
+    const files = members(await new Blob(parts).arrayBuffer());
+    const first = files.get('logic-1-1')!.data, last = files.get('logic-1-2')!.data;
+    check('saving an Ethernet recording writes every channel across the full archive',
+      first.length === boundary && first.every(v => v === 1) && last.length === 17 && last.every(v => v === 128) &&
+      new TextDecoder().decode(files.get('metadata')!.data).includes('probe8=D7'));
   }
   // ------------------------------------------------------------ metadata
   check('samplerate strings use whole units', [16e6, 1.5e6, 100, 1e9, 250e3]

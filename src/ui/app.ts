@@ -10,7 +10,7 @@
  */
 
 import {
-  appendLostSamples, createSampleStore, MAX_SOFTWARE_TRIGGER_PREFIX_BYTES,
+  appendLostSamples, createSampleStore, MAX_SOFTWARE_TRIGGER_PREFIX_BYTES, PlanarSampleStore,
 } from '../data/index.js';
 import { DROP_FRONT_QUANTUM, type SampleStore } from '../data/types.js';
 import {
@@ -102,7 +102,7 @@ const SAVE_PROGRESS_MIN_BYTES = 8 << 20;
 import {
   captureFileName, formatForFileName, localDateParts, saveFilePickerTypes, type CaptureFileFormat,
 } from './captureFileName.js';
-import { srExportParts, type SrProbe } from './srSave.js';
+import { ethernetSrParts, srExportParts, type SrProbe } from './srSave.js';
 import { csvExportParts, vcdExportParts } from './textExport.js';
 import { FileDragDepth, SavedCaptures, captureUnsaved } from './fileGuards.js';
 import { selectControl } from './select.js';
@@ -148,8 +148,10 @@ import {
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
-import { showEskRecorder } from './eskRecorder.js';
-import { nativeRecorderAvailable, showNativeRecorder } from './eskNativeRecorder.js';
+import { RecordingActivity } from './recordingActivity.js';
+import { deletionPrompt, displaySamples, removeStoredRecording, showEskRecorder, type SavedRecording } from './eskRecorder.js';
+import { nativeRecorderAvailable } from './nativeArchive.js';
+import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { boardCaptureMaximum, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
@@ -500,13 +502,28 @@ export class App {
     key: string; store: SampleStore; job: CaptureRangeJob; sources: CaptureJobSource[];
   } | null = null;
   private captureSessionId = 0;
-  private recordingTimeline = new RecordingTimeline();
+  private recordingActivity: RecordingActivity | undefined;
+  private discardingRecording = false;
+  private readonly recordingsAwaitingChoice = new WeakSet<SavedRecording>();
+  private recordingTimeline = new RecordingTimeline(() => { this.dirty = true; }, () => this.dismissRecordingActivity());
+
+  private dismissRecordingActivity(): void {
+    if (!this.recordingActivity) return;
+    this.recordingActivity.dispose();
+    this.recordingActivity = undefined;
+    this.stack.zoomToFit();
+    this.dirty = true;
+  }
+  private nativePreviewStart: number | null = null;
   private eskRate = ESK_RATE;
   private eskBank: EskBank = 'lower';
+  private displayedEskBank: EskBank | undefined;
+  private selectedRowBank: EskBank | undefined;
   private eskCountText = String(ESK_SAMPLES);
   private eskUntilStop = false;
   private eskLanCount = String(ESK_SAMPLES);
   private eskCapturePending = false;
+  private stopNativeRecording: (() => void) | undefined;
   private eskEdge: 'none' | 'rising' | 'falling' = 'none';
   private eskTriggerChannel = 0;
   private eskPrePercent = 50;
@@ -814,7 +831,7 @@ export class App {
     channelList: HTMLDivElement; side: HTMLDivElement;
     interactionBar: HTMLDivElement; interactionArea: HTMLSpanElement;
     interactionHints: HTMLUListElement;
-    hint: HTMLDivElement; transport: HTMLButtonElement;
+    hint: HTMLDivElement; transport: HTMLButtonElement; discard: HTMLButtonElement;
     connect: HTMLButtonElement; open: HTMLButtonElement; save: HTMLButtonElement;
     fullscreen: HTMLButtonElement; settings: HTMLButtonElement;
     corner: HTMLDivElement; cornerSummary: HTMLButtonElement; cornerSummaryText: HTMLSpanElement;
@@ -848,6 +865,7 @@ export class App {
       interactionHints: must<HTMLUListElement>('interaction-hints'),
       hint: must<HTMLDivElement>('empty-hint'),
       transport: must<HTMLButtonElement>('transport'),
+      discard: must<HTMLButtonElement>('btn-discard'),
       connect: must<HTMLButtonElement>('btn-connect'),
       open: must<HTMLButtonElement>('btn-open'),
       save: must<HTMLButtonElement>('btn-save'),
@@ -903,8 +921,9 @@ export class App {
       this.quickScroll = workspace.quickScroll !== false;
       this.analogLayout = workspace.analogLayout === 'merged' ? 'merged' : 'stacked';
       this.developerTools = workspace.developerTools === true;
-      this.channels = (workspace.channels ?? defaultChannels(ESK_CHANNELS)).map((channel, index) => ({ ...channel, index }));
-      this.order = workspace.order ?? this.channels.map((channel) => channel.index);
+      const saved = workspace.channels ?? [];
+      this.channels = carryChannelState(saved, Math.max(ESK_CHANNELS, saved.length));
+      this.order = restoreOrder(workspace.order, this.channels.length);
       this.busViews = (workspace.busViews ?? []).map((config, id) => ({
         ...cloneBusConfig(config), id: `bus-${id}`, builder: null, builtFor: null, cache: null,
       }));
@@ -1086,7 +1105,27 @@ export class App {
    */
   private visibleChannels(): ChannelState[] {
     const hidden = new Set(this.busViews.filter((b) => b.hideSources).flatMap((b) => b.spec.bits));
-    return this.enabledChannels().filter((c) => !hidden.has(c.index));
+    return this.order.map(i => this.channels[i]!).filter(c =>
+      this.channelAvailable(c.index) && this.rowSelected(c) && !hidden.has(c.index));
+  }
+
+  // The upper bank stores D4–D7 at bits 0–3. Swapping the two groups maps both
+  // from storage to physical channel and back; the other four rows have no samples.
+  private physicalChannel(index: number): number {
+    return this.displayedEskBank === 'upper' ? index ^ 4 : index;
+  }
+
+  private rowSelected(c: ChannelState): boolean {
+    if (!this.selectedRowBank) return c.enabled;
+    return Math.floor(this.physicalChannel(c.index) / 4) === (this.selectedRowBank === 'upper' ? 1 : 0);
+  }
+
+  private updateEskBankView(): void {
+    if (this.captureLabel.kind === 'none' || this.captureOrigin.model === 'ESK xLOGIC') {
+      this.selectedRowBank = this.eskRate === ESK_PACKED_RATE ? this.eskBank : undefined;
+      this.relayout();
+    }
+    this.renderSidebarContent();
   }
 
   /**
@@ -1109,7 +1148,7 @@ export class App {
     const hidden = new Set(this.busViews.filter((b) => b.hideSources).flatMap((b) => b.spec.bits));
     const width = this.renderChannelCount();
     const rows = this.order.map((i) => this.channels[i]!).filter((c) =>
-      c.enabled && !hidden.has(c.index) && c.index < width &&
+      this.rowSelected(c) && !hidden.has(c.index) && c.index < width &&
       (this.channelAvailable(c.index) || c.index >= this.store.channelCount));
     if (!this.hideIdleChannels || this.running || this.stopping || this.store.length === 0) {
       return { shown: rows, hidden: 0 };
@@ -1167,6 +1206,7 @@ export class App {
   }
 
   private displayChannelCount(): number {
+    if (!this.device && this.captureLabel.kind === 'none') return ESK_CHANNELS;
     return this.loadedCapture() ? this.channels.length : this.settings.channels;
   }
 
@@ -4086,6 +4126,7 @@ export class App {
         : { kind: 'blank', channel: 0, shows: c.index, heightCss: base });
       cells.push({
         channel: c,
+        physicalIndex: this.physicalChannel(c.index),
         heightCss: base + mine.length * ROWS.laneHeight,
         laneCss: mine.length * ROWS.laneHeight,
         lanes: mine.map((l) => this.laneLabel(l)),
@@ -4247,6 +4288,7 @@ export class App {
   private frame = (): void => {
     requestAnimationFrame(this.frame);
     const now = performance.now();
+    if (this.recordingActivity?.advance(now)) this.dirty = true;
     if (this.advanceQuickScroll(now)) this.dirty = true;
     const highRateLoop = this.running && this.captureIsLoop &&
       this.store.samplerate * bytesPerSampleForChannels(this.store.channelCount) >= LOOP_BUILD_SUSPEND_BYTES_PER_SEC;
@@ -4479,6 +4521,29 @@ export class App {
     this.releaseRepeatHold();
     this.applySessionView();
     this.applyTriggerViewAnchor(rescaled);
+    if (this.recordingActivity) {
+      const { start, span } = this.recordingActivity, rate = this.store.samplerate;
+      this.stack.restoreViewport(start, start + span);
+      const width = this.el.plot.clientWidth;
+      const ticks = computeTicks(start / rate * 1e12, (start + span) / rate * 1e12,
+        width, rate, AXIS.minTickSpacing, this.axisLabelMetrics);
+      this.drawAxisCanvas(ticks, width);
+      this.overlay.syncSize(width, this.el.plot.clientHeight);
+      this.overlay.beginFrame({ grid: true, top: true });
+      this.overlay.drawGrid(ticks);
+      for (const box of this.stack.boxes()) {
+        if (box.spec.kind === 'blank') this.overlay.drawBlankRow(box.top, box.band, t('plot.notCaptured'));
+      }
+      this.recordingActivity.draw(this.stack.boxes(), this.channels.map(ch => ch.color));
+      this.renderCorner();
+      this.layerFingerprint = null;
+      return;
+    } else if (this.nativePreviewStart !== null) {
+      // Fill from sample zero, then scroll the confirmed tail at the user's scale.
+      const span = Math.min(this.stack.view.span, displaySamples);
+      const end = Math.max(this.captureStore.length, span);
+      this.stack.restoreViewport(end - span, end);
+    }
     // The policy is resolved: only a Fixed Repeat viewport needs the previous wave as a
     // second layer. Doing this after the resolve keeps FollowLive off the composite.
     this.updateRepeatDisplay();
@@ -4579,6 +4644,17 @@ export class App {
       const liveAt = this.repeatShowingFront ? null : this.captureStore.length;
       if (this.running && liveAt !== null && liveAt > 0) {
         this.overlay.drawLiveEdge(this.toPx(liveAt));
+      }
+      if (this.nativePreviewStart !== null) {
+        this.overlay.drawRecordingGuide(Math.min(this.toPx(this.captureStore.length), wCss - 1), 'Live');
+      } else if (this.recordingTimeline.edge) {
+        const { sample, channel, bit } = this.recordingTimeline.edge;
+        const local = sample - this.recordingTimeline.windowStart;
+        if (local >= 0 && local < this.captureStore.length) {
+          const row = boxes.find(box => box.spec.kind === 'channel' && box.spec.channel === bit);
+          const label = 'D' + channel + (this.captureStore.sampleAt(bit, local) ? ' ↑' : ' ↓');
+          this.overlay.drawRecordingGuide(this.toPx(local), label, row && row.top + row.band / 2);
+        }
       }
       for (const cursor of this.cursors) cursor.marker.draw(this.overlay, (sample) => this.toPx(sample));
       if (this.hover) this.overlay.drawHover(this.hover);
@@ -6070,7 +6146,8 @@ export class App {
 
   /** The displayed store's T: the current wave's trigger, or the held old wave's T. */
   private displayOriginSample(): number {
-    return this.displayTriggerSample() ?? 0;
+    if (this.recordingActivity) return 0;
+    return this.displayTriggerSample() ?? -(this.nativePreviewStart ?? this.recordingTimeline.windowStart);
   }
 
   /**
@@ -6305,6 +6382,7 @@ export class App {
       this.deviceMenu.toggle(this.deviceMenuItems());
     });
     this.el.transport.addEventListener('click', () => this.primaryAction());
+    this.el.discard.addEventListener('click', () => void this.discardDisplayedRecording());
     must<HTMLButtonElement>('btn-open').addEventListener('click', () => {
       this.channelList.closeDialog();
       this.menuStack.closeOthers(this.openMenu, 'outside');
@@ -6949,7 +7027,7 @@ export class App {
           this.eskBank = 'lower';
           this.eskTriggerChannel %= 4;
         }
-        this.renderSidebarContent();
+        this.updateEskBankView();
       });
       const samplesLabel = document.createElement('label');
       samplesLabel.textContent = t('esk.samples');
@@ -7049,16 +7127,17 @@ export class App {
             if (!input.checked) return;
             this.eskBank = bank;
             this.eskTriggerChannel = this.eskTriggerChannel % 4 + (bank === 'upper' ? 4 : 0);
-            this.renderSidebarContent();
+            this.updateEskBankView();
           };
           label.append(input, bank === 'lower' ? 'D0–D3' : 'D4–D7');
           choices.append(label);
         }
       } else {
         choices.className = 'chip-grid channel-bank-grid';
-        for (const ch of this.channels.slice(0, this.displayChannelCount())) {
-          const chip = channelChip(ch, (index, enabled) => this.setChannelEnabled(index, enabled));
-          chip.id = 'esk-channel-' + ch.index;
+        for (let physical = 0; physical < Math.min(this.channels.length, this.displayChannelCount()); physical++) {
+          const ch = this.channels[this.physicalChannel(physical)]!;
+          const chip = channelChip({...ch, index: physical}, (_, enabled) => this.setChannelEnabled(ch.index, enabled));
+          chip.id = 'esk-channel-' + physical;
           choices.append(chip);
         }
       }
@@ -7145,6 +7224,8 @@ export class App {
 
 
   private primaryAction(): void {
+    if (this.stopNativeRecording) { this.stopNativeRecording(); return; }
+    if (this.eskCapturePending && !this.eskArmed) return;
     if (this.eskArmed) {
       this.eskArmed.abort();
       this.renderToolbarState();
@@ -7187,7 +7268,10 @@ export class App {
     // Start/stop, open and save all re-render the toolbar: the unload guard follows them.
     this.syncUnloadGuard();
     const repeatPending = this.repeatTimer.pending;
-    const showStop = this.running || repeatPending || !!this.eskArmed;
+    const showStop = this.running || repeatPending || !!this.eskArmed || !!this.stopNativeRecording;
+    this.el.discard.hidden = showStop || this.stopping || this.eskCapturePending ||
+      (!this.recordingTimeline.current && this.captureLabel.kind !== 'esk');
+    this.el.discard.disabled = this.discardingRecording;
     this.renderDeviceCommand();
     this.el.open.setAttribute('aria-label', t('toolbar.open'));
     this.el.save.setAttribute('aria-label', t('toolbar.save'));
@@ -7233,9 +7317,10 @@ export class App {
     const cap = this.captureStore;
     const shown = this.store;
     const view = this.stack.view;
+    const samples = this.recordingActivity?.end ?? cap.length;
     const next = cornerView(
-      cap.length > 0
-        ? { samples: cap.length, samplerate: cap.samplerate, channels: cap.channelCount } : null,
+      samples > 0
+        ? { samples, samplerate: cap.samplerate, channels: cap.channelCount } : null,
       { storeSamples: shown.length, spanSamples: view.end - view.start, samplerate: shown.samplerate },
     );
     const last = this.renderedCorner;
@@ -7625,6 +7710,7 @@ export class App {
 
   /** `confirmed`: the caller already asked (Open button) before the chooser opened. */
   private async openFiles(files: File[], confirmed = false): Promise<void> {
+    if (this.eskCapturePending) return;
     if (!confirmed && !(await this.confirmDiscardCapture())) return;
     try {
       this.statusError = null;
@@ -7638,6 +7724,7 @@ export class App {
       this.endPendingRepeatSession();
       const t0 = performance.now();
       const cap = await loadFiles(files);
+      if (this.eskCapturePending) return;
       if (this.running) await this.stopCapture('manual');
       if (this.stopPending) await this.stopPending;
       this.endPendingRepeatSession();
@@ -7678,7 +7765,8 @@ export class App {
     this.dirty = true;
   }
 
-  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false, keepVisibility = label.kind === 'esk'): void {
+  private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false, keepVisibility = label.kind === 'esk', preview = false, packedBank?: EskBank): void {
+    const previousView = this.stack.viewport;
     if (!sameRecording) this.recordingTimeline.clear();
     this.stopQuickScroll();
     this.repeatTimer.cancel();
@@ -7697,11 +7785,20 @@ export class App {
     // the one already set aside, never the previous file's rows.
     if (!this.loadedCapture()) this.deviceLayout = { channels: this.channels, order: this.order };
     if (!sameRecording) {
-      const enabled = keepVisibility && this.displayChannelCount() === ESK_CHANNELS
-        ? this.channels.slice(0, ESK_CHANNELS).map(channel => channel.enabled) : [];
-      this.channels = defaultChannels(store.channelCount);
-      if (enabled.some(Boolean)) this.channels.forEach((channel, index) => { channel.enabled = enabled[index]!; });
-      this.order = this.channels.map((c) => c.index);
+      const enabled = (keepVisibility || packedBank) && this.channels.length === ESK_CHANNELS
+        ? this.channels.map((_, physical) => this.channels[this.physicalChannel(physical)]!.enabled) : [];
+      const restoreVisibility = enabled.some(Boolean);
+      this.displayedEskBank = this.selectedRowBank = packedBank;
+      this.channels = defaultChannels(packedBank ? ESK_CHANNELS : store.channelCount);
+      this.order = this.channels.map((_, physical) => this.physicalChannel(physical));
+      for (const channel of this.channels) {
+        const physical = this.physicalChannel(channel.index);
+        if (packedBank) {
+          channel.name = defaultChannelName(physical);
+          channel.color = channelColor(physical);
+        }
+        if (restoreVisibility) channel.enabled = enabled[physical]!;
+      }
     }
     for (let i = 0; i < names.length && i < this.channels.length; i++) {
       // Keep real names ("SDA"); drop auto-generated ones that would just repeat the
@@ -7748,14 +7845,15 @@ export class App {
     this.reconcileEdgeChannels();
     this.persistWorkspace();
     this.relayout();
-    this.stack.zoomToFit();
+    if (sameRecording) this.stack.setViewport(previousView.start, previousView.end);
+    else this.stack.zoomToFit();
     this.renderPanels();
     this.dirty = true;
-    this.scheduleAutoDecode();
+    if (!preview) this.scheduleAutoDecode();
   }
 
   private async openEskCapture(transport: 'usb' | 'ethernet'): Promise<void> {
-    if (this.eskCapturePending || this.running || this.stopping) return;
+    if (this.eskCapturePending || this.discardingRecording || this.running || this.stopping) return;
     const lan = transport === 'ethernet';
     const max = lan ? boardCaptureMaximum() : undefined;
     const untilStop = !lan && this.eskUntilStop;
@@ -7766,8 +7864,20 @@ export class App {
       document.querySelector<HTMLInputElement>('#esk-sample-count')?.reportValidity();
       return;
     }
+    const archive = this.recordingTimeline.current;
+    if ((archive && this.recordingsAwaitingChoice.has(archive)) ||
+        (this.captureLabel.kind === 'esk' && this.hasUnsavedCapture())) {
+      this.eskCapturePending = true;
+      this.renderToolbarState();
+      try {
+        if (!await this.resolvePreviousCapture(archive)) return;
+      } finally {
+        this.eskCapturePending = false;
+        this.renderToolbarState();
+      }
+    }
     if (n > ESK_SAMPLES) {
-      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan}, 'capture');
+      this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan});
       return;
     }
     this.eskCapturePending = true;
@@ -7811,8 +7921,7 @@ export class App {
       this.statusError = null;
       this.renderErrorBanner();
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: null };
-      const names = packed && bank === 'upper' ? ['D4', 'D5', 'D6', 'D7'] : [];
-      this.adoptCapture(store, names, { kind: 'esk', samples: store.length, rate: store.samplerate, ticks }, false, !packed);
+      this.adoptCapture(store, [], { kind: 'esk', samples: store.length, rate: store.samplerate, ticks }, false, !packed, false, packed ? bank : undefined);
       if (triggerIndex !== undefined) this.triggerSampleIndex = triggerIndex;
       const vars = { samples: formatCount(store.length), rate: formatRate(store.samplerate) };
       this.setFileNotice(ticks === undefined ? { key: 'capture.esk', vars } :
@@ -7831,49 +7940,175 @@ export class App {
     }
   }
 
-  private openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions,
-      nativeAction: 'capture' | 'browse' = 'browse'): void {
+  private async resolvePreviousCapture(archive: SavedRecording | undefined): Promise<boolean> {
+    const store = this.captureStore;
+    const current = () => !this.running && !this.stopping &&
+      (archive ? this.recordingTimeline.current === archive : this.captureStore === store);
+    const choice = await this.confirmDialog.choose({
+      title: t('rec.previousTitle'), body: t(archive?.stored ? 'rec.previousArchive' : 'rec.previousFile'),
+      confirm: t('rec.discardShort'), cancel: t('reset.cancel'),
+    }, this.el.transport, t('toolbar.shortSave'));
+    if (choice === 'cancel' || !current()) return false;
+    if (choice === 'confirm') {
+      try {
+        if (archive?.stored) await removeStoredRecording(archive.stored);
+      } catch (error) {
+        this.fail('rec.discard', error);
+        return false;
+      }
+      if (!current()) return false;
+      this.clearDisplayedRecording();
+    } else {
+      if (!archive?.stored && !await this.save(archive ? 'sr' : 'lwcap', archive)) return false;
+      if (!current()) return false;
+      if (archive) this.recordingsAwaitingChoice.delete(archive);
+    }
+    return true;
+  }
+
+  private clearDisplayedRecording(): void {
+    const {channelCount, samplerate} = this.captureStore;
+    this.recordingTimeline.clear();
+    this.captureOrigin = {model: null, fileName: null};
+    this.setFileNotice(null);
+    if (this.statusError?.what === 'rec.discard') {
+      this.statusError = null;
+      this.renderErrorBanner();
+    }
+    this.adoptCapture(createSampleStore(channelWidthForProbes(channelCount), samplerate), [], {kind: 'none'}, true);
+  }
+
+  private async discardDisplayedRecording(): Promise<void> {
+    if (this.discardingRecording || this.el.discard.hidden) return;
+    const archive = this.recordingTimeline.current, store = this.captureStore;
+    const current = () => !this.running && !this.stopping && !this.eskCapturePending &&
+      (archive ? this.recordingTimeline.current === archive : this.captureStore === store);
+    this.discardingRecording = true;
+    try {
+      const ok = await this.confirmDialog.ask({
+        title: t('rec.discard'), body: archive?.stored ? deletionPrompt(archive.stored) : t('rec.discardCurrent'),
+        confirm: t('rec.discardShort'), cancel: t('reset.cancel'),
+      }, this.el.discard);
+      if (!ok || !current()) return;
+      this.el.discard.disabled = true;
+      if (archive?.stored) await removeStoredRecording(archive.stored);
+      if (current()) {
+        this.clearDisplayedRecording();
+        this.el.transport.focus({preventScroll: true});
+      }
+    } catch (error) {
+      if (current()) this.fail('rec.discard', error);
+    } finally {
+      this.discardingRecording = false;
+      this.renderToolbarState();
+    }
+  }
+
+  private async openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions): Promise<void> {
     if (this.eskCapturePending || this.running || this.stopping) return;
-    const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false) => {
+    let previewShown = false;
+    const showWindow = (bytes: Uint8Array, rate: number, start: number, name: string, sameRecording = false, preview = false) => {
       this.endPendingRepeatSession();
       const packed = rate === ESK_PACKED_RATE && (name === 'xLOGIC USB D4–D7' || name === 'xLOGIC USB D0–D3');
-      const store = createSampleStore(packed ? 4 : 8, rate);
+      const channelCount = packed ? 4 : 8;
+      const store = preview
+        ? new PlanarSampleStore({ channelCount, samplerate: rate, compactBlocks: true })
+        : createSampleStore(channelCount, rate);
       store.append(bytes);
+      this.nativePreviewStart = preview ? start : null;
       this.captureOrigin = { model: 'ESK xLOGIC', fileName: name };
-      this.adoptCapture(store, packed && name.endsWith('D4–D7') ? ['D4', 'D5', 'D6', 'D7'] : [],
-        { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording, !packed);
-      this.setFileNotice({ key: 'rec.label', vars: { name, start, end: start + bytes.length - 1 } });
+      if (preview && previewShown) {
+        this.waveStore = store;
+        this.storeRef.set(store);
+        this.dirty = true;
+      } else {
+        this.adoptCapture(store, [],
+          { kind: 'loaded', source: name, ms: bytes.length / rate * 1000 }, sameRecording || previewShown, !packed, preview,
+          packed ? (name.endsWith('D4–D7') ? 'upper' : 'lower') : undefined);
+        if (preview) {
+          // Choose the initial scale once. A quiet input starts with the full preview window.
+          const tail = Math.min(store.length, 2048);
+          let edges = 0;
+          for (const channel of this.channels.slice(0, store.channelCount)) {
+            if (channel.enabled) edges = Math.max(edges, store.edges(channel.index, store.length - tail, store.length).length);
+          }
+          const span = edges >= 16 ? Math.ceil(16 * tail / edges) : displaySamples;
+          this.stack.restoreViewport(0, span);
+        } else if (previewShown) {
+          // Stop on the newest saved samples even if the final read grew since the last preview.
+          this.stack.setViewport(store.length - this.stack.view.span, store.length);
+        }
+      }
+      if (!previewShown && !sameRecording) this.setFileNotice(null);
+      previewShown = preview;
       this.syncUnloadGuard();
     };
     const display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: import('./eskRecorder.js').SavedRecording) => {
       showWindow(bytes, rate, start, name);
+      if (saved && live) this.recordingsAwaitingChoice.add(saved);
       if (saved) this.recordingTimeline.open(saved, rate, start, this.captureStore!.channelCount,
-        name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true));
+        name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true),
+        () => this.stack.viewport, (sample, requestedSpan, fraction = 0.5) => {
+          const view = this.stack.viewport, span = Math.min(this.captureStore.length, requestedSpan ?? (view.end - view.start));
+          const left = Math.max(0, Math.min(this.captureStore.length - span, sample - span * fraction));
+          this.stack.setViewport(left, left + span);
+          this.dirty = true;
+        });
+      this.renderToolbarState();
     };
     if (live && options && !options.ethernet && nativeRecorderAvailable()) {
-      showNativeRecorder(nativeAction, options, this.confirmDialog, () => this.confirmDiscardCapture(), display, key => this.recordingTimeline.clear(key));
+      this.eskCapturePending = true;
+      this.renderToolbarState();
+      this.renderSidebarContent();
+      try {
+        if (await this.confirmDiscardCapture()) {
+          this.statusError = null;
+          this.renderErrorBanner();
+          let overview: RecordingActivity | undefined;
+          let completeOverview = false;
+          await recordNative(options, (data, hz, offset, title) => showWindow(data, hz, offset, title, false, true),
+            (data, hz, offset, title, saved) => {
+              display(data, hz, offset, title, saved);
+              if (completeOverview && overview && this.recordingTimeline.inspectSample) {
+                this.recordingActivity = overview;
+                this.el.plot.append(overview.canvas);
+                overview.freeze(this.recordingTimeline.inspectSample);
+                this.dirty = true;
+              }
+            }, stop => { this.stopNativeRecording = stop; this.renderToolbarState(); }, frame => {
+              if (!overview) {
+                const row = frame.record, packed = row.rate === ESK_PACKED_RATE;
+                this.adoptCapture(createSampleStore(packed ? 4 : 8, row.rate), [],
+                  {kind: 'loaded', source: 'xLOGIC USB', ms: 0}, false, !packed, true, packed ? row.bank : undefined);
+                this.setFileNotice(null);
+                overview = new RecordingActivity(row, frame.stride, () => { this.dirty = true; });
+                this.recordingActivity = overview;
+                this.el.plot.append(overview.canvas);
+              }
+              overview.update(frame);
+              completeOverview = frame.record.state === 'saved' && frame.end === frame.record.samples;
+            });
+        }
+      } catch (error) { this.dismissRecordingActivity(); this.fail('error.eskUsb', error); }
+      finally {
+        this.nativePreviewStart = null;
+        this.dirty = true;
+        this.eskCapturePending = false;
+        this.renderToolbarState();
+        this.renderSidebarContent();
+      }
     } else {
-      showEskRecorder(live, display, this.confirmDialog, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
+      showEskRecorder(live, display, this.confirmDialog, () => this.confirmDiscardCapture(), key => {
+        if (this.recordingTimeline.current?.key === key) this.clearDisplayedRecording();
+      }, options);
     }
   }
 
-  /** Open a file, a finite ESK USB capture, or the bundled example. */
+  /** Browse saved captures without starting acquisition. */
   private openItems(): SettingsMenuItem[] {
     return [
       { label: t('open.file'), hint: t('open.fileHint'), onPick: () => void this.pickFiles() },
-      ...(nativeRecorderAvailable() ? [{label: 'Native USB recording…', onPick: () => {
-        const count = this.eskUntilStop ? Infinity : parseSampleCount(this.eskCountText);
-        if (count !== undefined) this.openEskRecorder(true, {count, rate: this.eskRate, bank: this.eskBank});
-        else this.selectPage('capture');
-      }}] : []),
-      ...(!eskLanMode() && navigator.usb && !this.running && !this.stopping && !this.eskCapturePending ? [{
-        label: t('open.esk'), onPick: () => void this.openEskCapture('usb'),
-      }] : []),
       ...(eskLanMode() === 'paired' ? [{ label: t('open.eskStatus'), onPick: () => void showEskStatus() }] : []),
-      ...(eskLanMode() &&
-          !this.running && !this.stopping && !this.eskCapturePending ? [{
-        label: t('open.eskLan'), onPick: () => void this.openEskCapture('ethernet'),
-      }] : []),
       ...(!this.running && !this.stopping && !this.eskCapturePending ? [
         { label: t('rec.title'), onPick: () => this.openEskRecorder(false) },
       ] : []),
@@ -7933,15 +8168,18 @@ export class App {
     }
   }
 
-  private async save(format: CaptureFileFormat): Promise<void> {
+  private async save(format: CaptureFileFormat, ethernet?: SavedRecording): Promise<boolean> {
     try {
       const store = this.captureStore;
       if (store.length === 0) throw new DiagnosticError('io.nothingToSave');
       const probes = this.srProbes(store);
       const now = new Date();
+      const parts = (chosen: Exclude<CaptureFileFormat, 'lwcap'>) => ethernet
+        ? ethernetSrParts(ethernet, this.channels.map(ch => ch.name), store.samplerate, localDateParts(now))
+        : this.exportBody(chosen, store, now);
       const nameFor = (f: CaptureFileFormat): string => captureFileName({
         model: this.captureOrigin.model,
-        channels: f === 'lwcap' ? store.channelCount : probes.length,
+        channels: ethernet || f === 'lwcap' ? store.channelCount : probes.length,
         samplerateHz: store.samplerate,
         when: localDateParts(now),
         sourceFileName: this.captureOrigin.fileName,
@@ -7956,13 +8194,13 @@ export class App {
             types: saveFilePickerTypes(format, {
               lwcap: t('save.lwcapType'), sr: t('save.srType'),
               vcd: t('save.vcdType'), csv: t('save.csvType'),
-            }),
+            }).slice(0, ethernet ? 1 : undefined),
           });
         } catch (e) {
-          if (e instanceof DOMException && e.name === 'AbortError') return; // user cancelled
+          if (e instanceof DOMException && e.name === 'AbortError') return false;
           throw e;
         }
-        const chosen = formatForFileName(handle.name, format);
+        const chosen = ethernet ? 'sr' : formatForFileName(handle.name, format);
         // Snapshot before the first await on the file: a live capture keeps appending.
         const savedLength = store.length;
         const writable = await handle.createWritable();
@@ -7970,10 +8208,10 @@ export class App {
           // Streamed: bounded parts straight to the file, never one whole-file buffer.
           // .lwcap goes through the progress writer; the rest are generated on demand.
           if (chosen === 'lwcap') {
-            const plan = planLwcap(store, this.channels.map((c) => c.name));
+            const plan = planLwcap(store, this.channels.slice(0, store.channelCount).map(c => c.name));
             await this.writeLwcapWithProgress(plan, (part) => writable.write(part));
           } else {
-            for await (const p of this.exportBody(chosen, store, now)) await writable.write(p);
+            for await (const p of parts(chosen)) await writable.write(p);
           }
           await writable.close();
         } catch (e) {
@@ -7981,7 +8219,7 @@ export class App {
           throw e;
         }
         this.noteCaptureSaved(store, savedLength);
-        return;
+        return true;
       }
 
       const savedLength = store.length;
@@ -7989,12 +8227,12 @@ export class App {
       if (format === 'lwcap') {
         // The download fallback still never builds one buffer: the Blob holds the bounded
         // parts, which the browser may keep on disk.
-        const plan = planLwcap(store, this.channels.map((c) => c.name));
+        const plan = planLwcap(store, this.channels.slice(0, store.channelCount).map(c => c.name));
         const blobParts: BlobPart[] = [];
         await this.writeLwcapWithProgress(plan, (part) => { blobParts.push(part); });
         blob = new Blob(blobParts, { type: 'application/octet-stream' });
       } else {
-        blob = await partsBlob(this.exportBody(format, store, now), EXPORT_MIME[format]);
+        blob = await partsBlob(parts(format), EXPORT_MIME[format]);
       }
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -8003,10 +8241,12 @@ export class App {
       setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
       // A download cannot report failure back; handing the file over is the save.
       this.noteCaptureSaved(store, savedLength);
+      return true;
     } catch (e) {
       // "Array buffer allocation failed" is not something to show raw: say the save ran
       // out of memory and what to do, with the diagnostic collapsed under it.
       this.fail('error.save', e, undefined, saveFailureNotice(e));
+      return false;
     }
   }
 
@@ -8332,6 +8572,7 @@ export class App {
   }
 
   private async startCapture(origin: CaptureStartOrigin = 'manual'): Promise<void> {
+    if (this.eskCapturePending) return;
     this.stopQuickScroll();
     if (this.resetting || this.running || this.stopping || this.repeatTimer.pending) return;
     this.settledHeldCapture = false;
@@ -8387,6 +8628,7 @@ export class App {
       this.viewIntent = false;
       if (newSession) {
         this.recordingTimeline.clear();
+        this.displayedEskBank = this.selectedRowBank = undefined;
         this.repeatMissed = false;
         this.captureSessionId += 1;
         this.measurementStats = emptyMeasurementStats();
@@ -10103,7 +10345,7 @@ export class App {
     roundTripLwcap: async () => {
       const store = this.captureStore;
       const before = { n: store.channelCount, sr: store.samplerate, len: store.length };
-      const blob = saveLwcap(store, this.channels.map((c) => c.name));
+      const blob = saveLwcap(store, this.channels.slice(0, store.channelCount).map(c => c.name));
       const back = loadLwcap(await blob.arrayBuffer(), 'round-trip');
       const problems: string[] = [];
       if (back.store.channelCount !== before.n) problems.push('channelCount');

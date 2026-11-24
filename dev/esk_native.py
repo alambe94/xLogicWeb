@@ -9,6 +9,7 @@ import subprocess
 import threading
 import uuid
 import webbrowser
+from functools import lru_cache
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,6 +22,32 @@ EDGE_CHUNK = 4 * 1024 ** 2
 LOW_NIBBLE = bytes(i & 15 for i in range(256))
 HIGH_NIBBLE = bytes(i >> 4 for i in range(256))
 GIB = 1024 ** 3
+
+
+@lru_cache(maxsize=256)
+def covered_bytes(low, high):
+    return bytes(b for b in range(256) if b & low == low and b | high == high)
+
+
+def activity_masks(data, packed, odd):
+    # Seed the masks from a short prefix. translate checks every remaining byte
+    # in C and returns only values that can change the masks (including rare pulses).
+    low, high = 255, 0
+    if odd:
+        last = data[-1] & 15
+        data = data[:-1]
+        low = high = last | (last << 4)
+    for value in set(data[:64]):
+        low &= value
+        high |= value
+    if low or high != 255:
+        for value in set(data.translate(None, covered_bytes(low, high))):
+            low &= value
+            high |= value
+    if packed:
+        low = low & (low >> 4) & 15
+        high = (high | (high >> 4)) & 15
+    return low | (high << 8)
 
 
 def stop_note(row, receipt):
@@ -59,8 +86,11 @@ class Recordings:
         temp.replace(self.path(row["id"], ".record"))
 
     def available(self):
-        used = sum(p.stat().st_size for p in self.directory.iterdir() if p.is_file())
-        return max(0, min(self.budget - used, shutil.disk_usage(self.directory).free) - 2**20)
+        free = shutil.disk_usage(self.directory).free
+        if self.budget is not None:
+            used = sum(p.stat().st_size for p in self.directory.iterdir() if p.is_file())
+            free = min(free, self.budget - used)
+        return max(0, free - 2**20)  # Leave room for the receipt and archive metadata.
 
     def start(self, rate, bank, samples, serial=None):
         self.refresh()
@@ -76,16 +106,18 @@ class Recordings:
             raise ValueError("Invalid sample count")
         factor = 2 if rate == RATES[-1] else 1
         available = self.available()
-        limit = available if samples is None else (samples + factor - 1) // factor
+        limit = min(available, (2**53 - 1) // factor) if samples is None else (samples + factor - 1) // factor
         if limit < 1 or limit > available:
             raise ValueError("Recording exceeds available capture storage")
         key = uuid.uuid4().hex
         row = dict(id=key, title=datetime.now().isoformat(timespec="seconds"), rate=rate, bank=bank,
                    state="recording", samples=0, limit=samples or limit * factor, note="")
         self.save(row)
+        # The CLI needs a deadline. Allow long recordings to reach their byte limit.
+        duration = max(86400, (row["limit"] + rate - 1) // rate + 60)
         cmd = [str(self.executable), "--continuous", "--sample-rate", str(rate),
                "--channel-mask", str((15 if bank == "lower" else 240) if factor == 2 else 255),
-               "--duration", "86400", "--record-bytes", str(limit), "--stop-on-stdin-close",
+               "--duration", str(duration), "--record-bytes", str(limit), "--stop-on-stdin-close",
                "--output", str(self.path(key, ".bin")), "--json", str(self.path(key, ".json"))]
         if serial or self.serial:
             cmd += ["--serial", serial or self.serial]
@@ -177,6 +209,50 @@ class Recordings:
             return bytes(expanded[start % 2:start % 2 + end - start])
         return data
 
+    def overview(self, key, start):
+        row = self.status(key)
+        rate = row["rate"]
+        stride = 1 << ((rate // 1024).bit_length() - 1)
+        if row["state"] == "failed":
+            return dict(record=row, first=0, end=0, stride=stride, bins=[])
+        if type(start) is not int or start < 0 or start % stride or start > row["samples"]:
+            raise ValueError("Invalid overview cursor")
+        end = row["samples"]
+        if row["state"] == "recording":
+            end -= end % stride
+        # Only the newest two seconds can be visible after a tab resumes.
+        start = max(start, max(0, end - 2 * rate) // stride * stride)
+        packed = rate == RATES[-1]
+        factor = 2 if packed else 1
+        end = min(end, start + 16 * 1024**2 * factor)
+        bins = self.activity_range(key, start, end, stride, packed)
+        return dict(record=row, first=start, end=end, stride=stride, bins=bins)
+
+    def activity_range(self, key, start, end, stride, packed):
+        bins = []
+        factor = 2 if packed else 1
+        if end > start:
+            with self.path(key, ".bin").open("rb") as stream:
+                stream.seek(start // factor)
+                for offset in range(start, end, stride):
+                    count = min(stride, end - offset)
+                    size = (count + factor - 1) // factor
+                    data = stream.read(size)
+                    if len(data) != size:
+                        raise ValueError("Incomplete recording overview")
+                    bins.append(activity_masks(data, packed, packed and count % 2))
+        return bins
+
+    def overview_detail(self, key, first, end):
+        row = self.status(key)
+        if row["state"] != "saved" or type(first) is not int or type(end) is not int or not (
+                0 <= first < end <= row["samples"] and end - first <= 16 * 1024**2):
+            raise ValueError("Invalid saved overview range")
+        stride = 1 << max(1, ((end - first) // 2048).bit_length())
+        first -= first % stride
+        return dict(first=first, end=end, stride=stride,
+                    bins=self.activity_range(key, first, end, stride, row["rate"] == RATES[-1]))
+
     def edge(self, key, position, channel, direction):
         row = self.status(key)
         packed = row["rate"] == RATES[-1]
@@ -220,8 +296,24 @@ class Recordings:
                 return self.start(body.get("rate"), body.get("bank"), body.get("samples"), body.get("serial"))
             if op == "stop":
                 return self.stop(key)
+            if op == "overview":
+                return self.overview(key, body.get("start"))
+            if op == "overview_detail":
+                return self.overview_detail(key, body.get("first"), body.get("end"))
             if op == "status":
-                return self.status(key)
+                row = self.status(key)
+                if "preview_after" in body and row["state"] == "recording":
+                    after, advance = body["preview_after"], body.get("advance")
+                    if type(after) is not int or after < 0 or type(advance) is not int or advance < 0:
+                        raise ValueError("Invalid preview cursor")
+                    written = row["samples"]
+                    if written > after:
+                        end = written if after == 0 else min(written, max(after + advance, written - row["rate"] * 75 // 1000))
+                        if end > after:
+                            data = self.read_samples(row, max(0, end - WINDOW), end)
+                            # The frame header carries the confirmed count and exclusive end as uint64 LE.
+                            return written.to_bytes(8, "little") + end.to_bytes(8, "little") + data
+                return row
             if op == "delete":
                 self.remove(key)
                 return {}
@@ -284,7 +376,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         data = path.read_bytes()
         if path == self.server.dist / "index.html":
-            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1">', 1)
+            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview>', 1)
         self.reply(200, data, mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
 
@@ -293,10 +385,13 @@ def main():
     parser.add_argument("--recorder", type=Path, required=True)
     parser.add_argument("--dist", type=Path, required=True)
     parser.add_argument("--store", type=Path, required=True)
+    parser.add_argument("--archive-limit-gib", type=int, help="Optional cumulative recording quota in GiB")
     parser.add_argument("--serial")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
+    if args.archive_limit_gib is not None and args.archive_limit_gib < 1:
+        parser.error("--archive-limit-gib must be a positive integer")
     if os.name != "nt" or not args.recorder.is_file() or not (args.dist / "index.html").is_file():
         parser.error("Requires Windows, xlogic_capture.exe and the built viewer")
     dist, store = args.dist.resolve(), args.store.resolve()
@@ -308,7 +403,8 @@ def main():
         lock.seek(0)
         msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
         server.dist = dist
-        server.records = Recordings(store, args.recorder.resolve(), args.serial, 16 * GIB)
+        budget = None if args.archive_limit_gib is None else args.archive_limit_gib * GIB
+        server.records = Recordings(store, args.recorder.resolve(), args.serial, budget)
         server.authority = f"127.0.0.1:{server.server_port}"
         url = f"http://{server.authority}/"
         print(url, flush=True)
