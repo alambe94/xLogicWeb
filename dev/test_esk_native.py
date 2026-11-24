@@ -9,6 +9,18 @@ from esk_native import GIB, Recordings, RATES, WINDOW
 
 
 class RecordingTests(unittest.TestCase):
+    def test_version_identifies_the_installed_recorder(self):
+        exe = self.store.directory / "xlogic_capture.exe"
+        exe.write_bytes(b"abc")
+        self.store.executable = exe
+        digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        self.assertEqual(self.store.request({"op": "version"}), {"version": None, "sha256": digest})
+        manifest = exe.with_suffix(".version.json")
+        manifest.write_text(json.dumps({"version": "1.2", "sha256": digest}), encoding="utf-8")
+        self.assertEqual(self.store.request({"op": "version"})["version"], "1.2")
+        exe.write_bytes(b"another build")
+        self.assertIsNone(self.store.request({"op": "version"})["version"])
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)

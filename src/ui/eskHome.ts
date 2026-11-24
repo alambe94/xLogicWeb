@@ -4,8 +4,10 @@ import { requestEskDevice, selectedEskUsbDevice, selectEskUsbDevice } from '../d
 import { initBridgeTools } from './eskBridge.js';
 import { readUsbBoardStatus } from '../device/eskUsbHome.js';
 import type { BoardStatus } from '../device/eskPairedBoard.js';
-import { t } from './i18n.js';
-import { nativeRecorderAvailable } from './nativeArchive.js';
+import { onLocaleChange, t } from './i18n.js';
+import { aboutView } from './about.js';
+import { applyUpdate, getUpdateState, onUpdateStateChange } from './pwaUpdate.js';
+import { nativeRecorderAvailable, nativeRequest } from './nativeArchive.js';
 
 function showRows(body: HTMLTableSectionElement, rows: string[][]): void {
   body.replaceChildren();
@@ -42,6 +44,33 @@ export function initEskHome(): void {
   usbSite.href = browserSite.href;
   const paired = fromBoard();
   const nativeHome = nativeRecorderAvailable();
+  const firmware = document.getElementById('esk-firmware')!;
+  const firmwareGuide = document.getElementById('esk-firmware-guide')!;
+  const webBuild = document.getElementById('esk-web-build')!;
+  const recorder = document.getElementById('esk-recorder')!;
+  const update = document.querySelector<HTMLButtonElement>('#esk-web-update')!;
+  let recorderBuild = '';
+  let boardFirmware: number | undefined;
+  function renderVersions(): void {
+    firmware.textContent = boardFirmware === undefined ? t('home.boardDisconnected') :
+      [boardFirmware >>> 16, (boardFirmware >>> 8) & 255, boardFirmware & 255].join('.');
+    firmwareGuide.hidden = boardFirmware === undefined;
+    webBuild.textContent = aboutView().version;
+    recorder.textContent = nativeHome ? recorderBuild || t('home.versionUnknown') : t('home.recorderDisconnected');
+    update.hidden = getUpdateState() !== 'ready';
+  }
+  update.onclick = applyUpdate;
+  onUpdateStateChange(renderVersions);
+  onLocaleChange(renderVersions);
+  renderVersions();
+  if (nativeHome) {
+    void nativeRequest('version').then(reply => reply.json()).then(info => {
+      if (!/^[0-9a-f]{64}$/.test(info?.sha256)) return;
+      recorderBuild = typeof info.version === 'string' && info.version ? info.version : 'SHA-256 ' + info.sha256.slice(0, 12);
+      recorder.title = 'SHA-256 ' + info.sha256;
+      renderVersions();
+    }).catch(() => { /* Older recorder helpers do not report their build. */ });
+  }
   usbSite.hidden = !paired;
   lanChoice.hidden = paired || location.protocol === 'file:';
   newLogic.hidden = paired || location.protocol === 'file:';
@@ -102,6 +131,8 @@ export function initEskHome(): void {
     const lan = fromBoard();
     if (!lan && !usbDevice) usbDevice = selectedEskUsbDevice();
     if (!lan && usbStatus && !userRequested) return;
+    boardFirmware = undefined;
+    renderVersions();
     identity.hidden = features.hidden = details.hidden = true;
     refresh.hidden = !lan && !navigator.usb;
     const label = lan ? (needsBoardConsent() ? 'home.connectLan' : 'capturePanel.tempRate')
@@ -137,7 +168,9 @@ export function initEskHome(): void {
       refresh.dataset.i18n = 'capturePanel.tempRate';
       refresh.textContent = t('capturePanel.tempRate');
       connection.textContent = lan ? 'Ethernet' : 'USB';
-      identity.textContent = t('esk.identity', {id: board.deviceId, boot: board.boot, firmware: board.firmware.toString(16)});
+      boardFirmware = board.firmware;
+      renderVersions();
+      identity.textContent = t('home.boardIdentity', {id: board.deviceId, boot: board.boot});
       identity.hidden = false;
       const rows = board.features.map(f => [f.name, String(f.instance), f.enabled ? f.ownership : t('trigger.off')]);
       showRows(document.querySelector<HTMLTableSectionElement>('#esk-feature-rows')!, rows);
@@ -168,6 +201,8 @@ export function initEskHome(): void {
     generation++;
     change.hidden = true;
     disconnected = true;
+    boardFirmware = undefined;
+    renderVersions();
     usbDevice = undefined; usbStatus = undefined; selectEskUsbDevice();
     setBridge();
     result.value = t('home.usbGone');

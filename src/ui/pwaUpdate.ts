@@ -62,6 +62,10 @@ let reloading = false;
 export function applyUpdate(): void {
   const worker = waiting;
   if (!worker || reloading) return;
+  if (window.slogicweb && !window.slogicweb.canReloadForUpdate()) {
+    window.alert(t('home.updateAfterCapture'));
+    return;
+  }
   reloading = true;
   navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
   worker.postMessage({ type: 'SKIP_WAITING' });

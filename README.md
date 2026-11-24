@@ -71,6 +71,18 @@ saves samples to browser storage and displays a window of the recording. Select
 **Record all** for an open-ended USB recording. The sustainable rate depends
 on the board, USB link and host storage. After Stop, use the slider to browse the trace.
 
+### Update board firmware
+
+Home shows the connected board’s firmware version, the web app’s version and build, and the recorder build when using the Windows app. For a recorder without a release label, the build is the first 12 digits of its executable’s SHA-256. Older Windows helpers may show “Version unavailable”.
+
+When a new web app is ready, choose **Home → Versions → Update web app** after saving your capture. On a provisioned ESK board, firmware updates use the xSDK host CLI and a compatible application image:
+
+```powershell
+xeskctl update firmware.appimage --usb
+```
+
+For Ethernet, use `xeskctl update firmware.appimage --host <board-IP>`. The updater verifies the inactive slot and reboots the board for a trial. Reconnect on Home to read the running version.
+
 ### Native USB recording on Windows
 
 For long laptop captures, download `xEskWeb-Windows-x64.zip` from
