@@ -921,8 +921,9 @@ export class App {
       this.quickScroll = workspace.quickScroll !== false;
       this.analogLayout = workspace.analogLayout === 'merged' ? 'merged' : 'stacked';
       this.developerTools = workspace.developerTools === true;
-      this.channels = (workspace.channels ?? defaultChannels(ESK_CHANNELS)).map((channel, index) => ({ ...channel, index }));
-      this.order = workspace.order ?? this.channels.map((channel) => channel.index);
+      const saved = workspace.channels ?? [];
+      this.channels = carryChannelState(saved, Math.max(ESK_CHANNELS, saved.length));
+      this.order = restoreOrder(workspace.order, this.channels.length);
       this.busViews = (workspace.busViews ?? []).map((config, id) => ({
         ...cloneBusConfig(config), id: `bus-${id}`, builder: null, builtFor: null, cache: null,
       }));
@@ -1205,6 +1206,7 @@ export class App {
   }
 
   private displayChannelCount(): number {
+    if (!this.device && this.captureLabel.kind === 'none') return ESK_CHANNELS;
     return this.loadedCapture() ? this.channels.length : this.settings.channels;
   }
 
