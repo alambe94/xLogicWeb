@@ -103,7 +103,6 @@ export const fr: Messages = {
   'rec.duration': 'Enregistrement · {duration}',
   'rec.range': 'Échantillons {start}–{end} sur {total}',
   'rec.empty': 'Cet enregistrement ne contient aucun échantillon.',
-  'rec.label': '{name} · échantillons {start}–{end}{note}',
   'home.button': 'Accueil',
   'home.instruments': 'Instruments',
   'home.details': 'Détails de l’appareil',

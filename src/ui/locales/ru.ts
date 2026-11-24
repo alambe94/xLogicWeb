@@ -103,7 +103,6 @@ export const ru: Messages = {
   'rec.duration': 'Запись · {duration}',
   'rec.range': 'Отсчёты {start}–{end} из {total}',
   'rec.empty': 'В этой записи нет сохранённых отсчётов.',
-  'rec.label': '{name} · отсчёты {start}–{end}{note}',
   'home.button': 'Главная',
   'home.instruments': 'Инструменты',
   'home.details': 'Сведения об устройстве',

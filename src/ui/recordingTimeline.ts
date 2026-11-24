@@ -54,6 +54,7 @@ export class RecordingTimeline {
     this.slider.disabled = last === 0;
     this.seconds.max = String(archive.samples / rate);
     this.duration.value = t('rec.duration', { duration: formatDuration(archive.samples / rate, 6) });
+    this.duration.title = archive.summary ?? '';
     this.error.textContent = '';
     const position = (start: number) => {
       this.slider.value = String(start);
