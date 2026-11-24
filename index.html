@@ -86,6 +86,9 @@
         <details id="esk-versions" open><summary id="esk-version-label" data-i18n="home.versions">Versions</summary>
           <div class="esk-catalog-scroll"><table aria-labelledby="esk-version-label"><tbody>
             <tr><th scope="row" data-i18n="home.firmware">Board firmware</th><td><span id="esk-firmware"></span>
+              <button id="esk-firmware-check" type="button" class="mini" data-i18n="home.checkFirmware" hidden>Check firmware files…</button>
+              <input id="esk-firmware-files" type="file" accept=".appimage,.sig" multiple hidden>
+              <span id="esk-firmware-result" role="status"></span>
               <a id="esk-firmware-guide" class="esk-new-tab" href="https://github.com/alambe94/xLogicWeb#update-board-firmware" target="_blank" rel="noopener noreferrer" data-i18n="home.updateGuide" hidden>Update instructions</a></td></tr>
             <tr><th scope="row" data-i18n="home.webBuild">Web app build</th><td><span id="esk-web-build"></span>
               <button id="esk-web-update" type="button" class="mini" data-i18n="home.applyUpdate" hidden>Update web app</button></td></tr>
