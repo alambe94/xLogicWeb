@@ -98,8 +98,12 @@ to a writable folder on an SSD and double-click
 console open while recording. For USB, use Chrome or Edge, choose **Connect via
 USB**, and select the board once. Logic and Bridge share this selection in the
 same tab, including native recordings. Logic also opens saved recordings while
-disconnected. For finite Ethernet capture, choose **Connect via Ethernet** and
-enter the board address. This opens the board's one-tab viewer and its connection
+disconnected. In the Windows launcher, expand **Connect via Ethernet** to scan
+the local LAN. Select the advertised board or choose **Rename on this laptop**
+to remember a name such as `lab-bench` with that recorder folder. The nickname
+follows the board's identity across DHCP changes. **Find boards** scans again.
+On networks that filter mDNS, or in the hosted viewer, enter the board address.
+This opens the board's one-tab viewer and its connection
 consent. The board loads that viewer from GitHub Pages.
 
 Choose the rate and sample count in Logic, then press **Capture** once. The waveform opens when the
@@ -157,7 +161,8 @@ On Home, choose **Connect via Ethernet** and enter the board IP, or open the
 board IP directly on port 5555. Connect to the board, open **xLogicWeb**, and
 press **Capture**. Ethernet acquires a finite record at 333.33 MS/s. When the board
 advertises a capture capacity, enter a sample count or choose **Use board maximum**.
-Earlier launchers provide 65,536 samples per capture. Longer records download to
+Open xBridge in the Logic toolbar for I²C transfers when the board advertises Ethernet I²C.
+The bus and Logic use independent sessions. Earlier launchers provide 65,536 samples per capture. Longer records download to
 browser storage in blocks.
 For continuous recording use the USB connection on the hosted viewer.
 After Stop, use the time slider to browse the disk recording.

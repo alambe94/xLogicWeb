@@ -42,6 +42,7 @@ def main():
                 out.write(root / name, name)
             for name in ("Start xEskWeb.cmd", "esk_native.py"):
                 out.write(root / "dev" / name, name)
+            out.write(root / "dev/esk_discovery.py", "runtime/esk_discovery.py")
             recorder = args.recorder.read_bytes()
             out.writestr("xlogic_capture.exe", recorder)
             if args.recorder_version:

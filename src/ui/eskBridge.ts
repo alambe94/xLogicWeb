@@ -2,7 +2,7 @@
 import { selectControl, type SelectOptionTuple } from './select.js';
 import { hexBytes, i2cCommand, parseHex, spiCommands, spiReceiveBytes } from '../device/eskBridgeFrames.js';
 import { readUsbBoardStatus, runUsbBridge } from '../device/eskUsbHome.js';
-import type { BoardStatus } from '../device/eskPairedBoard.js';
+import { transferBoardI2c, type BoardStatus } from '../device/eskPairedBoard.js';
 import { BridgeUart, eskSerial } from '../device/eskSerial.js';
 import { canTransaction, type CanAction } from '../device/eskCan.js';
 import { requireField } from '../device/eskUsbSession.js';
@@ -36,7 +36,7 @@ export function initBridgeTools() {
   let uart: BridgeUart | undefined;
   let received = new Uint8Array();
   function available(name: string) {
-    return !!board?.features.some(f => f.name === name && f.instance === 0 && f.enabled) && (name !== 'UART' || !!eskSerial);
+    return (!!device || (name === 'I2C' && !!board?.i2cLimits)) && !!board?.features.some(f => f.name === name && f.instance === 0 && f.enabled) && (name !== 'UART' || !!eskSerial);
   }
   function render() {
     protocol.disabled = busy || !!uart;
@@ -61,8 +61,8 @@ export function initBridgeTools() {
     run.disabled = busy || !available(name) || (name === 'UART' && !uart);
   }
   const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
-  async function operate(action: (d: USBDevice, b: BoardStatus, token: number) => Promise<string>) {
-    if (busy || !device || !board || !available(protocol.value))
+  async function operate(action: (d: USBDevice | undefined, b: BoardStatus, token: number) => Promise<string>) {
+    if (busy || !board || !available(protocol.value))
       return;
     const token = epoch;
     busy = true;
@@ -128,6 +128,16 @@ export function initBridgeTools() {
     e.preventDefault();
     if (run.disabled) return;
     void operate(async (d, b) => {
+      if (protocol.value === 'I2C') {
+        const op = operation.value;
+        const tx = op === 'read' ? new Uint8Array() : parseHex(input('write').value);
+        requireField(op === 'read' || tx.length, 'Enter I²C write bytes.');
+        const address = hexNumber(input('address').value), count = op === 'write' ? 0 : input('count').valueAsNumber;
+        const reply = d ? await runUsbBridge(d, b, 'I2C', [i2cCommand(address, tx, count)])
+          : await transferBoardI2c(b, address, tx, count);
+        return reply.length ? hexBytes(reply) : tx.length + ' bytes written';
+      }
+      if (!d) throw new Error('This protocol requires USB.');
       if (protocol.value === 'UART') {
         const bytes = parseHex(input('uart-tx').value);
         requireField(uart && bytes.length && bytes.length <= 1024, 'Enter 1–1,024 UART bytes.');
@@ -147,12 +157,7 @@ export function initBridgeTools() {
         const commands = spiCommands(Number(mode.value), input('clock').valueAsNumber, tx);
         return 'RX (MISO) · ' + hexBytes(await runUsbBridge(d, b, 'SPI', commands));
       }
-      const op = operation.value;
-      const tx = op === 'read' ? new Uint8Array() : parseHex(input('write').value);
-      requireField(op === 'read' || tx.length, 'Enter I²C write bytes.');
-      const command = i2cCommand(hexNumber(input('address').value), tx, op === 'write' ? 0 : input('count').valueAsNumber);
-      const reply = await runUsbBridge(d, b, 'I2C', [command]);
-      return reply.length ? hexBytes(reply) : tx.length + ' bytes written';
+      throw new Error('Unknown Bridge protocol.');
     });
   };
   protocol.addEventListener('change', () => { result.value = ''; render(); });
