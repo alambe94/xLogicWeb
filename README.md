@@ -81,8 +81,10 @@ The viewer remembers your USB selection until the device disconnects or you chan
 
 At 41.67, 83.33, 166.67 and 333.33 MS/s the board samples all eight inputs.
 At 500 MS/s, boards advertising finite eight-channel USB capture offer D0–D7
-by default. Enter the desired count (for example `2G`) or choose **Use board maximum**.
-The board records in DDR, then downloads all eight channels over USB. Longer downloads
+by default for counts below `2G` (2,000,000,000 samples), subject to board capacity.
+Enter a count such as `1.5G` or choose **Use board maximum**. The board records in DDR,
+then downloads all eight channels over USB. At `2G` and above, or when **Record all**
+or **Loop** is selected, choose D0–D3 or D4–D7. The bank updates as you edit the count. Longer eight-channel downloads
 use this browser profile’s disk archive. Stop during download to inspect the received prefix.
 Choose D0–D3 or D4–D7 for packed USB capture, streaming, or the packed trigger.
 Earlier firmware offers the two four-channel banks. Select
@@ -182,9 +184,13 @@ on the [PulseView fork's releases page](https://github.com/alambe94/pulseview/re
 On Home, choose **Connect via Ethernet** and enter the board IP, or open the
 board IP directly on port 5555. Connect to the board, open **xLogicWeb**, and
 select an advertised sample rate and press **Capture**. Finite Ethernet capture
-supports eight inputs at 41.67, 83.33, 166.67 or 333.33 MS/s on compatible
-firmware. Earlier firmware offers 333.33 MS/s. When the board advertises a
-capture capacity, enter a sample count or choose **Use board maximum**.
+offers eight inputs at the rates advertised by the board. The standard rates
+are 41.67, 83.33, 166.67 and 333.33 MS/s. Compatible boards also offer 500 MS/s
+on D0–D7. The Windows LAN adapter can use this rate with firmware 0.42.0 and
+later when the board advertises the 500 MHz finite profile. When opening the board
+address directly, its embedded connector must also advertise 500 MS/s. Earlier
+single-rate connectors offer 333.33 MS/s. Enter a sample count or choose
+**Use board maximum** for the selected rate.
 Open xBridge in the Logic toolbar for I²C transfers when the board advertises Ethernet I²C.
 The bus and Logic use independent sessions. The board collects the requested
 samples first. As blocks arrive, the waveform fills from left to right across

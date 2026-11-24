@@ -11,6 +11,8 @@ from uuid import uuid4
 
 NETWORKS = tuple(map(IPv4Network, ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16")))
 RATES = (333333333, 166666666, 83333333, 41666666)
+HIGH_RATE = 500000000
+HIGH_RATE_MAX = 2147483520
 # The network image expires idle TCP connections after ten seconds.
 RENEW_SECONDS = 2
 NAMES = ("", "Device", "Logic", "DAP", "UART", "I2C", "SPI", "GPIO", "USB analyzer",
@@ -36,17 +38,20 @@ def capabilities(catalog):
     services = {int(s.service_id): s for s in catalog.services if s.instance_id == 0 and s.transports & 2}
     logic, i2c = services.get(2), services.get(5)
     maximum = min(logic.buffer_bytes, 0xffffffc0) // 64 * 64 if logic and logic.flags & 64 else 0
+    rates = RATES if maximum else ()
+    if maximum >= 192 and catalog.device.firmware_version >= 0x2a00 and logic.max_rate_hz == HIGH_RATE:
+        rates = (HIGH_RATE, *rates)
     limits = None
     if i2c and i2c.max_request_bytes >= 7 and i2c.max_reply_bytes:
         size = min(120, i2c.max_request_bytes)
         limits = dict(write=size - 4, writeRead=size - 6, read=min(116, i2c.max_reply_bytes))
-    return maximum, limits
+    return maximum, rates, limits
 
 
 def status(client):
     catalog = client.inspect()
     device = catalog.device
-    maximum, limits = capabilities(catalog)
+    maximum, rates, limits = capabilities(catalog)
     management = next((s for s in catalog.services if int(s.service_id) == 1 and not s.instance_id and s.transports & 2), None)
     rows = client.feature_status().rows if management and management.flags & 16 else ()
     services = []
@@ -59,7 +64,7 @@ def status(client):
     resources = [[f"#{r.resource_id} / {r.resource_type.name.title()}", r.sharing.name.title(), str(r.capacity),
                   f"{r.minimum}..{r.maximum}", r.unit.name.lower()] for r in catalog.resources]
     return dict(deviceId=device.device_id.hex(), boot=str(device.boot_id), firmware=device.firmware_version,
-                hardwareId=device.hardware_id, captureMaxSamples=maximum, captureRates=list(RATES) if maximum else [],
+                hardwareId=device.hardware_id, captureMaxSamples=maximum, captureRates=list(rates),
                 networkManagement=bool(management and device.firmware_version >= 0x2900), i2cLimits=limits,
                 features=[dict(name=NAMES[r.feature_id], instance=r.instance_id, enabled=bool(r.capability_flags & 2),
                                ownership=OWNERS[r.ownership]) for r in rows], catalog=dict(services=services, resources=resources))
@@ -141,11 +146,16 @@ class LocalBoards:
     def capture(self, body):
         from xsdk_xesk import LogicCaptureError, ServiceId
         count, rate = body.get("count"), body.get("rate")
-        if type(count) is not int or count < 1 or type(rate) is not int or rate not in RATES:
+        if type(count) is not int or count < 1 or type(rate) is not int:
             raise ValueError("Invalid finite capture")
-        size = (count + 63) // 64 * 64
         with self.open(body) as client:
-            maximum, _ = capabilities(client.inspect())
+            maximum, rates, _ = capabilities(client.inspect())
+            if rate not in rates:
+                raise ValueError("Unsupported Ethernet capture rate")
+            quantum = 192 if rate == HIGH_RATE else 64
+            size = (count + quantum - 1) // quantum * quantum
+            if rate == HIGH_RATE:
+                maximum = min(maximum, HIGH_RATE_MAX)
             if size > maximum:
                 raise ValueError("Capture exceeds available board memory")
             with client.claim(ServiceId.LOGIC, lease_ticks=60000) as lease:
@@ -174,7 +184,8 @@ class LocalBoards:
                 def chunks():
                     for block in record.chunks():
                         keep_alive()
-                        yield block.data[:count - block.offset]
+                        if block.offset < count:
+                            yield block.data[:count - block.offset]
 
                 try:
                     while True:
@@ -185,6 +196,8 @@ class LocalBoards:
                         if result.flags & 1024 or time.monotonic() > deadline:
                             raise ValueError("Finite capture did not complete")
                         time.sleep(.03)
+                    if (result.sample_rate, result.format, result.channel_mask, result.stored_bytes) != (rate, 1, 255, size):
+                        raise ValueError("Board returned a different capture geometry")
                     yield str(result.timestamp_ticks), chunks(), keep_alive
                 except (BrokenPipeError, ConnectionResetError, TimeoutError, GeneratorExit):
                     retire(record.cancel)

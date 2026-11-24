@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { ESK_FINITE_RATES, ESK_RATE, ESK_SAMPLES } from './eskCapture.js';
+import { ESK_FINITE_RATES, ESK_PACKED_RATE, ESK_RATE, ESK_SAMPLES } from './eskCapture.js';
 import { EskControlRejection } from './eskUsbSession.js';
 import { localBoard, localCapture, localRequest } from './eskLocalBoard.js';
 
@@ -14,7 +14,10 @@ let localBoot: string | undefined;
 const legacyRates = [ESK_RATE];
 let advertisedRates: number[] | undefined;
 export function boardCaptureRates(): readonly number[] { return advertisedRates ?? legacyRates; }
-export function boardCaptureMaximum(): number | undefined { return captureMaximum; }
+export function boardCaptureMaximum(rate = ESK_RATE): number | undefined {
+  if (rate !== ESK_PACKED_RATE || captureMaximum === undefined) return captureMaximum;
+  return Math.floor(Math.min(captureMaximum, 2_147_483_520) / 192) * 192;
+}
 export function needsBoardConsent(): boolean {
   return fromBoard() && window.parent !== window && !connected;
 }
@@ -157,7 +160,7 @@ export async function readBoardStatus(): Promise<BoardStatus> {
   const rates = data.captureRates;
   if (rates !== undefined && (!Array.isArray(rates) || rates.length > 32 || rates.some(rate => !Number.isSafeInteger(rate) || rate <= 0 || rate > 0xffffffff) ||
       (!!rates.length !== !!max) || (max && !rates.includes(ESK_RATE)))) throw new Error('Invalid Ethernet sampling rates');
-  const supported = rates && ESK_FINITE_RATES.filter(hz => rates.includes(hz));
+  const supported = rates && [ESK_PACKED_RATE, ...ESK_FINITE_RATES].filter(hz => rates.includes(hz));
   if (captureMaximum !== max || advertisedRates?.join() !== supported?.join()) {
     advertisedRates = supported;
     captureMaximum = max;
@@ -174,12 +177,12 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
   signal.throwIfAborted();
   if (localBoard()) {
     if (!localBoot) await readBoardStatus();
-    if (!Number.isSafeInteger(count) || count < 1 || count > (captureMaximum ?? 0) || !boardCaptureRates().includes(rate))
+    if (!Number.isSafeInteger(count) || count < 1 || count > (boardCaptureMaximum(rate) ?? 0) || !boardCaptureRates().includes(rate))
       throw new Error('Capture exceeds the board limits.');
     return localCapture(localBoot!, count, rate, signal, accept);
   }
   const origin = launchingBoard(), peer = boardWindow();
-  if (!origin || !peer || !Number.isSafeInteger(count) || count < 1 || count > (captureMaximum ?? 0)) {
+  if (!origin || !peer || !Number.isSafeInteger(count) || count < 1 || count > (boardCaptureMaximum(rate) ?? 0)) {
     throw new Error('Capture exceeds board capacity');
   }
   const rated = advertisedRates !== undefined;
@@ -212,6 +215,7 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
         if (typeof data.error === 'string') throw new Error(data.error);
         if (data.done === true) {
           if (bytes !== count || (rated && data.rate !== rate) || typeof data.ticks !== 'string' || !/^\d{1,20}$/.test(data.ticks)) throw new Error('Incomplete board capture');
+          if (rate === ESK_PACKED_RATE && (data.format !== 1 || data.channelMask !== 255)) throw new Error('Invalid eight-channel capture format');
           finish(); resolve(data.ticks); return;
         }
         const block = data.data;
