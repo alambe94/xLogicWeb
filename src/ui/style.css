@@ -3182,11 +3182,11 @@ html[data-theme="light"] .bus-dialog::backdrop { background: var(--backdrop); }
 #settings-dialog .archive-limit-controls { display: flex; align-items: center; gap: 6px; }
 #settings-dialog .archive-limit-controls input { width: 7em; }
 #trace-tools, .trace-trigger { min-width: 0; }
-#trace-tools details, .trace-edges, .trace-trigger { border-top: 1px solid var(--border-low); padding-block: 6px; }
-#trace-tools summary, .trace-trigger > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+#trace-tools { display: grid; gap: 8px; }
+#trace-filter output:empty { display: none; }
 .trace-filter-summary { color: var(--muted-foreground); margin-inline-start: 6px; font-size: 11px; }
 .trace-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; min-width: 0; }
-.trace-fields { padding: 6px 0 2px; }
+.trace-fields { padding: 0 12px 12px; }
 .trace-fields .field { flex: 1 1 6rem; min-width: 0; }
 .trace-fields .viewer-input { width: 100%; }
 .trace-fields output, #rec-edge-result { font-size: 12px; overflow-wrap: anywhere; }
@@ -3203,3 +3203,6 @@ html[data-theme="light"] .bus-dialog::backdrop { background: var(--backdrop); }
 .edge-feedback output { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #trace-search .trace-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #trace-search .trace-search-actions, #trace-search output { grid-column: 1 / -1; }
+
+.esk-length-modes { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; grid-column: 1 / -1; }
+#esk-sample-count:disabled { background: var(--muted); color: var(--muted-foreground); cursor: not-allowed; }

@@ -232,7 +232,7 @@ function focusFallsBackToActiveTab(source: string): boolean {
 const SECTION = SETTINGS_SECTIONS[0];
 const SECTION_LABEL_KEY = `settings.sections.${SECTION}`;
 
-const SHIPPED_SECTION_ORDER: readonly string[] = ['appearance', 'behaviour', 'shortcuts', 'developer', 'about'];
+const SHIPPED_SECTION_ORDER: readonly string[] = ['appearance', 'behaviour', 'storage', 'shortcuts', 'developer', 'about'];
 
 function shippedSectionOrder(sections: readonly string[]): boolean {
   return sections.length === SHIPPED_SECTION_ORDER.length &&
@@ -275,8 +275,8 @@ const NAV_NEEDLES: readonly string[] = [
   const forward = SETTINGS_SECTIONS.map((section) => settingsSectionAfter('ArrowDown', section));
   const backward = SETTINGS_SECTIONS.map((section) => settingsSectionAfter('ArrowUp', section));
   check('every roving key lands on another shipped section, wraps at either end and never throws',
-    forward.join(',') === 'behaviour,shortcuts,developer,about,appearance' &&
-    backward.join(',') === 'about,appearance,behaviour,shortcuts,developer' &&
+    forward.join(',') === 'behaviour,storage,shortcuts,developer,about,appearance' &&
+    backward.join(',') === 'about,appearance,behaviour,storage,shortcuts,developer' &&
     settingsSectionAfter('Home', 'appearance') === null &&
     settingsSectionAfter('End', 'about') === null &&
     settingsSectionAfter('', 'about') === null &&
@@ -457,6 +457,7 @@ const REFERENCE_NEEDLES: readonly string[] = [
 const PANE_CASES: ReadonlyArray<readonly [string, string]> = [
   ['appearance', 'return [this.labelsRow(), this.compactRowsRow(), this.hideIdleRow()];'],
   ['behaviour', 'return [this.quickScrollRow(), this.wheelZoomsRow(), this.fitRowsRow()];'],
+  ['storage', 'return [this.archiveLimitForm()];'],
   ['shortcuts', 'return this.shortcutBlocks();'],
   ['developer', 'return [this.developerToolsRow(), this.clearCacheRow()];'],
   ['about', 'return [this.aboutBlock()];'],
@@ -901,8 +902,8 @@ function keyedControls(source: string): number {
 
 {
   const keyed = keyedControls(dialogSource);
-  check('the window keys one control per tab, seven toggles, the clear-cache action, the About block and the shared reference row: fifteen today',
-    keyed === 15 && SETTINGS_SECTIONS.length === 5 && toggleRowCalls(dialogSource) === 7 &&
+  check('the window keys one control per tab, seven toggles, the clear-cache action, the About block and the shared reference row: sixteen today',
+    keyed === 16 && SETTINGS_SECTIONS.length === 6 && toggleRowCalls(dialogSource) === 7 &&
     aboutKeyedBlocks(dialogSource) === 1 && referenceKeyedRows(dialogSource) === 1 &&
     actionKeyedControls(dialogSource) === 1 && layoutKeyedControls(dialogSource) === 0,
     `keyed=${keyed}, tabs=${SETTINGS_SECTIONS.length}, toggles=${toggleRowCalls(dialogSource)}, ` +
@@ -921,11 +922,11 @@ function keyedControls(source: string): number {
     "    action.dataset.settingsKey = 'clear-cache';",
     "    action.dataset.settingsKey = 'clear-cache';\n    action.setAttribute('data-settings-key', 'analog-layout');");
   check('control: an eighth toggle, a missing reference row or action key moves the count; a layout key cannot re-enter it',
-    extraToggle !== dialogSource && keyedControls(extraToggle) === 16 &&
-    droppedReference !== dialogSource && keyedControls(droppedReference) === 14 &&
-    droppedAction !== dialogSource && keyedControls(droppedAction) === 14 &&
+    extraToggle !== dialogSource && keyedControls(extraToggle) === 17 &&
+    droppedReference !== dialogSource && keyedControls(droppedReference) === 15 &&
+    droppedAction !== dialogSource && keyedControls(droppedAction) === 15 &&
     layoutBackInKeys !== dialogSource && layoutKeyedControls(layoutBackInKeys) === 1 &&
-    keyedControls(layoutBackInKeys) === 15 && keyedControls(dialogSource) === 15,
+    keyedControls(layoutBackInKeys) === 16 && keyedControls(dialogSource) === 16,
     `extra=${keyedControls(extraToggle)}, reference=${keyedControls(droppedReference)}, ` +
     `action=${keyedControls(droppedAction)}, layout=${layoutKeyedControls(layoutBackInKeys)}, ` +
     `real=${keyedControls(dialogSource)}`);
@@ -2734,6 +2735,7 @@ function labelCellCss(source: string): boolean {
 const SECTION_LABELS_WANT: ReadonlyArray<readonly [string, readonly string[]]> = [
   ['appearance', ['Appearance', '外观', 'Внешний вид', 'Apparence']],
   ['behaviour', ['Behaviour', '行为', 'Поведение', 'Comportement']],
+  ['storage', ['Storage', '存储', 'Хранилище', 'Stockage']],
   ['shortcuts', ['Shortcuts and gestures', '快捷键与鼠标操作', 'Клавиши и жесты', 'Raccourcis et gestes']],
   ['developer', ['Developer tools', '开发者工具', 'Для разработчиков', 'Outils développeur']],
   ['about', ['About', '关于', 'О программе', 'À propos']],
@@ -2781,7 +2783,7 @@ function sectionLabelDrift(
 {
   const lookups = CATALOGS.map(([locale, lookup]) => [locale, lookup] as const);
   const drift = sectionLabelDrift(lookups);
-  check('all four catalogs carry the five section labels with their pinned values',
+  check('all four catalogs carry the six section labels with their pinned values',
     drift.length === 0 && SECTION_LABELS_WANT.length === SETTINGS_SECTIONS.length &&
     SECTION_LABELS_WANT.every(([section], index) => SETTINGS_SECTIONS[index] === section),
     drift.length === 0 ? `${SECTION_LABELS_WANT.length} sections × ${CATALOGS.length} catalogs` : drift.join('; '));

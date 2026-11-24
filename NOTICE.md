@@ -1,5 +1,7 @@
 # Licence and third-party components
 
+xEskWeb is an ESK adaptation of [Sipeed SLogicWeb](https://github.com/sipeed/SLogicWeb). The original viewer is copyright (C) 2026 Sipeed Co., Ltd. and contributors. The [xEskWeb source](https://github.com/alambe94/xLogicWeb) includes the ESK acquisition, recording and Bridge changes. The following notices accompany the original viewer and its distributions.
+
 slogicweb is licensed under the **GNU General Public License, version 3 or later**
 (`GPL-3.0-or-later`). The full text is in [LICENSE](LICENSE); every source file carries an
 SPDX identifier.

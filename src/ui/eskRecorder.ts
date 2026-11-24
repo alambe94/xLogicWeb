@@ -8,6 +8,8 @@ import { selectControl } from './select.js';
 import type { ConfirmDialog } from './confirmDialog.js';
 import { t } from './i18n.js';
 import { displayNativeRecording, listNativeRecordings, nativeRecorderAvailable, nativeRequest, type NativeRecord } from './nativeArchive.js';
+import { browserArchiveSpace, withBrowserWriter } from './browserArchiveSpace.js';
+import { openLoop } from '../data/loopRecording.js';
 import { formatBytes } from './format.js';
 
 import type { LiveReply, LiveRequest } from '../device/eskRecordWorker.js';
@@ -61,7 +63,7 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean }
+export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean; loop?: boolean }
 export function showEskRecorder(live: boolean, display: RecordingDisplay, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
   if (dialog.open) return;
@@ -155,6 +157,15 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
       read: (from, to) => withArchive(key, () => saved.readBytes(from, to)),
     });
   }
+  async function displayLoop(dir: FileSystemDirectoryHandle, key: string, firstSample: number, summary = '') {
+    const saved = await openLoop(dir);
+    if (!saved) return false;
+    const start = Math.max(0, Math.min(firstSample, saved.samples - 1));
+    const bytes = await saved.read(start, Math.min(start + displaySamples, saved.samples));
+    display(bytes, saved.rate, start, saved.title, {key, samples: saved.samples, summary,
+      stored: {key, name: key, source: 'browser'}, read: (from,to) => withArchive(key, () => saved.read(from,to))});
+    return true;
+  }
   const progress = (accepted: number, saved: number, queued: number) =>
     t('rec.progress', { accepted: accepted.toLocaleString(), saved: saved.toLocaleString(), queue: (queued / MiB).toFixed(1) });
   const startRecording = () => void run(async () => {
@@ -166,7 +177,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
     const rate = replay?.rate ?? options?.rate ?? ESK_STREAM_RATE;
     const bank = options?.bank ?? 'lower';
     const title = options?.ethernet ? 'xLOGIC Ethernet' : live ? (rate === ESK_PACKED_RATE ? 'xLOGIC USB ' + (bank === 'upper' ? 'D4–D7' : 'D0–D3') : 'xLOGIC USB') : file!.name;
-    const budget = options?.count ?? (limit.value ? limit.valueAsNumber * MiB : Infinity);
+    let budget = options?.count ?? (limit.value ? limit.valueAsNumber * MiB : Infinity);
     if (budget !== Infinity && !Number.isSafeInteger(budget)) throw new Error(t('rec.invalidLimit'));
     if (live && Number.isFinite(budget) && navigator.storage?.estimate) {
       const {quota, usage} = await navigator.storage.estimate();
@@ -191,7 +202,10 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
     const root = await recordingRoot();
     const name = new Date().toISOString().replace(/:/g, '-') + ' ' +
       title.replace(/[^\p{L}\p{N} ._-]/gu, '_').slice(0, 48) + ' ' + crypto.randomUUID().slice(0, 8);
-    await withArchive(name, async () => {
+    await withBrowserWriter(() => withArchive(name, async () => {
+      const {available} = await browserArchiveSpace();
+      if (budget === Infinity) budget = Math.floor(available);
+      if (budget < 1 || budget > available) throw Error(t('esk.storageFull'));
       const dir = await root.getDirectoryHandle(name, { create: true });
       const signal = (abort = new AbortController()).signal;
       update();
@@ -212,15 +226,18 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
                 status.value = progress(data.accepted, data.saved, data.queue);
               } finally { send({ type: 'displayed' }); }
             };
-            send({ type: 'start', directory: dir, serial: device.serialNumber ?? '', limit: budget, rate, bank, title });
+            send({ type: 'start', directory: dir, serial: device.serialNumber ?? '', limit: budget, rate, bank, title, loop: !!options?.loop });
           });
           first.value = String(Math.max(0, result.saved - displaySamples));
           status.value = progress(result.accepted, result.saved, 0);
           if (result.error) throw new Error(result.error + ' · ' + status.value);
           if (result.wire !== undefined) status.value += ' · ' + t('rec.tail', { samples: (result.wire - BigInt(result.accepted)).toLocaleString() });
-          if (result.accepted === budget) status.value = t('rec.atLimit') + ' · ' + status.value;
+          if (!options?.loop && result.accepted === budget) status.value = t('rec.atLimit') + ' · ' + status.value;
           // The last preview may have been skipped while the renderer was busy.
-          if (result.saved) {
+          if (result.saved && options?.loop) {
+            completed = await displayLoop(dir, name, Number(first.value), status.value);
+            if (!completed) throw Error('Loop recording did not finalize');
+          } else if (result.saved) {
             const saved = new RecordArchive(await createOpfsRecordStorage(dir));
             const last = Number(first.value);
             showSaved(await saved.readBytes(last, result.saved), rate, last, title, name, saved, result.saved, status.value);
@@ -293,7 +310,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
         showSaved(tail, rate, accepted - tail.length, title, name, saved, controller.bytes, status.value);
         dialog.close();
       }
-    });
+    }));
   });
   record.onclick = startRecording;
   stop.onclick = () => { abort?.abort(); update(); };
@@ -308,6 +325,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
     const name = archive.value.slice('browser:'.length);
     await withArchive(name, async () => {
       const dir = await (await recordingRoot()).getDirectoryHandle(name);
+      if (await displayLoop(dir, name, first.valueAsNumber)) { dialog.close(); return; }
       const saved = new RecordArchive(await createOpfsRecordStorage(dir));
       let manifest = await saved.readManifest();
       if (manifest.status === 'open') manifest = (await saved.recover()).manifest;
