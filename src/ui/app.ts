@@ -148,6 +148,8 @@ import {
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
+import { TraceTools } from './traceTools.js';
+import type { TraceInput, TraceHit } from './traceSearch.js';
 import { RecordingActivity } from './recordingActivity.js';
 import { deletionPrompt, displaySamples, removeStoredRecording, showEskRecorder, type SavedRecording } from './eskRecorder.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
@@ -515,6 +517,35 @@ export class App {
     this.dirty = true;
   }
   private nativePreviewStart: number | null = null;
+  private traceTools = new TraceTools(() => this.analysisSource(), hit => this.inspectTraceHit(hit),
+    () => { this.layerFingerprint = null; this.dirty = true; });
+
+  private analysisSource(): TraceInput | null {
+    const raw = this.captureStore;
+    if (!raw?.length || raw.channelCount > 8 || this.running || this.stopping || this.eskCapturePending ||
+        this.nativePreviewStart !== null) return null;
+    const archive = this.recordingTimeline.current;
+    return {key: archive ?? raw, length: archive?.samples ?? raw.length, rate: raw.samplerate,
+      channels: raw.channelCount, firstChannel: this.displayedEskBank === 'upper' ? 4 : 0,
+      gaps: archive ? [] : raw.gaps(), read: archive ? archive.read : async (start, end) => {
+        const bytes = new Uint8Array(end - start);
+        for (let bit = 0; bit < raw.channelCount; bit++) {
+          for (let i = 0; i < bytes.length; i++) bytes[i] |= raw.sampleAt(bit, start + i) << bit;
+        }
+        return bytes;
+      }};
+  }
+
+  private async inspectTraceHit(hit: TraceHit): Promise<void> {
+    const span = this.stack.viewport.end - this.stack.viewport.start;
+    const middle = hit.start + (hit.end - hit.start) / 2;
+    if (this.recordingTimeline.inspectSample) {
+      await this.recordingTimeline.inspectSample(Math.floor(middle), Math.min(span, displaySamples), 0.5);
+    } else {
+      this.stack.setViewport(middle - span / 2, middle + span / 2);
+    }
+    this.dirty = true;
+  }
   private eskRate = ESK_RATE;
   private eskBank: EskBank = 'lower';
   private displayedEskBank: EskBank | undefined;
@@ -4657,6 +4688,12 @@ export class App {
         }
       }
       for (const cursor of this.cursors) cursor.marker.draw(this.overlay, (sample) => this.toPx(sample));
+      const hit = this.traceTools.hit;
+      if (hit && !this.traceTools.root.hidden) {
+        const offset = this.recordingTimeline.windowStart;
+        const row = boxes.find(b => b.spec.kind === 'channel' && b.spec.channel === hit.bit);
+        if (row) this.overlay.drawTraceHit(this.toPx(hit.start - offset), this.toPx(hit.end - offset), row.top, row.band);
+      }
       if (this.hover) this.overlay.drawHover(this.hover);
     }
     this.layerFingerprint = fingerprint;
@@ -7265,6 +7302,7 @@ export class App {
    * vanished mid-run.
    */
   private renderToolbarState(): void {
+    this.traceTools.refresh();
     // Start/stop, open and save all re-render the toolbar: the unload guard follows them.
     this.syncUnloadGuard();
     const repeatPending = this.repeatTimer.pending;

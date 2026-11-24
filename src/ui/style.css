@@ -3181,3 +3181,6 @@ html[data-theme="light"] .bus-dialog::backdrop { background: var(--backdrop); }
 .empty-hint-starting { font-size: 12px; opacity: 0.8; color: var(--text50); }
 #settings-dialog .archive-limit-controls { display: flex; align-items: center; gap: 6px; }
 #settings-dialog .archive-limit-controls input { width: 7em; }
+#trace-tools:not([hidden]), .trace-options { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
+#trace-tools { flex: 0 0 auto; padding: 5px 12px; border-bottom: 1px solid var(--border-low); }
+#trace-tools input { width: 8em; }
