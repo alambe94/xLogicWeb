@@ -12,6 +12,7 @@ import { initPanelWidth } from './panelWidth.js';
 import { initServiceWorker } from './pwaUpdate.js';
 import { initTheme } from './theme.js';
 import { initToolbarOverride } from './toolbarOverride.js';
+import { initQuantityInputs } from './quantityInput.js';
 import { initTooltip } from './tooltip.js';
 // Side effect: hands `workerTransport` the browser's USB worker constructor. Imported
 // here, not from `device/index.ts`, so the device layer stays bundlable without Vite.
@@ -30,6 +31,7 @@ declare global {
  */
 async function boot(): Promise<void> {
   try {
+    initQuantityInputs();
     initTheme();
     initToolbarOverride();
     initPanelWidth();

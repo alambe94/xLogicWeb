@@ -3185,13 +3185,21 @@ html[data-theme="light"] .bus-dialog::backdrop { background: var(--backdrop); }
 #trace-tools details, .trace-edges, .trace-trigger { border-top: 1px solid var(--border-low); padding-block: 6px; }
 #trace-tools summary, .trace-trigger > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .trace-filter-summary { color: var(--muted-foreground); margin-inline-start: 6px; font-size: 11px; }
-.trace-fields, .trace-options { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; min-width: 0; }
+.trace-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; min-width: 0; }
 .trace-fields { padding: 6px 0 2px; }
 .trace-fields .field { flex: 1 1 6rem; min-width: 0; }
 .trace-fields .viewer-input { width: 100%; }
 .trace-fields output, #rec-edge-result { font-size: 12px; overflow-wrap: anywhere; }
-.trace-fields output, .trace-options { flex-basis: 100%; }
+.trace-fields output { flex-basis: 100%; }
 .trace-edges .recording-edges { display: grid; grid-template-columns: auto minmax(0, 1fr) 30px 30px; }
 #rec-edge-channel label { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
 #rec-edge-channel .select-trigger { width: 100%; }
-.trace-hits:not(:empty) { flex-basis: 100%; display: grid; gap: 4px; overflow: auto; max-height: 10em; }
+
+.trace-search-actions, .trace-filter-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; flex: 1 0 100%; }
+.trace-filter-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.trace-search-actions .mini, .trace-filter-actions .mini { min-width: 0; height: 26px; white-space: nowrap; padding-inline: 2px; }
+.trace-search-actions button[hidden], .edge-feedback button[hidden] { display: block; visibility: hidden; }
+.edge-feedback { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; min-height: 20px; }
+.edge-feedback output { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#trace-search .trace-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#trace-search .trace-search-actions, #trace-search output { grid-column: 1 / -1; }

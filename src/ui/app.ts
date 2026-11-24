@@ -7250,7 +7250,7 @@ export class App {
         }
       }
       const focused = panel.contains(document.activeElement) ? document.activeElement?.id : undefined;
-      panel.replaceChildren(fields, channels, profile);
+      panel.replaceChildren(fields, channels, profile, this.traceTools.edges);
       if (!lan) panel.append(trigger);
       panel.append(this.traceTools.root);
       if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
@@ -7258,7 +7258,9 @@ export class App {
     }
     if (this.sidebar.page === 'capture' || this.sidebar.page === 'measure') {
       this.capturePanel.render(this.capturePanelView());
-      this.sidebarHost.containerFor('capture').append(this.traceTools.root);
+      const capture = this.sidebarHost.containerFor('capture');
+      capture.querySelector('.capture-trigger')!.before(this.traceTools.edges);
+      capture.append(this.traceTools.root);
       return;
     }
     this.analyzerPanel.render({
