@@ -135,7 +135,6 @@ export const zhCN: Messages = {
   'home.nativeConnection': '通过 USB 连接可使用 Logic 和 Bridge；通过以太网连接可在 Logic 中采集指定数量的样本。',
   'home.usbGone': 'USB 已断开',
   'bridge.description': 'I²C、UART、SPI 和 CAN 总线操作',
-  'bridge.usbHint': '请连接应用 USB 线缆并在主页选择 USB 连接。开发板和浏览器均须支持所选协议。',
   'home.unpaired': '通过以太网连接时，请打开板卡 IP 地址。要查看已保存的采集，请打开逻辑分析仪。',
   'open.eskStatus': 'ESK 设备状态',
   'esk.reading': '正在读取设备状态…',

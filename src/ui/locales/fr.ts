@@ -137,7 +137,6 @@ export const fr: Messages = {
   'home.nativeConnection': 'Connectez-vous en USB pour Logic et Bridge, ou en Ethernet pour les captures de longueur définie dans Logic.',
   'home.usbGone': 'USB déconnecté',
   'bridge.description': 'Transactions I²C, UART, SPI et CAN',
-  'bridge.usbHint': 'Branchez le câble USB de la carte et connectez-la en USB depuis l’accueil. La carte et le navigateur doivent prendre en charge le protocole choisi.',
   'home.unpaired': 'Pour Ethernet, ouvrez l’adresse IP de la carte. Pour un fichier de capture, ouvrez l’analyseur logique.',
   'open.eskStatus': 'État de la carte ESK',
   'esk.reading': 'Lecture de l’état de la carte…',

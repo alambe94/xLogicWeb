@@ -137,7 +137,6 @@ export const ru: Messages = {
   'home.nativeConnection': 'Подключитесь по USB для работы с Logic и Bridge или по Ethernet для захвата заданного числа отсчётов в Logic.',
   'home.usbGone': 'USB отключён',
   'bridge.description': 'Обмен по I²C, UART, SPI и CAN',
-  'bridge.usbHint': 'Подключите плату по USB на главной странице. Плата и браузер должны поддерживать выбранный протокол.',
   'home.unpaired': 'Для Ethernet откройте IP-адрес платы. Для просмотра файла захвата откройте логический анализатор.',
   'open.eskStatus': 'Состояние устройства ESK',
   'esk.reading': 'Чтение состояния платы…',
