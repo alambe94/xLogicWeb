@@ -89,8 +89,10 @@ use the rolling raw-sample preview.
 Press **Stop** to inspect the recording, select an **Edge channel**, and use
 **Previous edge** or **Next edge** to highlight a transition at the current zoom.
 The guide labels the channel and direction and marks the edge on its waveform.
-The archive has a cumulative 16 GiB limit. **Open → Saved recordings…**
-shows free space and each trace's size. Use **Delete recording** to reclaim space.
+For **Until stopped**, the native recorder uses the free space on the recording
+drive at capture start and reserves 1 MiB for metadata. A requested sample count
+must fit in that space. **Open → Saved recordings…** shows available space,
+any configured archive quota and each trace's size. Use **Delete recording** to reclaim space.
 Hover over the recording duration to read the recorder's completion note.
 With the current SK-AM64B application,
 Stop can leave additional samples on the board or in pending USB reads. A
@@ -103,6 +105,8 @@ and a compatible Windows recorder on a machine with the ESK application USB conn
 py -3 dev/esk_native.py --dist dist --recorder C:\ESK\xlogic_capture.exe --store D:\ESK\recordings
 ```
 
+Use `--archive-limit-gib 8` to share a test drive with other tools and limit
+the entire recording archive to 8 GiB. Omit it to use the available drive space.
 Use `--serial SERIAL` to select a particular board. The hosted viewer continues
 to offer WebUSB and Ethernet. The optional PulseView client and sigrok-cli share a Windows ZIP
 on the [PulseView fork's releases page](https://github.com/alambe94/pulseview/releases/tag/xsdk-bundle-22).

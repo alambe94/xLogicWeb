@@ -151,6 +151,28 @@ class RecordingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ID"):
             self.store.status("../recording")
 
+    @patch("esk_native.subprocess.Popen")
+    @patch("esk_native.shutil.disk_usage")
+    def test_until_stopped_uses_drive_space_without_archive_quota(self, usage, launch):
+        usage.return_value.free = 5 * 1024**4
+        self.store.budget = None
+        self.store.executable = Path("xlogic_capture.exe")
+        row = self.store.start(RATES[0], "lower", None)
+        limit = usage.return_value.free - 2**20
+        self.assertEqual(row["limit"], limit)
+        command = launch.call_args.args[0]
+        self.assertEqual(command[command.index("--record-bytes") + 1], str(limit))
+        self.assertGreater(int(command[command.index("--duration") + 1]), limit / RATES[0])
+        self.assertEqual(self.store.request({"op": "storage"})["budget"], None)
+
+    @patch("esk_native.shutil.disk_usage")
+    def test_free_space_and_existing_files_bound_the_bench_quota(self, usage):
+        self.store.path(self.key, ".bin").write_bytes(bytes(1024))
+        usage.return_value.free = 64 * 1024**3
+        self.assertEqual(self.store.available(), 3072)
+        usage.return_value.free = 2**20 + 512
+        self.assertEqual(self.store.available(), 512)
+
 
 if __name__ == "__main__":
     unittest.main()
