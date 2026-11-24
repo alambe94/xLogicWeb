@@ -14,8 +14,10 @@ import type { LiveReply, LiveRequest } from '../device/eskRecordWorker.js';
 
 const MiB = 1024 * 1024;
 export const displaySamples = 65536;
+export interface StoredRecording { key: string; name: string; source: 'native' | 'browser' }
 export interface SavedRecording {
   key: string;
+  stored?: StoredRecording;
   samples: number;
   summary?: string;
   read(start: number, end: number): Promise<Uint8Array>;
@@ -33,6 +35,15 @@ async function withArchive<T>(name: string, action: () => Promise<T>): Promise<T
     if (!lock) throw new Error(t('rec.busy'));
     return action();
   });
+}
+
+export function deletionPrompt(record: StoredRecording): string {
+  return t(record.source === 'native' ? 'rec.confirmNativeDelete' : 'rec.confirmDelete', { name: record.name });
+}
+
+export async function removeStoredRecording(record: StoredRecording): Promise<void> {
+  if (record.source === 'native') await nativeRequest('delete', {id: record.key});
+  else await withArchive(record.key, async () => (await recordingRoot()).removeEntry(record.key, {recursive: true}));
 }
 
 /** Let Stop interrupt a slow source's wait between blocks. */
@@ -139,7 +150,8 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
   function showSaved(bytes: Uint8Array, rate: number, start: number, title: string, key: string,
                      saved: RecordArchive, samples: number, summary = '') {
     display(bytes, rate, start, title, {
-      key, samples, summary, read: (from, to) => withArchive(key, () => saved.readBytes(from, to)),
+      key, stored: {key, name: key, source: 'browser'}, samples, summary,
+      read: (from, to) => withArchive(key, () => saved.readBytes(from, to)),
     });
   }
   const progress = (accepted: number, saved: number, queued: number) =>
@@ -310,12 +322,12 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
   remove.onclick = async () => {
     const row = nativeRows.get(archive.value);
     const name = row?.title ?? archive.value.slice('browser:'.length);
-    if (!await confirmation.ask({title: t('rec.delete'), body: t(row ? 'rec.confirmNativeDelete' : 'rec.confirmDelete', { name }),
+    const target: StoredRecording = {key: row?.id ?? name, name, source: row ? 'native' : 'browser'};
+    if (!await confirmation.ask({title: t('rec.delete'), body: deletionPrompt(target),
       confirm: t('rec.delete'), cancel: t('reset.cancel')}, remove)) return;
     await run(async () => {
-      if (row) await nativeRequest('delete', {id: row.id});
-      else await withArchive(name, async () => { await (await recordingRoot()).removeEntry(name, { recursive: true }); });
-      removed(row?.id ?? name);
+      await removeStoredRecording(target);
+      removed(target.key);
       status.value = '';
       await list();
     });

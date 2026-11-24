@@ -11,6 +11,7 @@ export class RecordingTimeline {
   private readonly duration = document.querySelector<HTMLOutputElement>('#rec-duration')!;
   private readonly error = document.querySelector<HTMLElement>('#rec-seek-error')!;
   private archive: SavedRecording | undefined;
+  get current(): SavedRecording | undefined { return this.archive; }
   windowStart = 0;
   edge: { sample: number; channel: number; bit: number } | null = null;
   inspectSample: ((sample: number, span: number, fraction: number) => Promise<boolean>) | undefined;

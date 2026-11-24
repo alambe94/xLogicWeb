@@ -83,7 +83,8 @@ on a two-second time ruler. Activity fills from the left for 1.5 seconds, then
 scrolls with one quarter of the plot ahead of the newest summarized samples.
 A horizontal line means the channel held its level throughout that interval.
 A band means both levels occurred. Each summary includes every recorded sample.
-Stop freezes the overview. Scroll up over activity to zoom around the pointer,
+Stop freezes the overview. Choose **Discard** beside **Capture** to delete the
+displayed recording after inspection. Scroll up over activity to zoom around the pointer,
 or click it to inspect the original samples immediately. Older native helpers
 use the rolling raw-sample preview.
 Press **Stop** to inspect the recording, select an **Edge channel**, and use

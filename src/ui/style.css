@@ -244,7 +244,7 @@ html, body {
 #esk-features tbody tr { border-top: 1px solid var(--border); }
 #esk-features th, #esk-features td { font-variant-numeric: tabular-nums; }
 #esk-features tbody tr:nth-child(even) { background: var(--background); }
-#toolbar #btn-bridge-panel[hidden], #bridge-dock[hidden] { display: none; }
+#toolbar #btn-bridge-panel[hidden], #toolbar #btn-discard[hidden], #bridge-dock[hidden] { display: none; }
 #bridge-dock { max-height: 40vh; overflow: auto; border-bottom: 1px solid var(--border-low); }
 #bridge-dock #bridge-controls { max-width: 32rem; }
 .esk-capture-fields { display: grid; gap: .5rem; }
