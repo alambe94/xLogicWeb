@@ -63,6 +63,7 @@ export const ru: Messages = {
   'home.boardAddress': 'IP-адрес платы',
   'home.invalidAddress': 'Введите IPv4-адрес и при необходимости порт.',
   'home.newLogic': 'Открыть Logic в новой вкладке',
+  'home.analysisDemo': 'Открыть пример анализа',
   'home.newBridge': 'Открыть Bridge в новой вкладке',
   'esk.captureBank': 'Каналы захвата',
   'esk.changeDevice': 'Сменить USB-устройство',

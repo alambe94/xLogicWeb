@@ -8231,6 +8231,16 @@ export class App {
     await this.openFiles([file]);
   }
 
+  async openAnalysisDemo(): Promise<void> {
+    try {
+      const file = await exampleCaptureFile('./examples/esk-analysis.sr', 'esk-analysis.sr');
+      await this.openFiles([file]);
+      if (this.captureOrigin.fileName === file.name) this.traceTools.openPulseSearch(3);
+    } catch (e) {
+      this.fail('error.openCapture', e);
+    }
+  }
+
   /**
    * One Save entry point: a format menu - `.lwcap` first (ours, lossless), `.sr` for
    * sigrok, then the text exports `.vcd` and `.csv` (textExport.ts). Every format except

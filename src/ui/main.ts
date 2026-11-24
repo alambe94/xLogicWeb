@@ -36,6 +36,10 @@ async function boot(): Promise<void> {
     await initLocale();
     window.slogicweb = new App();
     initEskHome();
+    const query = new URLSearchParams(location.search);
+    if (query.get('view') === 'logic' && query.get('example') === 'analysis') {
+      await window.slogicweb.openAnalysisDemo();
+    }
     document.getElementById('empty-hint-starting')?.remove();
     // After App: the offline shell must never delay or break the first paint.
     initServiceWorker();
