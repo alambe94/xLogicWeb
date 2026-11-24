@@ -149,7 +149,7 @@ export const fr: Messages = {
   'open.eskHint': '65 536 échantillons',
   'capture.esk': 'ESK xLOGIC · {samples} échantillons à {rate}',
   'open.example': 'Ouvrir l’exemple',
-  'open.exampleHint': 'Capture UART, sans appareil',
+  'open.exampleHint': 'Démo d’analyse ESK à 8 canaux',
   'save.vcd': 'Exporter en .vcd',
   'save.vcdHint': 'Value change dump, numérique uniquement',
   'save.csv': 'Exporter en .csv',
