@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { selectControl, type SelectOptionTuple } from './select.js';
 import { findTraceEdge, findPulse, type TraceInput, type TraceHit } from './traceSearch.js';
-import { protocolMatches, type ProtocolQuery } from './traceProtocol.js';
 
 function choice(key: string, label: string, options: SelectOptionTuple[]) {
   return selectControl('analysis-' + key, label, options, options[0]![0]);
@@ -22,6 +21,7 @@ function field(name: string, element: HTMLInputElement) {
 }
 export class TraceTools {
   readonly root = document.querySelector<HTMLTemplateElement>('#trace-tools-template')!.content.firstElementChild as HTMLElement;
+  readonly edges = this.root.querySelector<HTMLElement>('.trace-edges')!;
   private readonly filter = this.root.querySelector<HTMLDetailsElement>('#trace-filter')!;
   private readonly search = this.root.querySelector<HTMLDetailsElement>('#trace-search')!;
   private readonly searchFields = this.search.querySelector<HTMLElement>('.trace-fields')!;
@@ -32,7 +32,6 @@ export class TraceTools {
   private resetEdge?: (bit?: number) => void;
   edge: TraceHit | null = null;
   hit: TraceHit | null = null;
-  private mode = 'pulse';
   private pulseChannel = 0;
   private edgeChannel = 0;
   private readonly toggle = document.getElementById('btn-trace-tools')!;
@@ -63,7 +62,6 @@ export class TraceTools {
   }
 
   openPulseSearch(channel: number): void {
-    this.mode = 'pulse';
     this.pulseChannel = this.edgeChannel = channel;
     this.showSearch();
     this.refresh(true);
@@ -89,11 +87,11 @@ export class TraceTools {
   }
 
   private renderEdges(source: TraceInput | null): void {
-    const container = this.root.querySelector<HTMLElement>('#rec-edge-channel')!;
-    const prev = this.root.querySelector<HTMLButtonElement>('#rec-edge-previous')!;
-    const next = this.root.querySelector<HTMLButtonElement>('#rec-edge-next')!;
-    const cancel = this.root.querySelector<HTMLButtonElement>('#rec-edge-cancel')!;
-    const result = this.root.querySelector<HTMLOutputElement>('#rec-edge-result')!;
+    const container = this.edges.querySelector<HTMLElement>('#rec-edge-channel')!;
+    const prev = this.edges.querySelector<HTMLButtonElement>('#rec-edge-previous')!;
+    const next = this.edges.querySelector<HTMLButtonElement>('#rec-edge-next')!;
+    const cancel = this.edges.querySelector<HTMLButtonElement>('#rec-edge-cancel')!;
+    const result = this.edges.querySelector<HTMLOutputElement>('#rec-edge-result')!;
     const reset = () => {
       this.edgeJob?.abort(); this.edge = null; result.value = '';
       cancel.hidden = true; prev.disabled = next.disabled = !source;
@@ -156,9 +154,9 @@ export class TraceTools {
       result.value = n ? 'Minimum retained width: ' + n + ' samples' : 'Raw signal';
     };
     ch.addEventListener('change', sync); sync();
-    const apply = async (off: boolean) => {
-      const n = off ? 0 : Math.ceil(width.valueAsNumber * source.rate / 1e9);
-      if (!Number.isSafeInteger(n) || n < 0 || (!off && !width.validity.valid)) {
+    const apply = async () => {
+      const n = Math.ceil(width.valueAsNumber * source.rate / 1e9);
+      if (!Number.isSafeInteger(n) || n < 0 || !width.validity.valid) {
         result.value = 'Enter a nonnegative width in ns.'; return;
       }
       result.value = 'Updating waveform…';
@@ -168,8 +166,13 @@ export class TraceTools {
       }
       catch (error) { result.value = String(error); }
     };
-    body.append(ch.el, field('Minimum width (ns)', width), action('Apply', () => void apply(false)),
-      action('Show raw channel', () => void apply(true)), result);
+    const buttons = document.createElement('div');
+    buttons.className = 'trace-filter-actions';
+    buttons.append(action('Apply', () => void apply()), action('Reset', () => {
+      width.value = '0';
+      void apply();
+    }));
+    body.append(ch.el, field('Minimum width (ns)', width), buttons, result);
   }
 
   private renderSearch(): void {
@@ -188,10 +191,6 @@ export class TraceTools {
       return;
     }
     const channels = this.channels(source);
-    const tool = selectControl('analysis-tool', 'Find', [['pulse','Pulse'], ['protocol','Protocol']], this.mode);
-    tool.addEventListener('change', () => { this.mode = tool.value; this.renderSearch(); });
-    this.searchFields.append(tool.el);
-    if (this.mode === 'protocol') { this.protocolPanel(source, channels); return; }
     const channel = choice('pulse-channel', 'Channel', channels);
     channel.value = String(this.pulseChannel);
     channel.addEventListener('change', () => { this.pulseChannel = Number(channel.value); });
@@ -201,7 +200,18 @@ export class TraceTools {
     width.type = 'number'; width.step = 'any'; width.min = '0'; width.value = '50'; width.className = 'viewer-input';
     const result = document.createElement('output');
     result.setAttribute('aria-live', 'polite');
-    const cancel = () => { this.job?.abort(); this.hit = null; result.value = ''; this.redraw(); };
+    const cancel = () => {
+      this.job?.abort(); this.hit = null; result.value = ''; setBusy(false); this.redraw();
+    };
+    const stop = action('Cancel', cancel);
+    const previous = action('«', () => void search(true));
+    const next = action('»', () => void search(false));
+    previous.setAttribute('aria-label', previous.title = 'Previous pulse');
+    next.setAttribute('aria-label', next.title = 'Next pulse');
+    const setBusy = (busy: boolean) => {
+      stop.hidden = !busy; previous.disabled = next.disabled = busy;
+    };
+    setBusy(false);
     for (const control of [channel, level, compare]) control.addEventListener('change', cancel);
     width.oninput = cancel;
     const search = async (reverse: boolean) => {
@@ -209,6 +219,7 @@ export class TraceTools {
       const job = this.job = new AbortController();
       try {
         if (!(width.valueAsNumber > 0)) throw Error('Enter a positive width in ns.');
+        setBusy(true);
         result.value = 'Searching…';
         const from = this.hit ? (reverse ? this.hit.start + 1 : this.hit.end - 1) : (reverse ? source.length : 0);
         const current = this.source(job.signal);
@@ -222,105 +233,11 @@ export class TraceTools {
         this.resetEdge?.(hit.bit); this.hit = hit; this.redraw();
         result.value = hit.label + ' · sample ' + hit.start.toLocaleString();
       } catch (error) { if (!job.signal.aborted) result.value = String(error); }
+      finally { if (!job.signal.aborted) setBusy(false); }
     };
-    this.searchFields.append(channel.el, level.el, compare.el, field('Width (ns)', width),
-      action('Previous pulse', () => void search(true)), action('Next pulse', () => void search(false)),
-      action('Cancel', cancel), result);
-  }
-
-  private protocolPanel(source: TraceInput, channels: SelectOptionTuple[]): void {
-    const event = choice('event', 'Find', [['nack','I²C NACK'],['address','I²C address'],['uart','UART bytes (8N1)']]);
-    const fields = document.createElement('div');
-    fields.className = 'trace-options';
-    const result = document.createElement('output');
-    result.setAttribute('aria-live', 'polite');
-    const hits = document.createElement('div');
-    hits.className = 'trace-hits';
-    let iterator: AsyncGenerator<TraceHit> | undefined;
-    let lastProgress = 0;
-    let query: () => ProtocolQuery;
-    const clear = () => {
-      this.job?.abort(); iterator = undefined;
-      this.hit = null; this.redraw();
-      hits.replaceChildren(); result.value = '';
-      more.hidden = true; scan.disabled = false; stop.hidden = true;
-    };
-    const page = async (fresh: boolean) => {
-      if (fresh) clear();
-      const job = fresh ? this.job = new AbortController() : this.job!;
-      try {
-        if (fresh) {
-          const current = this.source(job.signal);
-          if (!current || current.key !== source.key) return;
-          lastProgress = 0;
-          iterator = protocolMatches(current, query(), job.signal, position => {
-            if (performance.now() - lastProgress > 250 && !job.signal.aborted) {
-              lastProgress = performance.now();
-              result.value = 'Searching · ' + Math.floor(100 * position / source.length) + '%';
-            }
-          });
-        }
-        const stream = iterator;
-        if (!stream) return;
-        hits.replaceChildren();
-        scan.disabled = true; more.hidden = true; stop.hidden = false;
-        result.value = 'Searching…';
-        for (let count = 0; count < 20; count++) {
-          const item = await stream.next();
-          if (job.signal.aborted || this.source()?.key !== source.key) return;
-          if (item.done) {
-            iterator = undefined;
-            result.value = count ? 'End of capture' : 'No further matches';
-            return;
-          }
-          const hit = item.value;
-          hits.append(action(hit.label + ' · ' + hit.start.toLocaleString(), () => {
-            void this.jump(hit).then(() => {
-              if (!job.signal.aborted) { this.resetEdge?.(hit.bit); this.hit = hit; this.redraw(); }
-            }).catch(e => { if (!job.signal.aborted) result.value = String(e); });
-          }));
-        }
-        result.value = '20 matches'; more.hidden = false;
-      } catch (error) {
-        if (!job.signal.aborted) result.value = String(error);
-      } finally {
-        if (!job.signal.aborted) { scan.disabled = false; stop.hidden = true; }
-      }
-    };
-    const scan = action('Search capture', () => void page(true));
-    const more = action('More matches', () => void page(false));
-    const stop = action('Cancel', clear);
-    const render = () => {
-      clear();
-      const value = document.createElement('input');
-      value.className = 'viewer-input';
-      if (event.value === 'uart') {
-        const rx = choice('rx','RX',channels);
-        const baud = document.createElement('input');
-        baud.type = 'number'; baud.min = '1'; baud.value = '115200'; baud.className = 'viewer-input';
-        value.placeholder = '48 65 6C 6C 6F';
-        fields.replaceChildren(rx.el, field('Baud', baud), field('Bytes (hex)', value));
-        rx.addEventListener('change', clear);
-        query = () => {
-          const words = value.value.trim().split(/\s+/);
-          if (!Number.isSafeInteger(baud.valueAsNumber) || baud.valueAsNumber < 1 ||
-              words.length > 64 || words.some(w => !/^[0-9a-f]{2}$/i.test(w))) throw Error('Enter a valid baud and 1–64 hex byte pairs.');
-          return {kind:'uart', rx:Number(rx.value), baud:baud.valueAsNumber, bytes:words.map(w => parseInt(w,16))};
-        };
-      } else {
-        const scl = choice('scl','SCL',channels), sda = choice('sda','SDA',channels);
-        sda.value = '1'; value.value = '51';
-        fields.replaceChildren(scl.el, sda.el);
-        if (event.value === 'address') fields.append(field('7-bit address (hex)', value));
-        for (const control of [scl,sda]) control.addEventListener('change', clear);
-        query = () => {
-          const str = value.value.trim();
-          if (event.value === 'address' && !/^(?:0x)?[0-7]?[0-9a-f]$/i.test(str)) throw Error('Enter a 7-bit hexadecimal address.');
-          return {kind:'i2c', scl:Number(scl.value), sda:Number(sda.value), address:event.value === 'address' ? parseInt(str,16) : null};
-        };
-      }
-    };
-    fields.oninput = clear; event.addEventListener('change', render); render();
-    this.searchFields.append(event.el, fields, scan, more, stop, result, hits);
+    const buttons = document.createElement('div');
+    buttons.className = 'trace-search-actions';
+    buttons.append(previous, next, stop);
+    this.searchFields.append(channel.el, level.el, compare.el, field('Width (ns)', width), buttons, result);
   }
 }

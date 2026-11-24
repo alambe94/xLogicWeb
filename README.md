@@ -43,11 +43,13 @@ directions. The controller ends the last read byte with a NACK and STOP.
 
 ## Analyze a stopped capture
 
-The **Capture** sidebar groups **Trigger**, **Glitch filter**, **Edges**, and **Search**. Use **« »** to step through the selected channel at the current zoom. **Logic → Analyze** opens **Search**, where you can choose **Pulse** or **Protocol** after opening a file or stopping a capture. These tools support the ESK four- and eight-channel layouts. [Try the analysis demo](https://alambe94.github.io/xLogicWeb/?view=logic&example=analysis) to open the example with D3 pulse search selected, or [download the synthetic trace](https://alambe94.github.io/xLogicWeb/examples/esk-analysis.sr).
+The **Capture** sidebar groups **Edges**, **Trigger**, **Glitch filter**, and **Search**. Use **« »** to step through the selected channel at the current zoom. **Logic → Analyze** opens pulse-width **Search** after opening a file or stopping a capture. These tools support the ESK four- and eight-channel layouts. [Try the analysis demo](https://alambe94.github.io/xLogicWeb/?view=logic&example=analysis) to open the example with D3 pulse search selected, or [download the synthetic trace](https://alambe94.github.io/xLogicWeb/examples/esk-analysis.sr).
 
-- **Pulse search** finds a complete high or low pulse strictly shorter or longer than the selected width. Previous and Next keep the zoom and highlight the pulse. In the example, search D3 for a high pulse shorter than 50 ns. The match is 40 ns at sample 65,534.
-- **Glitch filter** sets the minimum retained width per channel. Pulses at the cutoff survive. Apply 50 ns to D3 in the example and compare it with clean SCL on D0. The waveform, event search and protocol decoders use the filtered signal. **Show raw channel** removes that channel’s filter. Saved samples and exports retain the original data.
-- **Protocol search** finds 7-bit I²C addresses and NACKs or a sequence of UART bytes (idle-high 8N1). Select SCL D0 and SDA D1 to find the example’s NACK. Select RX D2 at 1,000,000 baud and enter `48 69` to find “Hi”. Click a result to inspect its waveform. In a saved native USB recording, search scans disk windows across the full recording and returns up to 20 matches at a time. **More matches** continues the same scan. Gaps reset decoder state.
+- **Pulse search** finds a complete high or low pulse strictly shorter or longer than the selected width. Cancel interrupts a running scan. Previous and Next keep the zoom and highlight the pulse. In the example, search D3 for a high pulse shorter than 50 ns. The match is 40 ns at sample 65,534.
+- **Glitch filter** sets the minimum retained width per channel. Pulses at the cutoff survive. Apply 50 ns to D3 in the example and compare it with clean SCL on D0. The waveform, event search and protocol decoders use the filtered signal. **Reset** clears the selected channel’s filter. Saved samples and exports retain the original data.
+- Use **Decoders** for protocol events. In the demo, choose I²C with SCL on D0 and SDA on D1, or UART with RX on D2 at 1M baud.
+
+Numeric fields accept decimal multipliers in the displayed unit. For example, enter `1M` for 1,000,000 or `1.5K` for 1,500. The field’s limits still apply.
 
 ## ESK xLOGIC over USB
 

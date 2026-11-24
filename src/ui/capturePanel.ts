@@ -1168,6 +1168,7 @@ export class CapturePanel {
     modeSec.body.appendChild(limit);
 
     const triggerSec = section(t('capturePanel.softwareTrigger'));
+    triggerSec.el.classList.add('capture-trigger');
     triggerSec.header.appendChild(helpTip(t('capturePanel.triggerEnableHelp')));
     const mask = document.createElement('input');
     mask.type = 'checkbox'; mask.checked = s.triggerEnableMask;
