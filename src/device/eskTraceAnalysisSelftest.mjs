@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { findPulse, scanBlock } from '../ui/traceSearch.js';
+import { findTraceEdge, findPulse, scanBlock } from '../ui/traceSearch.js';
 import { filteredTrace } from '../ui/traceFilter.js';
 import { protocolMatches } from '../ui/traceProtocol.js';
 const raw = new Uint8Array(scanBlock + 80);
@@ -9,6 +9,25 @@ raw.fill(8, raw.length - 3); // incomplete at capture end
 const source = {key: raw, length: raw.length, channels: 8, firstChannel: 0, rate: 1e9,
   gaps: [], read: async (a,b) => raw.slice(a,b)};
 const signal = new AbortController().signal;
+const edgeData = Uint8Array.of(0, 0, 0, 8, 8, 0, 0, 8);
+const small = {...source, length: edgeData.length, readSize: 3, read: async (lo, hi) => {
+  assert.ok(hi - lo <= 3); return edgeData.slice(lo, hi);
+}};
+assert.equal(await findTraceEdge(small, 3, 0, true, signal), 3);
+assert.equal(await findTraceEdge(small, 3, 3, true, signal), 5);
+assert.equal(await findTraceEdge(small, 3, 5, false, signal), 3);
+assert.equal(await findTraceEdge({...small, gaps:[{startSample:2, endSample:5}]}, 3, 0, true, signal), 7);
+assert.equal(await findTraceEdge(small, 3, 7, true, signal), null);
+const calls = [];
+const archive = {...small, firstChannel: 4, edge: async (from, channel, direction) => {
+  calls.push([from, channel, direction]);
+  return from === 0 ? {match:null, resume:2} : {match:3, resume:null};
+}};
+assert.equal(await findTraceEdge(archive, 3, 0, true, signal), 3);
+assert.deepEqual(calls, [[0,7,'next'],[2,7,'next']]);
+assert.equal(await findTraceEdge(filteredTrace(archive, new Map([[3,3]]),signal), 3, 0, true, signal), null);
+await assert.rejects(findTraceEdge(small, 3, 0, true, AbortSignal.abort()), {name:'AbortError'});
+console.log('Edges step forward and back across blocks, respect gaps and filters, and use the archive channel bank.');
 const search = (src, ns, shorter, reverse = false, from = reverse ? src.length : 0) =>
   findPulse(src, 3, 1, ns, shorter, reverse, from, signal);
 const match = await search(source, 8, true);

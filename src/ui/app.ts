@@ -509,7 +509,8 @@ export class App {
   private recordingActivity: RecordingActivity | undefined;
   private discardingRecording = false;
   private readonly recordingsAwaitingChoice = new WeakSet<SavedRecording>();
-  private recordingTimeline = new RecordingTimeline(() => { this.dirty = true; }, () => this.dismissRecordingActivity());
+  private recordingTimeline = new RecordingTimeline(() => { this.dirty = true; }, () => this.dismissRecordingActivity(),
+    () => this.traceTools.resetNavigation());
 
   private dismissRecordingActivity(): void {
     if (!this.recordingActivity) return;
@@ -524,6 +525,10 @@ export class App {
     async (bit, samples) => {
       if (samples) this.filterWidths.set(bit, samples); else this.filterWidths.delete(bit);
       await this.updateFilteredView();
+    }, () => this.selectPage('capture'), forward => {
+      const {start, end} = this.stack.viewport;
+      const offset = this.recordingTimeline.windowStart;
+      return offset + (end - start < this.captureStore.length ? (start + end) / 2 : forward ? 0 : this.captureStore.length);
     });
   private filterWidths = new Map<number, number>();
   private filterJob = new AbortController();
@@ -541,7 +546,7 @@ export class App {
     const archive = this.recordingTimeline.current;
     return {key: archive ?? raw, length: archive?.samples ?? raw.length, rate: raw.samplerate,
       ...(archive?.readSize ? {readSize: archive.readSize} : {}),
-      channels: raw.channelCount, firstChannel: this.displayedEskBank === 'upper' ? 4 : 0,
+      edge: archive?.edge, channels: raw.channelCount, firstChannel: this.displayedEskBank === 'upper' ? 4 : 0,
       gaps: archive ? [] : raw.gaps(), read: archive ? archive.read : async (start, end) => {
         const bytes = new Uint8Array(end - start);
         for (let bit = 0; bit < raw.channelCount; bit++) {
@@ -610,6 +615,7 @@ export class App {
   private eskLanCount = String(ESK_SAMPLES);
   private eskCapturePending = false;
   private stopNativeRecording: (() => void) | undefined;
+  private eskTriggerExpanded = false;
   private eskEdge: 'none' | 'rising' | 'falling' = 'none';
   private eskTriggerChannel = 0;
   private eskPrePercent = 50;
@@ -4733,18 +4739,18 @@ export class App {
       }
       if (this.nativePreviewStart !== null) {
         this.overlay.drawRecordingGuide(Math.min(this.toPx(this.captureStore.length), wCss - 1), 'Live');
-      } else if (this.recordingTimeline.edge) {
-        const { sample, channel, bit } = this.recordingTimeline.edge;
+      } else if (this.traceTools.edge) {
+        const { start: sample, label: channel, bit } = this.traceTools.edge;
         const local = sample - this.recordingTimeline.windowStart;
         if (local >= 0 && local < this.captureStore.length) {
           const row = boxes.find(box => box.spec.kind === 'channel' && box.spec.channel === bit);
-          const label = 'D' + channel + (this.captureStore.sampleAt(bit, local) ? ' ↑' : ' ↓');
+          const label = channel + ((this.filteredView ?? this.captureStore).sampleAt(bit, local) ? ' ↑' : ' ↓');
           this.overlay.drawRecordingGuide(this.toPx(local), label, row && row.top + row.band / 2);
         }
       }
       for (const cursor of this.cursors) cursor.marker.draw(this.overlay, (sample) => this.toPx(sample));
       const hit = this.traceTools.hit;
-      if (hit && !this.traceTools.root.hidden) {
+      if (hit) {
         const offset = this.recordingTimeline.windowStart;
         const row = boxes.find(b => b.spec.kind === 'channel' && b.spec.channel === hit.bit);
         if (row) this.overlay.drawTraceHit(this.toPx(hit.start - offset), this.toPx(hit.end - offset), row.top, row.band);
@@ -7158,6 +7164,13 @@ export class App {
         useMax.onclick = () => { this.eskLanCount = count.value = String(max); updateEstimate(); };
         fields.append(useMax);
       }
+      const trigger = document.createElement('details');
+      trigger.className = 'trace-trigger';
+      const triggerTitle = document.createElement('summary');
+      triggerTitle.textContent = t('overview.originTrigger');
+      trigger.open = this.eskTriggerExpanded;
+      trigger.ontoggle = () => { if (trigger.isConnected) this.eskTriggerExpanded = trigger.open; };
+      trigger.append(triggerTitle);
       if (!lan) {
         const until = document.createElement('label');
         until.className = 'settings-toggle';
@@ -7193,7 +7206,10 @@ export class App {
         channel.addEventListener('change', () => { this.eskTriggerChannel = Number(channel.value); });
         position.disabled = this.eskCapturePending;
         position.addEventListener('change', () => { this.eskPrePercent = Number(position.value); });
-        fields.append(edge.el, channel.el, position.el);
+        const triggerFields = document.createElement('div');
+        triggerFields.className = 'trace-fields';
+        triggerFields.append(edge.el, channel.el, position.el);
+        trigger.append(triggerFields);
       }
       updateEstimate();
       const channels = document.createElement('fieldset');
@@ -7235,11 +7251,14 @@ export class App {
       }
       const focused = panel.contains(document.activeElement) ? document.activeElement?.id : undefined;
       panel.replaceChildren(fields, channels, profile);
+      if (!lan) panel.append(trigger);
+      panel.append(this.traceTools.root);
       if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
       return;
     }
     if (this.sidebar.page === 'capture' || this.sidebar.page === 'measure') {
       this.capturePanel.render(this.capturePanelView());
+      this.sidebarHost.containerFor('capture').append(this.traceTools.root);
       return;
     }
     this.analyzerPanel.render({
@@ -8146,9 +8165,8 @@ export class App {
     const display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: import('./eskRecorder.js').SavedRecording) => {
       showWindow(bytes, rate, start, name);
       if (saved && live) this.recordingsAwaitingChoice.add(saved);
-      if (saved) this.recordingTimeline.open(saved, rate, start, this.captureStore!.channelCount,
-        name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true),
-        () => this.stack.viewport, (sample, requestedSpan, fraction = 0.5) => {
+      if (saved) this.recordingTimeline.open(saved, rate, start, (data, offset) => showWindow(data, rate, offset, name, true),
+        (sample, requestedSpan, fraction = 0.5) => {
           const view = this.stack.viewport, span = Math.min(this.captureStore.length, requestedSpan ?? (view.end - view.start));
           const left = Math.max(0, Math.min(this.captureStore.length - span, sample - span * fraction));
           this.stack.setViewport(left, left + span);
