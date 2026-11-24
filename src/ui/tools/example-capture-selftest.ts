@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
- * "Open example" (exampleCapture.ts): the bundled fixtures/uart.sr, handed over as the
+ * "Open example" (exampleCapture.ts): the bundled public/examples/esk-analysis.sr, handed over as the
  * data: URL Vite's `?url&inline` produces, decodes to a File that the ordinary open path
  * (`loadFiles` -> srLoad) loads like any .sr; app.ts reaches it from the Open menu; the
  * copy exists in all four locales. No DOM, no device.
@@ -31,7 +31,7 @@ function check(name: string, pass: boolean, detail: string): void {
   results.push({ name, pass, detail });
 }
 
-const raw = fs.readFileSync('fixtures/uart.sr');
+const raw = fs.readFileSync('public/examples/esk-analysis.sr');
 let binary = '';
 for (const byte of raw) binary += String.fromCharCode(byte);
 const dataUrl = `data:application/octet-stream;base64,${btoa(binary)}`;
@@ -41,7 +41,7 @@ const dataUrl = `data:application/octet-stream;base64,${btoa(binary)}`;
   check('a base64 data: URL decodes to the fixture bytes',
     bytes !== null && bytes.length === raw.length && bytes.every((b, i) => b === raw[i]),
     `${bytes?.length} of ${raw.length} bytes`);
-  check('a plain URL is not mistaken for inline data', dataUrlBytes('/fixtures/uart.sr') === null, 'null');
+  check('a plain URL is not mistaken for inline data', dataUrlBytes('/public/examples/esk-analysis.sr') === null, 'null');
 }
 
 {
@@ -52,7 +52,7 @@ const dataUrl = `data:application/octet-stream;base64,${btoa(binary)}`;
   for (let ch = 0; ch < cap.store.channelCount; ch++) highs += cap.store.edges(ch, 0, cap.store.length).length;
   check('the example opens through loadFiles like any .sr, under its own name',
     file.name === EXAMPLE_CAPTURE_NAME && cap.fileName === EXAMPLE_CAPTURE_NAME &&
-      cap.store.length > 0 && cap.store.samplerate > 0 && cap.channelNames.length > 0 && highs > 0,
+      cap.store.length > 0 && cap.store.samplerate > 0 && cap.store.channelCount === 8 && cap.channelNames.join() === "D0,D1,D2,D3,D4,D5,D6,D7" && highs > 0,
     `${cap.store.length} samples @ ${cap.store.samplerate} Hz, ${cap.channelNames.join('/')}`);
 }
 
@@ -60,14 +60,14 @@ const dataUrl = `data:application/octet-stream;base64,${btoa(binary)}`;
   const app = fs.readFileSync('src/ui/app.ts', 'utf8');
   const html = fs.readFileSync('index.html', 'utf8');
   const css = fs.readFileSync('src/ui/style.css', 'utf8');
-  const wired = app.includes("import exampleCaptureUrl from '../../fixtures/uart.sr?url&inline';") &&
+  const wired = app.includes("import exampleCaptureUrl from '../../public/examples/esk-analysis.sr?url&inline';") &&
     app.includes("new SettingsMenu(this.el.open, 'open-menu')") &&
     app.includes('this.openMenu.toggle(this.openItems())') &&
-    app.includes("{ label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openExample() }") &&
-    app.includes('file = await exampleCaptureFile(exampleCaptureUrl);') &&
+    app.includes("{ label: t('open.example'), hint: t('open.exampleHint'), onPick: () => void this.openAnalysisDemo() }") &&
+    app.includes('await exampleCaptureFile(exampleCaptureUrl);') &&
     app.includes('await this.openFiles([file]);') &&
     html.includes('aria-controls="open-menu"');
-  check('Open is a two-row menu carrying the only example entry', wired, String(wired));
+  check('Open routes the example to the eight-channel analysis demo', wired, String(wired));
 
   interface Sources { html: string; app: string; css: string }
   const emptyHintActions = (src: Sources): string[] =>

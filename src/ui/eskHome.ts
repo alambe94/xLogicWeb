@@ -46,6 +46,7 @@ export function initEskHome(): void {
   lanChoice.hidden = paired || location.protocol === 'file:';
   newLogic.hidden = paired || location.protocol === 'file:';
   newBridge.hidden = location.protocol === 'file:';
+  document.getElementById('esk-analysis-demo')!.hidden = location.protocol === 'file:';
   for (const [link, view] of [[newLogic, 'logic'], [newBridge, 'bridge']] as const) {
     const url = new URL(browserSite);
     url.searchParams.set('view', view);
