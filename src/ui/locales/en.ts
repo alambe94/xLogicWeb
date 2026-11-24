@@ -85,6 +85,7 @@ export const en = {
   'esk.diskRecording': 'Records the selected channels to disk until Stop.',
   'rec.fixedRate': 'Continuous USB sample rate · 41.67 MS/s',
   'rec.live': 'Continuous USB recording…',
+  'rec.ethernet': 'Ethernet capture download',
   'rec.tail': '{samples} samples outside the saved window at Stop',
   'rec.title': 'Saved recordings…',
   'rec.import': 'Import a .sr session',

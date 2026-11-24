@@ -79,6 +79,7 @@ export const zhCN: Messages = {
   'esk.diskRecording': '将选定的通道记录到磁盘，直到停止。',
   'rec.fixedRate': 'USB 连续采样率 · 41.67 MS/s',
   'rec.live': 'USB 连续记录…',
+  'rec.ethernet': '以太网采集下载',
   'rec.tail': '停止时有 {samples} 个样本未保存',
   'rec.title': '已保存的记录…',
   'rec.import': '导入 .sr 会话',

@@ -107,7 +107,7 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean; loop?: boolean }
-export function showEskRecorder(live: boolean, display: RecordingDisplay, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions): void {
+export function showEskRecorder(live: boolean, display: RecordingDisplay, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions, captureChanged = () => false): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
   if (dialog.open) return;
   const get = <T extends HTMLElement>(id: string) => dialog.querySelector<T>('#rec-' + id)!;
@@ -119,8 +119,9 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
   const reopen = get<HTMLButtonElement>('reopen'), remove = get<HTMLButtonElement>('delete');
   const close = get<HTMLButtonElement>('close'), status = get<HTMLOutputElement>('status');
   const heading = get<HTMLElement>('heading');
-  heading.dataset.i18n = live ? 'rec.live' : 'rec.title';
-  heading.textContent = live ? t('rec.live') : t('rec.title');
+  const titleKey = options?.ethernet ? 'rec.ethernet' : live ? 'rec.live' : 'rec.title';
+  heading.dataset.i18n = titleKey;
+  heading.textContent = t(titleKey);
   const importer = get<HTMLDetailsElement>('import');
   importer.hidden = live;
   importer.open = false;
@@ -237,6 +238,11 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
         const start = Math.max(0, saved.samples - displaySamples);
         try {
           const data = await saved.read(start, saved.samples);
+          if (captureChanged() && !(await confirmReplace())) {
+            saved.dispose();
+            dialog.close();
+            return;
+          }
           display(data, rate, start, title, {...saved, summary: status.value});
         } catch (error) { saved.dispose(); throw error; }
       } else saved.dispose();
@@ -403,7 +409,8 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
   close.onclick = () => dialog.close();
   dialog.oncancel = event => { if (busy) { event.preventDefault(); abort?.abort(); update(); } };
   status.value = '';
-  dialog.showModal();
+  if (options?.ethernet) dialog.show();
+  else dialog.showModal();
   if (options) {
     ready = true;
     startRecording();

@@ -8242,9 +8242,14 @@ export class App {
         this.renderSidebarContent();
       }
     } else {
-      showEskRecorder(live, display, this.confirmDialog, () => this.confirmDiscardCapture(), key => {
+      let previous = this.captureSessionId;
+      showEskRecorder(live, display, this.confirmDialog, async () => {
+        const confirmed = await this.confirmDiscardCapture();
+        previous = this.captureSessionId;
+        return confirmed;
+      }, key => {
         if (this.recordingTimeline.current?.key === key) this.clearDisplayedRecording();
-      }, options);
+      }, options, () => this.captureSessionId !== previous);
     }
   }
 

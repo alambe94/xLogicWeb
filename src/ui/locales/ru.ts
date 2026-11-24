@@ -81,6 +81,7 @@ export const ru: Messages = {
   'esk.diskRecording': 'Запись выбранных каналов на диск до остановки.',
   'rec.fixedRate': 'Непрерывная запись USB · 41,67 Мвыб/с',
   'rec.live': 'Непрерывная запись USB…',
+  'rec.ethernet': 'Загрузка захвата по Ethernet',
   'rec.tail': 'При остановке за пределами записи осталось {samples} отсчётов',
   'rec.title': 'Сохранённые записи…',
   'rec.import': 'Импортировать сеанс .sr',
