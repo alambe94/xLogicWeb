@@ -81,13 +81,22 @@
               <span id="esk-lan-scan-status" role="status"></span>
               <div id="esk-lan-results"></div>
             </div>
-            <form id="esk-board-form"><label><span data-i18n="home.boardAddress">Board IP address</span>
-              <input id="esk-board-address" class="viewer-input" required autocomplete="off" spellcheck="false" placeholder="192.168.0.103"></label>
+            <form id="esk-board-form"><label><span data-i18n="home.boardAddress">Board address</span>
+              <input id="esk-board-address" class="viewer-input" required autocomplete="off" spellcheck="false" placeholder="lab-bench.local"></label>
               <button class="mini" type="submit" data-i18n="toolbar.connect">Connect</button></form>
           </details>
         </div>
         <p id="esk-connection" role="status"></p>
         <pre id="esk-identity" hidden></pre>
+        <details id="esk-network" hidden><summary data-i18n="home.network">Network</summary>
+          <form id="esk-name-form">
+            <label><span data-i18n="home.boardName">Board name</span>
+              <input id="esk-name-input" class="viewer-input" required maxlength="33" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="esk-name-help" disabled></label>
+            <button id="esk-name-save" class="mini" type="submit" data-i18n="home.saveBoardName" disabled>Save to board</button>
+          </form>
+          <p id="esk-name-help" data-i18n="home.boardNameHint">Use 1–33 lowercase letters, digits or internal hyphens.</p>
+          <output id="esk-name-status" aria-live="polite"></output>
+        </details>
         <details id="esk-versions" open><summary id="esk-version-label" data-i18n="home.versions">Versions</summary>
           <div class="esk-catalog-scroll"><table aria-labelledby="esk-version-label"><tbody>
             <tr><th scope="row" data-i18n="home.firmware">Board firmware</th><td><span id="esk-firmware"></span>

@@ -4,6 +4,17 @@ xLogicWeb is the logic analyzer in xEskWeb. Open the Logic instrument to capture
 the eight ESK digital inputs, inspect waveforms and decode protocols on your laptop.
 The viewer runs in your browser. [Open xEskWeb](https://alambe94.github.io/xLogicWeb/)
 
+### Name a board on the LAN
+
+With board firmware 0.40.0 or later, connect via USB on Home, expand **Network**,
+enter a **Board name** such as `lab-bench`, and select **Save to board**.
+Keep Ethernet connected. The viewer applies the new name, verifies the advertised
+name, and saves the setting in the board EEPROM. If another board already uses
+the name, the result includes the suffix the board selected for this LAN.
+Open the displayed address on the same LAN, for example
+`http://lab-bench.local:5555/`. Name resolution requires mDNS on that network.
+**Rename on this laptop** in the Windows chooser changes the local display name.
+
 The viewer builds on Sipeed SLogicWeb. **Other analyzer** opens the USB chooser for
 compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWeb)
 

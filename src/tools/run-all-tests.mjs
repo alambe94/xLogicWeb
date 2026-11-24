@@ -32,6 +32,7 @@ const entries = [
   'src/device/profileSelftest.ts',
   'src/device/eskCaptureSelftest.ts',
   'src/device/eskBridgeSelftest.mjs',
+  'src/device/eskBoardNameSelftest.mjs',
   'src/device/eskSignedFirmwareSelftest.mjs',
   'src/device/eskTraceAnalysisSelftest.mjs',
   'src/device/eskPackedEdgeSelftest.ts',

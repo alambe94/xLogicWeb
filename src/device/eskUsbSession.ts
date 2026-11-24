@@ -3,6 +3,11 @@ const CONTROL_MAGIC = new TextEncoder().encode('xESKCTRL');
 export function requireField(value: unknown, detail: string): asserts value {
   if (!value) throw new Error(detail);
 }
+export class EskControlRejection extends Error {
+  constructor(readonly status: number, opcode: number) {
+    super(status === 2 ? 'ESK service is busy.' : 'ESK rejected control request ' + opcode + ' (status ' + status + ')');
+  }
+}
 function words(...values: bigint[]): ArrayBuffer {
   const view = new DataView(new ArrayBuffer(values.length * 8));
   values.forEach((value, index) => view.setBigUint64(index * 8, value, true));
@@ -88,15 +93,14 @@ export class EskUsbSession {
       (opcode === 2 && status === 0 ? reply.getBigUint64(32, true) !== 0n : reply.getBigUint64(32, true) === session) &&
       (status === 0 || reply.byteLength === 48), 'Mismatched ESK control reply');
     await this.output(this.base + 3, words(this.boot, this.sequence));
-    if (status === 2) throw Error('ESK service is busy.');
-    requireField(status === 0, 'ESK rejected control request ' + opcode + ' (status ' + status + ')');
+    if (status !== 0) throw new EskControlRejection(status, opcode);
     return reply;
   }
 
-  protected async control(opcode: 2 | 3 | 4 | 5 | 6): Promise<number> {
+  protected async control(opcode: 2 | 3 | 4 | 5 | 6, leaseTicks = 1000n): Promise<number> {
     const payload = new Uint8Array(opcode === 2 ? 16 : opcode === 3 ? 8 : 0);
     if (opcode === 2) payload[0] = 1;
-    if (payload.length) new DataView(payload.buffer).setBigUint64(payload.length - 8, 1000n, true);
+    if (payload.length) new DataView(payload.buffer).setBigUint64(payload.length - 8, leaseTicks, true);
     const r = await this.exchange(opcode, payload, this.service, this.session);
     requireField(r.byteLength === (opcode === 6 ? 48 : 100), 'Malformed service session reply');
     const sid = r.getBigUint64(32, true);
