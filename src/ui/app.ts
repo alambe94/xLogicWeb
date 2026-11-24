@@ -102,7 +102,7 @@ const SAVE_PROGRESS_MIN_BYTES = 8 << 20;
 import {
   captureFileName, formatForFileName, localDateParts, saveFilePickerTypes, type CaptureFileFormat,
 } from './captureFileName.js';
-import { srExportParts, type SrProbe } from './srSave.js';
+import { ethernetSrParts, srExportParts, type SrProbe } from './srSave.js';
 import { csvExportParts, vcdExportParts } from './textExport.js';
 import { FileDragDepth, SavedCaptures, captureUnsaved } from './fileGuards.js';
 import { selectControl } from './select.js';
@@ -149,7 +149,7 @@ import {
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
 import { RecordingActivity } from './recordingActivity.js';
-import { deletionPrompt, displaySamples, removeStoredRecording, showEskRecorder } from './eskRecorder.js';
+import { deletionPrompt, displaySamples, removeStoredRecording, showEskRecorder, type SavedRecording } from './eskRecorder.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
 import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
@@ -504,6 +504,7 @@ export class App {
   private captureSessionId = 0;
   private recordingActivity: RecordingActivity | undefined;
   private discardingRecording = false;
+  private readonly recordingsAwaitingChoice = new WeakSet<SavedRecording>();
   private recordingTimeline = new RecordingTimeline(() => { this.dirty = true; }, () => this.dismissRecordingActivity());
 
   private dismissRecordingActivity(): void {
@@ -7814,7 +7815,7 @@ export class App {
   }
 
   private async openEskCapture(transport: 'usb' | 'ethernet'): Promise<void> {
-    if (this.eskCapturePending || this.running || this.stopping) return;
+    if (this.eskCapturePending || this.discardingRecording || this.running || this.stopping) return;
     const lan = transport === 'ethernet';
     const max = lan ? boardCaptureMaximum() : undefined;
     const untilStop = !lan && this.eskUntilStop;
@@ -7824,6 +7825,18 @@ export class App {
       this.selectPage('capture');
       document.querySelector<HTMLInputElement>('#esk-sample-count')?.reportValidity();
       return;
+    }
+    const archive = this.recordingTimeline.current;
+    if ((archive && this.recordingsAwaitingChoice.has(archive)) ||
+        (this.captureLabel.kind === 'esk' && this.hasUnsavedCapture())) {
+      this.eskCapturePending = true;
+      this.renderToolbarState();
+      try {
+        if (!await this.resolvePreviousCapture(archive)) return;
+      } finally {
+        this.eskCapturePending = false;
+        this.renderToolbarState();
+      }
     }
     if (n > ESK_SAMPLES) {
       this.openEskRecorder(true, {count: n, rate: lan ? ESK_RATE : this.eskRate, bank: this.eskBank, ethernet: lan});
@@ -7888,6 +7901,32 @@ export class App {
       this.renderToolbarState();
       this.renderSidebarContent();
     }
+  }
+
+  private async resolvePreviousCapture(archive: SavedRecording | undefined): Promise<boolean> {
+    const store = this.captureStore;
+    const current = () => !this.running && !this.stopping &&
+      (archive ? this.recordingTimeline.current === archive : this.captureStore === store);
+    const choice = await this.confirmDialog.choose({
+      title: t('rec.previousTitle'), body: t(archive?.stored ? 'rec.previousArchive' : 'rec.previousFile'),
+      confirm: t('rec.discardShort'), cancel: t('reset.cancel'),
+    }, this.el.transport, t('toolbar.shortSave'));
+    if (choice === 'cancel' || !current()) return false;
+    if (choice === 'confirm') {
+      try {
+        if (archive?.stored) await removeStoredRecording(archive.stored);
+      } catch (error) {
+        this.fail('rec.discard', error);
+        return false;
+      }
+      if (!current()) return false;
+      this.clearDisplayedRecording();
+    } else {
+      if (!archive?.stored && !await this.save(archive ? 'sr' : 'lwcap', archive)) return false;
+      if (!current()) return false;
+      if (archive) this.recordingsAwaitingChoice.delete(archive);
+    }
+    return true;
   }
 
   private clearDisplayedRecording(): void {
@@ -7968,6 +8007,7 @@ export class App {
     };
     const display = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: import('./eskRecorder.js').SavedRecording) => {
       showWindow(bytes, rate, start, name);
+      if (saved && live) this.recordingsAwaitingChoice.add(saved);
       if (saved) this.recordingTimeline.open(saved, rate, start, this.captureStore!.channelCount,
         name.endsWith('D4–D7') ? 4 : 0, (data, offset) => showWindow(data, rate, offset, name, true),
         () => this.stack.viewport, (sample, requestedSpan, fraction = 0.5) => {
@@ -8091,15 +8131,18 @@ export class App {
     }
   }
 
-  private async save(format: CaptureFileFormat): Promise<void> {
+  private async save(format: CaptureFileFormat, ethernet?: SavedRecording): Promise<boolean> {
     try {
       const store = this.captureStore;
       if (store.length === 0) throw new DiagnosticError('io.nothingToSave');
       const probes = this.srProbes(store);
       const now = new Date();
+      const parts = (chosen: Exclude<CaptureFileFormat, 'lwcap'>) => ethernet
+        ? ethernetSrParts(ethernet, this.channels.map(ch => ch.name), store.samplerate, localDateParts(now))
+        : this.exportBody(chosen, store, now);
       const nameFor = (f: CaptureFileFormat): string => captureFileName({
         model: this.captureOrigin.model,
-        channels: f === 'lwcap' ? store.channelCount : probes.length,
+        channels: ethernet || f === 'lwcap' ? store.channelCount : probes.length,
         samplerateHz: store.samplerate,
         when: localDateParts(now),
         sourceFileName: this.captureOrigin.fileName,
@@ -8114,13 +8157,13 @@ export class App {
             types: saveFilePickerTypes(format, {
               lwcap: t('save.lwcapType'), sr: t('save.srType'),
               vcd: t('save.vcdType'), csv: t('save.csvType'),
-            }),
+            }).slice(0, ethernet ? 1 : undefined),
           });
         } catch (e) {
-          if (e instanceof DOMException && e.name === 'AbortError') return; // user cancelled
+          if (e instanceof DOMException && e.name === 'AbortError') return false;
           throw e;
         }
-        const chosen = formatForFileName(handle.name, format);
+        const chosen = ethernet ? 'sr' : formatForFileName(handle.name, format);
         // Snapshot before the first await on the file: a live capture keeps appending.
         const savedLength = store.length;
         const writable = await handle.createWritable();
@@ -8131,7 +8174,7 @@ export class App {
             const plan = planLwcap(store, this.channels.map((c) => c.name));
             await this.writeLwcapWithProgress(plan, (part) => writable.write(part));
           } else {
-            for await (const p of this.exportBody(chosen, store, now)) await writable.write(p);
+            for await (const p of parts(chosen)) await writable.write(p);
           }
           await writable.close();
         } catch (e) {
@@ -8139,7 +8182,7 @@ export class App {
           throw e;
         }
         this.noteCaptureSaved(store, savedLength);
-        return;
+        return true;
       }
 
       const savedLength = store.length;
@@ -8152,7 +8195,7 @@ export class App {
         await this.writeLwcapWithProgress(plan, (part) => { blobParts.push(part); });
         blob = new Blob(blobParts, { type: 'application/octet-stream' });
       } else {
-        blob = await partsBlob(this.exportBody(format, store, now), EXPORT_MIME[format]);
+        blob = await partsBlob(parts(format), EXPORT_MIME[format]);
       }
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -8161,10 +8204,12 @@ export class App {
       setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
       // A download cannot report failure back; handing the file over is the save.
       this.noteCaptureSaved(store, savedLength);
+      return true;
     } catch (e) {
       // "Array buffer allocation failed" is not something to show raw: say the save ran
       // out of memory and what to do, with the diagnostic collapsed under it.
       this.fail('error.save', e, undefined, saveFailureNotice(e));
+      return false;
     }
   }
 

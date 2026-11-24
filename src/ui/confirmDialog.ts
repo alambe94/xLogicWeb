@@ -20,29 +20,36 @@ export class ConfirmDialog {
   private body: HTMLParagraphElement | null = null;
   private confirmButton: HTMLButtonElement | null = null;
   private cancelButton: HTMLButtonElement | null = null;
-  private resolve: ((ok: boolean) => void) | null = null;
+  private alternativeButton: HTMLButtonElement | null = null;
+  private resolve: ((choice: 'cancel' | 'confirm' | 'alternative') => void) | null = null;
   private invoker: HTMLElement | null = null;
 
   get isOpen(): boolean {
     return this.dialog?.open === true;
   }
 
-  ask(text: ConfirmText, invoker: HTMLElement | null = null): Promise<boolean> {
+  async ask(text: ConfirmText, invoker: HTMLElement | null = null): Promise<boolean> {
+    return await this.choose(text, invoker) === 'confirm';
+  }
+
+  choose(text: ConfirmText, invoker: HTMLElement | null, alternative?: string): Promise<'cancel' | 'confirm' | 'alternative'> {
     // A second request while one is open answers the first with "no".
-    this.finish(false);
+    this.finish('cancel');
     const dialog = this.ensure();
     this.title!.textContent = text.title;
     this.body!.textContent = text.body;
     this.confirmButton!.textContent = text.confirm;
     this.cancelButton!.textContent = text.cancel;
+    this.alternativeButton!.hidden = !alternative;
+    this.alternativeButton!.textContent = alternative ?? '';
     this.invoker = invoker ?? (document.activeElement as HTMLElement | null);
-    const answer = new Promise<boolean>((resolve) => { this.resolve = resolve; });
+    const answer = new Promise<'cancel' | 'confirm' | 'alternative'>((resolve) => { this.resolve = resolve; });
     if (!dialog.open) dialog.showModal();
     this.cancelButton!.focus({ preventScroll: true });
     return answer;
   }
 
-  private finish(ok: boolean): void {
+  private finish(choice: 'cancel' | 'confirm' | 'alternative'): void {
     const resolve = this.resolve;
     if (!resolve) return;
     this.resolve = null;
@@ -50,7 +57,7 @@ export class ConfirmDialog {
     this.invoker = null;
     if (this.dialog?.open) this.dialog.close();
     if (invoker?.isConnected) invoker.focus();
-    resolve(ok);
+    resolve(choice);
   }
 
   private ensure(): HTMLDialogElement {
@@ -82,22 +89,27 @@ export class ConfirmDialog {
     confirm.type = 'button';
     confirm.className = 'shortcuts-close confirm-dialog-confirm';
     confirm.dataset.confirmAccept = '';
-    actions.append(cancel, confirm);
+    const alternative = document.createElement('button');
+    alternative.type = 'button';
+    alternative.className = 'shortcuts-close';
+    alternative.dataset.confirmAlternative = '';
+    actions.append(cancel, alternative, confirm);
 
     form.append(header, body, actions);
     dialog.appendChild(form);
     document.body.appendChild(dialog);
 
-    cancel.addEventListener('click', () => this.finish(false));
-    confirm.addEventListener('click', () => this.finish(true));
+    cancel.addEventListener('click', () => this.finish('cancel'));
+    alternative.addEventListener('click', () => this.finish('alternative'));
+    confirm.addEventListener('click', () => this.finish('confirm'));
     dialog.addEventListener('cancel', (event) => {
       event.preventDefault();
-      this.finish(false);
+      this.finish('cancel');
     });
     dialog.addEventListener('pointerdown', (event) => {
       if (event.target !== dialog) return;
       event.preventDefault();
-      this.finish(false);
+      this.finish('cancel');
     });
 
     this.dialog = dialog;
@@ -105,6 +117,7 @@ export class ConfirmDialog {
     this.body = body;
     this.confirmButton = confirm;
     this.cancelButton = cancel;
+    this.alternativeButton = alternative;
     return dialog;
   }
 }

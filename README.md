@@ -87,6 +87,9 @@ Stop freezes the overview. Choose **Discard** beside **Capture** to delete the
 displayed recording after inspection. Scroll up over activity to zoom around the pointer,
 or click it to inspect the original samples immediately. Older native helpers
 use the rolling raw-sample preview.
+Starting the next capture offers **Save**, **Discard** and **Cancel**. Save
+keeps the full native recording in **Saved recordings**. Discard frees its
+space before acquisition. Cancel keeps the waveform open for inspection.
 Press **Stop** to inspect the recording, select an **Edge channel**, and use
 **Previous edge** or **Next edge** to highlight a transition at the current zoom.
 The guide labels the channel and direction and marks the edge on its waveform.
