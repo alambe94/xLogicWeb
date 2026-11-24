@@ -86,8 +86,11 @@ class Recordings:
         temp.replace(self.path(row["id"], ".record"))
 
     def available(self):
-        used = sum(p.stat().st_size for p in self.directory.iterdir() if p.is_file())
-        return max(0, min(self.budget - used, shutil.disk_usage(self.directory).free) - 2**20)
+        free = shutil.disk_usage(self.directory).free
+        if self.budget is not None:
+            used = sum(p.stat().st_size for p in self.directory.iterdir() if p.is_file())
+            free = min(free, self.budget - used)
+        return max(0, free - 2**20)  # Leave room for the receipt and archive metadata.
 
     def start(self, rate, bank, samples, serial=None):
         self.refresh()
@@ -103,16 +106,18 @@ class Recordings:
             raise ValueError("Invalid sample count")
         factor = 2 if rate == RATES[-1] else 1
         available = self.available()
-        limit = available if samples is None else (samples + factor - 1) // factor
+        limit = min(available, (2**53 - 1) // factor) if samples is None else (samples + factor - 1) // factor
         if limit < 1 or limit > available:
             raise ValueError("Recording exceeds available capture storage")
         key = uuid.uuid4().hex
         row = dict(id=key, title=datetime.now().isoformat(timespec="seconds"), rate=rate, bank=bank,
                    state="recording", samples=0, limit=samples or limit * factor, note="")
         self.save(row)
+        # The CLI needs a deadline. Allow long recordings to reach their byte limit.
+        duration = max(86400, (row["limit"] + rate - 1) // rate + 60)
         cmd = [str(self.executable), "--continuous", "--sample-rate", str(rate),
                "--channel-mask", str((15 if bank == "lower" else 240) if factor == 2 else 255),
-               "--duration", "86400", "--record-bytes", str(limit), "--stop-on-stdin-close",
+               "--duration", str(duration), "--record-bytes", str(limit), "--stop-on-stdin-close",
                "--output", str(self.path(key, ".bin")), "--json", str(self.path(key, ".json"))]
         if serial or self.serial:
             cmd += ["--serial", serial or self.serial]
@@ -380,10 +385,13 @@ def main():
     parser.add_argument("--recorder", type=Path, required=True)
     parser.add_argument("--dist", type=Path, required=True)
     parser.add_argument("--store", type=Path, required=True)
+    parser.add_argument("--archive-limit-gib", type=int, help="Optional cumulative recording quota in GiB")
     parser.add_argument("--serial")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
+    if args.archive_limit_gib is not None and args.archive_limit_gib < 1:
+        parser.error("--archive-limit-gib must be a positive integer")
     if os.name != "nt" or not args.recorder.is_file() or not (args.dist / "index.html").is_file():
         parser.error("Requires Windows, xlogic_capture.exe and the built viewer")
     dist, store = args.dist.resolve(), args.store.resolve()
@@ -395,7 +403,8 @@ def main():
         lock.seek(0)
         msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
         server.dist = dist
-        server.records = Recordings(store, args.recorder.resolve(), args.serial, 16 * GIB)
+        budget = None if args.archive_limit_gib is None else args.archive_limit_gib * GIB
+        server.records = Recordings(store, args.recorder.resolve(), args.serial, budget)
         server.authority = f"127.0.0.1:{server.server_port}"
         url = f"http://{server.authority}/"
         print(url, flush=True)

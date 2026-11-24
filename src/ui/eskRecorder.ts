@@ -105,7 +105,8 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
             formatBytes(row.bytes ?? 0) + (row.state === 'failed' ? ' · ' + (row.note || 'Failed') : '')]);
         }
         const space = await (await nativeRequest('storage')).json();
-        diskSpace.textContent = (space.available / 2 ** 30).toFixed(2) + ' GiB available · ' + space.budget / 2 ** 30 + ' GiB archive limit';
+        const quota = space.budget == null ? '' : ' · ' + space.budget / 2 ** 30 + ' GiB archive limit';
+        diskSpace.textContent = (space.available / 2 ** 30).toFixed(2) + ' GiB available' + quota;
       } catch (error) { errors.push(String(error)); }
     }
     try {
