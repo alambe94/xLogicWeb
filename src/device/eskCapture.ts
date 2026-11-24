@@ -24,15 +24,19 @@ const SCOPED_MAGIC = new TextEncoder().encode('xELG');
 
 let selected: USBDevice | undefined;
 export function selectedEskUsbDevice(): USBDevice | undefined { return selected; }
-export function selectEskUsbDevice(device?: USBDevice): void { selected = device; }
+export function selectEskUsbDevice(device?: USBDevice): void {
+  if (selected === device) return;
+  selected = device;
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('esk-usb-ddr'));
+}
 export async function requestEskDevice(change = false): Promise<USBDevice> {
   if (selected && !change) return selected;
   const device = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x1209, productId: 3 }] });
-  selected = device;
+  selectEskUsbDevice(device);
   return device;
 }
 if (typeof navigator !== 'undefined') navigator.usb?.addEventListener('disconnect', event => {
-  if (event.device === selected) selected = undefined;
+  if (event.device === selected) selectEskUsbDevice();
 });
 
 export function unpackEsk(bytes: Uint8Array, count: number): Uint8Array {

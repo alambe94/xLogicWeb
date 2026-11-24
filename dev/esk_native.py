@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 import uuid
 import webbrowser
 from functools import lru_cache
@@ -595,6 +596,46 @@ class Recordings:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def send_capture(self, body):
+        # Hold the last block until the hardware releases the retained capture.
+        # If transfer or cleanup fails after headers, Content-Length stays short.
+        started = False
+        try:
+            with self.server.boards.capture(body) as (ticks, chunks, keep_alive):
+                self.connection.settimeout(1)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(body["count"]))
+                self.send_header("X-ESK-Ticks", ticks)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                started = True
+                last = b""
+                for chunk in chunks:
+                    pending = memoryview(last)
+                    progress = time.monotonic()
+                    while pending:
+                        try:
+                            written = self.connection.send(pending)
+                        except TimeoutError:
+                            if time.monotonic() - progress >= 30:
+                                raise
+                            keep_alive()
+                            continue
+                        if not written:
+                            raise BrokenPipeError("Viewer disconnected")
+                        pending = pending[written:]
+                        progress = time.monotonic()
+                        keep_alive()
+                    last = chunk
+            self.connection.settimeout(15)
+            self.wfile.write(last)
+        except (ValueError, OSError):
+            if not started:
+                raise
+            self.close_connection = True
+
     def reply(self, status, data, mime):
         self.send_response(status)
         self.send_header("Content-Type", mime)
@@ -620,7 +661,14 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(size))
             if not isinstance(body, dict):
                 raise ValueError("Invalid request")
-            result = self.server.records.request(body)
+            if isinstance(body.get("op"), str) and body["op"].startswith("lan_"):
+                if not self.server.boards:
+                    raise ValueError("The packaged LAN adapter is unavailable")
+                if body["op"] == "lan_capture":
+                    return self.send_capture(body)
+                result = self.server.boards.request(body)
+            else:
+                result = self.server.records.request(body)
         except (ValueError, KeyError, OSError) as exc:
             return self.reply(400, str(exc).encode(), "text/plain; charset=utf-8")
         if isinstance(result, bytes):
@@ -636,7 +684,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         data = path.read_bytes()
         if path == self.server.dist / "index.html":
-            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis data-loop data-ram-loop data-discovery>', 1)
+            lan = b" data-local-board" if self.server.boards else b""
+            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis data-loop data-ram-loop data-discovery' + lan + b'>', 1)
         self.reply(200, data, mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
 
@@ -665,6 +714,13 @@ def main():
         server.dist = dist
         budget = None if args.archive_limit_gib is None else args.archive_limit_gib * GIB
         server.records = Recordings(store, args.recorder.resolve(), args.serial, budget)
+        try:
+            from xsdk_xesk import open_tcp
+            from esk_local_board import LocalBoards
+        except ImportError:
+            server.boards = None
+        else:
+            server.boards = LocalBoards()
         server.authority = f"127.0.0.1:{server.server_port}"
         url = f"http://{server.authority}/"
         print(url, flush=True)

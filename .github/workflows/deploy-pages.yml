@@ -32,8 +32,8 @@ jobs:
           node src/decode/tools/vendor-assets.mjs "$RUNNER_TEMP/decoders/decoders"
       - name: Check types and ESK device self-tests
         run: npm test -- --filter src/device/esk
-      - name: Test native recording archive
-        run: python3 -m unittest discover -s dev -p test_esk_native.py
+      - name: Test native recording and local network connections
+        run: python3 -m unittest discover -s dev -p 'test_esk_*.py'
       - name: Build for the repository's Pages path
         env:
           REPO_NAME: ${{ github.event.repository.name }}

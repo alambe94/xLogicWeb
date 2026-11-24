@@ -2,6 +2,7 @@
 import { validBoardName, readBoardPolicy, saveBoardName } from '../device/eskBoardName.js';
 import { withBoardManagement, type BoardStatus } from '../device/eskPairedBoard.js';
 import { usbBoardName } from '../device/eskUsbHome.js';
+import { localBoard, localBoardName } from '../device/eskLocalBoard.js';
 import { t } from './i18n.js';
 
 export function initBoardName() {
@@ -23,6 +24,7 @@ export function initBoardName() {
     try {
       const requested = write ? name.value : undefined;
       const result = active.device ? await usbBoardName(active.device, active.board, requested) :
+        localBoard() ? await localBoardName(active.board, requested) :
         await withBoardManagement(active.board, async exchange => {
           const service = async (p: Uint8Array) => {
             const r = await exchange(p);

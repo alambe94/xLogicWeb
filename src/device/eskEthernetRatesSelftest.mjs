@@ -67,3 +67,36 @@ await withBoardManagement(status, async exchange => {
   assert.deepEqual(await exchange(Uint8Array.of(2)), Uint8Array.of(2));
 });
 assert.equal(await closed.promise, 3);
+
+// A loopback package pins the selected board on Home, then uses the same rate
+// and data callbacks as a board-launched capture. No board iframe is needed.
+globalThis.location = new URL('http://127.0.0.1:40000/#eskLocal=' + 'a'.repeat(32));
+globalThis.document = {querySelector: () => ({})};
+window.parent = window;
+const localCount = 66001;
+let truncate = false;
+globalThis.fetch = async (url, options) => {
+  assert.equal(url, '/api/native');
+  const request = JSON.parse(options.body);
+  assert.equal(request.board, 'a'.repeat(32));
+  if (request.op === 'lan_status') return Response.json({...status, captureMaxSamples: 131072, captureRates: rates});
+  assert.deepEqual(request, {op: 'lan_capture', board: 'a'.repeat(32), boot: status.boot, count: localCount, rate: rates[2]});
+  return new Response(new Uint8Array(localCount - Number(truncate)).fill(0xa5), {headers: {
+    'Content-Type': 'application/octet-stream', 'Content-Length': String(localCount), 'X-ESK-Ticks': '123456',
+  }});
+};
+await readBoardStatus();
+const captureLocal = async () => {
+  let next = 0;
+  const ticks = await receiveBoardCapture(localCount, new AbortController().signal, async (data, offset) => {
+    assert.equal(offset, next);
+    assert.ok(data.length > 0 && data.length <= 32768 && data.every(sample => sample === 0xa5));
+    next += data.length;
+  }, rates[2]);
+  assert.equal(next, localCount);
+  return ticks;
+};
+assert.equal(await captureLocal(), '123456');
+truncate = true;
+await assert.rejects(captureLocal(), /Incomplete/);
+console.log('Loopback Ethernet capture and truncation detection passed');

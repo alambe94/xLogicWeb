@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { withBoardManagement, type BoardStatus } from '../device/eskPairedBoard.js';
 import { restartBoard } from '../device/eskRestart.js';
+import { localBoard, localRequest } from '../device/eskLocalBoard.js';
 import { restartUsbBoard } from '../device/eskUsbHome.js';
 import { t } from './i18n.js';
 
@@ -15,6 +16,7 @@ export function initEskRestart() {
     status.textContent = '';
     try {
       if (current.device) await restartUsbBoard(current.device, current.board);
+      else if (localBoard()) await localRequest('lan_restart', {boot: current.board.boot, confirm: true});
       else await withBoardManagement(current.board, restartBoard);
       if (target === current) status.textContent = t('home.restartAccepted');
     } catch (error) {
