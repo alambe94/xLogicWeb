@@ -1,6 +1,6 @@
 import { t } from './i18n.js';
 import type { MessageKey } from './i18n.js';
-import { browserArchiveSpace, setBrowserLimit } from './browserArchiveSpace.js';
+import { browserArchiveSpace, loopRamMiB, setLoopRamMiB, setBrowserLimit } from './browserArchiveSpace.js';
 import { aboutView } from './about.js';
 import type { AboutLink } from './about.js';
 import { helpTip } from './helpTip.js';
@@ -229,16 +229,32 @@ export class SettingsDialog {
     input.type = 'number';
     input.min = input.step = '1';
     const save = document.createElement('button');
-    save.className = 'settings-action';
+    save.className = 'settings-action mini';
     save.textContent = t('toolbar.save');
     const status = document.createElement('output');
     status.className = 'panel-note';
     status.setAttribute('aria-live', 'polite');
-    const controls = document.createElement('div');
-    controls.className = 'archive-limit-controls';
-    controls.append(input, save);
-    row.append(this.rowLabel('settings.archiveLimit', input.id), controls);
-    form.append(row, status);
+    row.append(this.rowLabel('settings.archiveLimit', input.id), input);
+    const ramRow = document.createElement('div');
+    ramRow.className = 'settings-row';
+    const ram = document.createElement('input');
+    ram.id = 'loop-ram-mib';
+    ram.dataset.settingsKey = 'loop-ram';
+    ram.className = 'viewer-input';
+    ram.type = 'number';
+    ram.min = '0';
+    ram.max = String(Math.floor(Number.MAX_SAFE_INTEGER / 2**20));
+    ram.step = '1';
+    ram.required = true;
+    ram.value = String(loopRamMiB());
+    const ramSupported = !nativeRecorderAvailable() || !!document.querySelector('[data-ram-loop]');
+    ram.disabled = !ramSupported;
+    ramRow.append(this.rowLabel('settings.loopRam', ram.id), ram);
+    const help = document.createElement('p');
+    help.className = 'panel-note';
+    help.textContent = t('settings.ramHelp');
+    form.className = 'storage-preferences';
+    form.append(ramRow, help, row, status, save);
     const update = async (apply: boolean) => {
       input.disabled = save.disabled = true;
       try {
@@ -247,16 +263,17 @@ export class SettingsDialog {
         const data = native
           ? await (await (apply ? nativeRequest('set_quota', {gib: value}) : nativeRequest('storage'))).json()
           : await (apply ? setBrowserLimit(value) : browserArchiveSpace());
+        if (apply && ramSupported) setLoopRamMiB(ram.valueAsNumber);
         if (!('launchBudget' in data)) throw new Error(t('settings.updateRecorder'));
         const gib = 2 ** 30;
         input.max = String(data.launchBudget === null ? Math.floor(Number.MAX_SAFE_INTEGER / gib) : data.launchBudget / gib);
         input.value = data.budget === null ? '' : String(data.budget / gib);
-        input.placeholder = data.launchBudget === null ? t('settings.driveSpace') : String(data.launchBudget / gib);
+        input.placeholder = data.launchBudget === null ? t('settings.autoBudget') : String(data.launchBudget / gib);
         status.textContent = data.launchBudget === null ? t('settings.blankDrive') :
           t('settings.launchLimit', {limit: data.launchBudget / gib});
-        if (!native) status.textContent = 'Browser recordings on this site · ' +
-          (Number.isFinite(data.available) ? (data.available / gib).toFixed(2) + ' GiB available. ' : '') +
-          'Blank uses available browser storage.';
+        const remaining = Number.isFinite(data.available)
+          ? t('settings.spaceLeft', {space: (data.available / gib).toFixed(2)}) + ' ' : '';
+        status.textContent = remaining + (native ? status.textContent : t('settings.siteDisk'));
         input.disabled = save.disabled = false;
       } catch (err) {
         status.textContent = err instanceof Error ? err.message : String(err);
@@ -443,13 +460,13 @@ export class SettingsDialog {
     block.dataset.settingsKey = 'about';
     block.tabIndex = -1;
     block.append(
-      this.aboutLine('about-name', `${view.name} — ${view.subtitle}`, false),
+      this.aboutLine('about-name', view.name, false),
       this.aboutLine('about-meta', view.version, false),
       this.aboutLine('about-meta', view.license),
-      this.aboutLine('about-meta', 'xEskWeb adapts Sipeed SLogicWeb for ESK Logic and Bridge devices.', false),
+      this.aboutLine('about-meta', 'Based on Sipeed SLogicWeb.', false),
       this.aboutLine('about-meta', view.copyright, false),
       this.aboutLine('about-meta', 'Protocol decoders are from libsigrokdecode and retain their individual author and license notices. The browser runtime includes Pyodide (MPL-2.0) and CPython (PSF License).', false),
-      this.aboutLine('about-meta', 'Assistant libraries include the Anthropic SDK, OpenTelemetry API, standardwebhooks, @stablelib/base64 and fast-sha256. Their license texts and copyright notices are included below.', false),
+      this.aboutLine('about-meta', 'Bundled licenses cover the assistant libraries and other dependencies.', false),
       this.aboutLinks(view.links),
     );
     return block;

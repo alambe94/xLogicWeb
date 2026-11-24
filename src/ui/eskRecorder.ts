@@ -8,8 +8,8 @@ import { selectControl } from './select.js';
 import type { ConfirmDialog } from './confirmDialog.js';
 import { t } from './i18n.js';
 import { displayNativeRecording, listNativeRecordings, nativeRecorderAvailable, nativeRequest, type NativeRecord } from './nativeArchive.js';
-import { browserArchiveSpace, withBrowserWriter } from './browserArchiveSpace.js';
-import { openLoop } from '../data/loopRecording.js';
+import { browserArchiveSpace, loopRamMiB, withBrowserWriter } from './browserArchiveSpace.js';
+import { finishLoop, openLoop, type LoopManifest } from '../data/loopRecording.js';
 import { formatBytes } from './format.js';
 
 import type { LiveReply, LiveRequest } from '../device/eskRecordWorker.js';
@@ -25,9 +25,52 @@ export interface SavedRecording {
   summary?: string;
   read(start: number, end: number): Promise<Uint8Array>;
   edge?(position: number, channel: number, direction: 'previous' | 'next'): Promise<{match: number | null; resume: number | null}>;
+  persist?(): Promise<void>;
   dispose?(): void;
 }
 export type RecordingDisplay = (bytes: Uint8Array, rate: number, start: number, name: string, saved?: SavedRecording) => void;
+
+function ramRecording(key: string, memory: Uint8Array | undefined, meta: LoopManifest): SavedRecording {
+  const samples = Math.min(meta.total, meta.capacity);
+  const saved: SavedRecording = {
+    key, samples,
+    async read(start, end) {
+      if (!memory || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+          start < 0 || end < start || end > samples) throw Error('Invalid RAM loop window');
+      const pos = (meta.total - samples + start) % meta.capacity;
+      const size = end - start, head = Math.min(size, meta.capacity - pos);
+      const bytes = new Uint8Array(size);
+      bytes.set(memory.subarray(pos, pos + head));
+      if (head < size) bytes.set(memory.subarray(0, size - head), head);
+      return bytes;
+    },
+    async persist() {
+      await withBrowserWriter(() => withArchive(key, async () => {
+        if (!memory || saved.stored) return;
+        if ((await browserArchiveSpace()).available < samples) throw Error(t('esk.storageFull'));
+        const root = await recordingRoot();
+        const dir = await root.getDirectoryHandle(key, {create: true});
+        try {
+          const file = await dir.getFileHandle('loop.bin', {create: true});
+          const output = await file.createWritable();
+          try {
+            for (let i = 0; i < samples; i += MiB) await output.write(memory.slice(i, Math.min(i + MiB, samples)));
+            await output.close();
+          } catch (err) { await output.abort().catch(() => {}); throw err; }
+          await finishLoop(dir, meta);
+          const disk = await openLoop(dir);
+          if (!disk) throw Error('Could not reopen saved loop');
+          saved.read = (a, b) => withArchive(key, () => disk.read(a, b));
+          saved.stored = {key, name: key, source: 'browser'};
+          delete saved.persist;
+          memory = undefined;
+        } catch (err) { await root.removeEntry(key, {recursive: true}); throw err; }
+      }));
+    },
+    dispose() { memory = undefined; },
+  };
+  return saved;
+}
 
 async function recordingRoot(): Promise<FileSystemDirectoryHandle> {
   return (await navigator.storage.getDirectory()).getDirectoryHandle('esk-recordings', { create: true });
@@ -115,7 +158,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
           if (row.state === 'recording') continue;
           const key = 'native:' + row.id;
           nativeRows.set(key, row);
-          choices.push([key, row.title + ' · ' + row.samples.toLocaleString() + ' samples · ' +
+          choices.push([key, row.title + (row.volatile ? ' · RAM' : '') + ' · ' + row.samples.toLocaleString() + ' samples · ' +
             formatBytes(row.bytes ?? 0) + (row.state === 'failed' ? ' · ' + (row.note || 'Failed') : '')]);
         }
         const space = await (await nativeRequest('storage')).json();
@@ -179,7 +222,8 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
     const title = options?.ethernet ? 'xLOGIC Ethernet' : live ? (rate === ESK_PACKED_RATE ? 'xLOGIC USB ' + (bank === 'upper' ? 'D4–D7' : 'D0–D3') : 'xLOGIC USB') : file!.name;
     let budget = options?.count ?? (limit.value ? limit.valueAsNumber * MiB : Infinity);
     if (budget !== Infinity && !Number.isSafeInteger(budget)) throw new Error(t('rec.invalidLimit'));
-    if (live && Number.isFinite(budget) && navigator.storage?.estimate) {
+    const ram = !!(device && options?.loop && budget <= loopRamMiB() * MiB);
+    if (!ram && live && Number.isFinite(budget) && navigator.storage?.estimate) {
       const {quota, usage} = await navigator.storage.estimate();
       if (quota !== undefined && usage !== undefined && budget > quota - usage) throw new Error(t('esk.storageFull'));
     }
@@ -199,14 +243,13 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
       dialog.close();
       return;
     }
-    const root = await recordingRoot();
     const name = new Date().toISOString().replace(/:/g, '-') + ' ' +
       title.replace(/[^\p{L}\p{N} ._-]/gu, '_').slice(0, 48) + ' ' + crypto.randomUUID().slice(0, 8);
     await withBrowserWriter(() => withArchive(name, async () => {
-      const {available} = await browserArchiveSpace();
+      const available = ram ? Infinity : (await browserArchiveSpace()).available;
       if (budget === Infinity) budget = Math.floor(available);
       if (budget < 1 || budget > available) throw Error(t('esk.storageFull'));
-      const dir = await root.getDirectoryHandle(name, { create: true });
+      const dir = ram ? undefined : await (await recordingRoot()).getDirectoryHandle(name, { create: true });
       const signal = (abort = new AbortController()).signal;
       update();
       if (device) {
@@ -226,7 +269,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
                 status.value = progress(data.accepted, data.saved, data.queue);
               } finally { send({ type: 'displayed' }); }
             };
-            send({ type: 'start', directory: dir, serial: device.serialNumber ?? '', limit: budget, rate, bank, title, loop: !!options?.loop });
+            send({ type: 'start', directory: dir, ram, serial: device.serialNumber ?? '', limit: budget, rate, bank, title, loop: !!options?.loop });
           });
           first.value = String(Math.max(0, result.saved - displaySamples));
           status.value = progress(result.accepted, result.saved, 0);
@@ -234,11 +277,16 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
           if (result.wire !== undefined) status.value += ' · ' + t('rec.tail', { samples: (result.wire - BigInt(result.accepted)).toLocaleString() });
           if (!options?.loop && result.accepted === budget) status.value = t('rec.atLimit') + ' · ' + status.value;
           // The last preview may have been skipped while the renderer was busy.
-          if (result.saved && options?.loop) {
-            completed = await displayLoop(dir, name, Number(first.value), status.value);
+          if (result.saved && result.memory) {
+            const saved = ramRecording(name, result.memory, {capacity: budget, total: result.accepted, title, rate});
+            const start = Number(first.value);
+            display(await saved.read(start, saved.samples), rate, start, title, saved);
+            completed = true;
+          } else if (result.saved && options?.loop) {
+            completed = await displayLoop(dir!, name, Number(first.value), status.value);
             if (!completed) throw Error('Loop recording did not finalize');
           } else if (result.saved) {
-            const saved = new RecordArchive(await createOpfsRecordStorage(dir));
+            const saved = new RecordArchive(await createOpfsRecordStorage(dir!));
             const last = Number(first.value);
             showSaved(await saved.readBytes(last, result.saved), rate, last, title, name, saved, result.saved, status.value);
             completed = true;
@@ -252,7 +300,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
         return;
       }
       if (!replay) return;
-      const controller = new OpfsRecordController(await createOpfsRecordStorage(dir), {
+      const controller = new OpfsRecordController(await createOpfsRecordStorage(dir!), {
         profile: { profileId: title, calibrationId: null, channels: 8, sampleRateHz: rate, bytesPerSample: 1 },
         maxBytes: budget,
       });
@@ -298,7 +346,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
         if (!controller.lastError) { invalidReplay = true; throw error; }
       } finally {
         await controller.close();
-        if (invalidReplay) await root.removeEntry(name, { recursive: true });
+        if (invalidReplay) await (await recordingRoot()).removeEntry(name, { recursive: true });
         first.value = String(Math.max(0, controller.bytes - displaySamples));
         await list('browser:' + name);
         status.value = progress(accepted, controller.bytes, controller.queuedBytes);
@@ -306,7 +354,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
       if (controller.lastError) throw new Error(controller.lastError + ' · ' + status.value);
       if (accepted === budget && accepted < replay.size) status.value = t('rec.atLimit') + ' · ' + status.value;
       if (controller.bytes) {
-        const saved = new RecordArchive(await createOpfsRecordStorage(dir));
+        const saved = new RecordArchive(await createOpfsRecordStorage(dir!));
         showSaved(tail, rate, accepted - tail.length, title, name, saved, controller.bytes, status.value);
         dialog.close();
       }

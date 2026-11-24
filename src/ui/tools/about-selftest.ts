@@ -52,7 +52,7 @@ function aboutPane(settingsWindow: string, app: string, about: string): boolean 
   return block.includes("block.className = 'settings-about';") &&
     block.includes("block.dataset.settingsKey = 'about';") &&
     block.includes('const view = aboutView();') &&
-    block.includes("this.aboutLine('about-name', `${view.name} — ${view.subtitle}`, false),") &&
+    block.includes("this.aboutLine('about-name', view.name, false),") &&
     block.includes("this.aboutLine('about-meta', view.version, false),") &&
     block.includes("this.aboutLine('about-meta', view.license),") &&
     block.includes("this.aboutLine('about-meta', view.copyright, false),") &&
@@ -80,7 +80,7 @@ function aboutPane(settingsWindow: string, app: string, about: string): boolean 
 {
   const view = aboutView({ version: '1.2.3', hash: 'abc1234' });
   check('the About view names the app, version and build, the GPL line and the copyright',
-    view.name === 'xEskWeb' && view.subtitle === en['app.title'] &&
+    view.name === 'xEskWeb' &&
       view.version === 'Version 1.2.3 · build abc1234' &&
       view.license === 'GPL-3.0-or-later · no warranty' &&
       view.copyright === '© 2026 Sipeed Co., Ltd. and contributors.' && COPYRIGHT === view.copyright &&

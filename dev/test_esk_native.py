@@ -56,6 +56,33 @@ class RecordingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.window(self.key, 0, 6)
 
+    def test_ram_loop_wrap_save_retry_and_discard(self):
+        import mmap
+        from esk_native import LoopSink
+        for rate, width in ((RATES[0], 9), (RATES[-1], 5)):
+            with self.subTest(rate=rate):
+                mem = mmap.mmap(-1, width)
+                self.store.ram_loops[self.key] = mem
+                wire = bytes(range(23))
+                LoopSink.append(mem, width, 0, wire)
+                expanded = bytes(x for b in wire for x in (b & 15, b >> 4)) if rate == RATES[-1] else wire
+                self.store.save(dict(id=self.key, loop=True, volatile=True, state="saved", samples=9,
+                                     limit=9, firstSample=len(expanded)-9, rate=rate, bank="lower", note="OK"))
+                self.assertFalse(self.store.path(self.key, ".bin").exists())
+                self.assertEqual(self.store.window(self.key, 0, 9), expanded[-9:])
+                with patch.object(self.store, "available", return_value=0), self.assertRaises(ValueError):
+                    self.store.persist_loop(self.key)
+                self.assertFalse(mem.closed)
+                self.store.request(dict(op="save_loop", id=self.key))
+                self.assertTrue(mem.closed)
+                self.assertEqual(self.store.path(self.key, ".bin").stat().st_size, width)
+                self.assertEqual(self.store.window(self.key, 0, 9), expanded[-9:])
+                self.store.remove(self.key)
+        mem = mmap.mmap(-1, 9)
+        self.store.ram_loops[self.key] = mem
+        self.store.remove(self.key)
+        self.assertTrue(mem.closed)
+
     def test_raw_range(self):
         self.complete(RATES[0], 3, b"abc", 255)
         self.assertEqual(self.store.window(self.key, 1, 3), b"bc")

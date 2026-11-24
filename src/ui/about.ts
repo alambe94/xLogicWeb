@@ -37,7 +37,6 @@ export interface AboutLink {
 
 export interface AboutView {
   readonly name: string;
-  readonly subtitle: string;
   readonly version: string;
   readonly license: string;
   readonly copyright: string;
@@ -48,7 +47,6 @@ export interface AboutView {
 export function aboutView(id: BuildIdentity = buildIdentity()): AboutView {
   return {
     name: APP_NAME,
-    subtitle: t('app.title'),
     version: t('about.version', { version: id.version, build: id.hash }),
     license: t('about.license'),
     copyright: COPYRIGHT,
@@ -56,7 +54,7 @@ export function aboutView(id: BuildIdentity = buildIdentity()): AboutView {
       { label: t('about.source'), href: SOURCE_URL },
       { label: t('about.licenseLink'), href: LICENSE_URL },
       { label: t('about.notice'), href: NOTICE_URL },
-      { label: 'Sipeed SLogicWeb · original source', href: 'https://github.com/sipeed/SLogicWeb' },
+      { label: 'Original source', href: 'https://github.com/sipeed/SLogicWeb' },
       { label: 'Bundled third-party license texts', href: './THIRD_PARTY_LICENSES.txt' },
     ],
   };

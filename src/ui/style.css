@@ -3179,8 +3179,13 @@ html[data-theme="light"] .bus-dialog::backdrop { background: var(--backdrop); }
 
 /* index.html's static "Starting…" line, removed by main.ts once App has constructed. */
 .empty-hint-starting { font-size: 12px; opacity: 0.8; color: var(--text50); }
-#settings-dialog .archive-limit-controls { display: flex; align-items: center; gap: 6px; }
-#settings-dialog .archive-limit-controls input { width: 7em; }
+.storage-preferences { display: grid; }
+.storage-preferences .viewer-input { width: 6em; max-width: 100%; }
+.storage-preferences .settings-row { grid-template-columns: minmax(0, 1fr) auto; }
+.storage-preferences .settings-row > .viewer-input { justify-self: end; }
+.storage-preferences .panel-note { display: block; margin: 0 8px 10px; color: var(--muted-foreground); }
+.storage-preferences .settings-action { justify-self: end; margin-inline-end: 8px; white-space: nowrap; }
+.settings-about .about-links { margin-top: 4px; flex-direction: row; flex-wrap: wrap; gap: 6px 12px; }
 #trace-tools, .trace-trigger { min-width: 0; }
 #trace-tools { display: grid; gap: 8px; }
 #trace-filter output:empty { display: none; }

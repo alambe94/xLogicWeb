@@ -3,7 +3,7 @@ import { ESK_PACKED_RATE } from '../device/eskCapture.js';
 import type { RecordingDisplay, SavedRecording } from './eskRecorder.js';
 
 export interface NativeRecord {
-  loop?: boolean; limit?: number;
+  volatile?: boolean; loop?: boolean; limit?: number;
   id: string; rate: number; bank: 'lower' | 'upper'; samples: number; bytes?: number;
   state: 'recording' | 'saved' | 'failed'; title: string; note: string;
 }
@@ -41,6 +41,10 @@ export async function displayNativeRecording(row: NativeRecord, display: Recordi
       return bytes;
     }, edge: async (position, channel, direction) =>
       (await nativeRequest('edge', {id: row.id, position, channel, direction})).json()};
+  if (row.volatile) saved.persist = async () => {
+    await nativeRequest('save_loop', {id: row.id});
+    delete saved.persist;
+  };
   const start = Math.min(first ?? Math.max(0, row.samples - size), row.samples - 1);
   const end = Math.min(start + size, row.samples);
   display(await saved.read(start, end), row.rate, start, nativeRecordingTitle(row), saved);

@@ -239,8 +239,8 @@ check('the browser notice appears only without WebUSB and names HTTPS only for a
 const html = fs.readFileSync('index.html', 'utf8');
 const app = fs.readFileSync('src/ui/app.ts', 'utf8');
 check('the tab title is localized, and waveform/label areas opt out of machine translation',
-  html.includes('<title data-i18n="app.title">xLogicWeb · xEskWeb</title>') &&
-    en['app.title'] === 'xLogicWeb · xEskWeb' && zhCN['app.title'] === 'xLogicWeb · xEskWeb' &&
+  html.includes('<title data-i18n="app.title">xEskWeb</title>') &&
+    en['app.title'] === 'xEskWeb' && zhCN['app.title'] === 'xEskWeb' &&
     html.includes('<div id="labels-col" translate="no">') &&
     html.includes('<div id="plot" translate="no">') &&
     html.includes('<div id="empty-hint" translate="yes">') &&

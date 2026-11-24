@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { loopRamMiB } from './browserArchiveSpace.js';
 import { selectedEskUsbDevice } from '../device/eskCapture.js';
 import { displaySamples, type EskRecordingOptions, type RecordingDisplay } from './eskRecorder.js';
 import { displayNativeRecording, listNativeRecordings, nativeRecordingTitle, nativeRequest, type NativeRecord } from './nativeArchive.js';
@@ -19,7 +20,8 @@ export async function recordNative(options: EskRecordingOptions, preview: Record
       const selected = selectedEskUsbDevice();
       if (selected && !selected.serialNumber) throw new Error('The selected USB board has no serial number for native recording');
       row = await (await nativeRequest('start', {rate: options.rate, bank: options.bank,
-        samples: Number.isFinite(options.count) ? options.count : null, loop: options.loop === true, serial: selected?.serialNumber})).json();
+        samples: Number.isFinite(options.count) ? options.count : null, loop: options.loop === true,
+        ramMiB: options.loop && document.querySelector('[data-ram-loop]') ? loopRamMiB() : 0, serial: selected?.serialNumber})).json();
     }
     if (!row) throw new Error('The recorder returned no recording');
     const id = row.id;

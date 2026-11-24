@@ -191,7 +191,7 @@ export function initEskHome(): void {
     home.hidden = !atHome;
     bridge.hidden = !atBridge;
     logic.hidden = logic.inert = atHome || atBridge;
-    document.title = atHome ? 'xEskWeb' : atBridge ? 'xBridgeWeb' : t('app.title');
+    document.title = atHome ? t('app.title') : atBridge ? 'xBridge' : 'xLogic';
     if (atHome) {
       if (focus) document.getElementById('esk-home-title')!.focus();
       void updateStatus();
