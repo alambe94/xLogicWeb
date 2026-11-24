@@ -61,6 +61,12 @@ class RecordingTests(unittest.TestCase):
         self.store.active = self.key
         self.store.path(self.key, ".bin").write_bytes(bytes.fromhex("1032"))
         self.assertEqual(self.store.window(self.key, 1, 4, preview=True), bytes([1, 2, 3]))
+        frame = dict(op="status", id=self.key, preview_after=0, advance=1)
+        self.assertEqual(self.store.request(frame), (4).to_bytes(8, "little") * 2 + bytes([0, 1, 2, 3]))
+        frame["preview_after"] = 1
+        self.assertEqual(self.store.request(frame), (4).to_bytes(8, "little") + (2).to_bytes(8, "little") + bytes([0, 1]))
+        frame["preview_after"] = 4
+        self.assertEqual(self.store.request(frame)["samples"], 4)
         with self.assertRaises(ValueError):
             self.store.window(self.key, 1, 5, preview=True)
         with self.assertRaises(ValueError):
