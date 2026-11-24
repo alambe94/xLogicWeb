@@ -149,7 +149,7 @@ import {
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
 import { RecordingActivity } from './recordingActivity.js';
-import { displaySamples, showEskRecorder } from './eskRecorder.js';
+import { deletionPrompt, displaySamples, removeStoredRecording, showEskRecorder } from './eskRecorder.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
 import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
@@ -503,6 +503,7 @@ export class App {
   } | null = null;
   private captureSessionId = 0;
   private recordingActivity: RecordingActivity | undefined;
+  private discardingRecording = false;
   private recordingTimeline = new RecordingTimeline(() => { this.dirty = true; }, () => this.dismissRecordingActivity());
 
   private dismissRecordingActivity(): void {
@@ -827,7 +828,7 @@ export class App {
     channelList: HTMLDivElement; side: HTMLDivElement;
     interactionBar: HTMLDivElement; interactionArea: HTMLSpanElement;
     interactionHints: HTMLUListElement;
-    hint: HTMLDivElement; transport: HTMLButtonElement;
+    hint: HTMLDivElement; transport: HTMLButtonElement; discard: HTMLButtonElement;
     connect: HTMLButtonElement; open: HTMLButtonElement; save: HTMLButtonElement;
     fullscreen: HTMLButtonElement; settings: HTMLButtonElement;
     corner: HTMLDivElement; cornerSummary: HTMLButtonElement; cornerSummaryText: HTMLSpanElement;
@@ -861,6 +862,7 @@ export class App {
       interactionHints: must<HTMLUListElement>('interaction-hints'),
       hint: must<HTMLDivElement>('empty-hint'),
       transport: must<HTMLButtonElement>('transport'),
+      discard: must<HTMLButtonElement>('btn-discard'),
       connect: must<HTMLButtonElement>('btn-connect'),
       open: must<HTMLButtonElement>('btn-open'),
       save: must<HTMLButtonElement>('btn-save'),
@@ -6351,6 +6353,7 @@ export class App {
       this.deviceMenu.toggle(this.deviceMenuItems());
     });
     this.el.transport.addEventListener('click', () => this.primaryAction());
+    this.el.discard.addEventListener('click', () => void this.discardDisplayedRecording());
     must<HTMLButtonElement>('btn-open').addEventListener('click', () => {
       this.channelList.closeDialog();
       this.menuStack.closeOthers(this.openMenu, 'outside');
@@ -7236,6 +7239,9 @@ export class App {
     this.syncUnloadGuard();
     const repeatPending = this.repeatTimer.pending;
     const showStop = this.running || repeatPending || !!this.eskArmed || !!this.stopNativeRecording;
+    this.el.discard.hidden = showStop || this.stopping || this.eskCapturePending ||
+      (!this.recordingTimeline.current && this.captureLabel.kind !== 'esk');
+    this.el.discard.disabled = this.discardingRecording;
     this.renderDeviceCommand();
     this.el.open.setAttribute('aria-label', t('toolbar.open'));
     this.el.save.setAttribute('aria-label', t('toolbar.save'));
@@ -7884,6 +7890,44 @@ export class App {
     }
   }
 
+  private clearDisplayedRecording(): void {
+    const {channelCount, samplerate} = this.captureStore;
+    this.recordingTimeline.clear();
+    this.captureOrigin = {model: null, fileName: null};
+    this.setFileNotice(null);
+    if (this.statusError?.what === 'rec.discard') {
+      this.statusError = null;
+      this.renderErrorBanner();
+    }
+    this.adoptCapture(createSampleStore(channelWidthForProbes(channelCount), samplerate), [], {kind: 'none'}, true);
+  }
+
+  private async discardDisplayedRecording(): Promise<void> {
+    if (this.discardingRecording || this.el.discard.hidden) return;
+    const archive = this.recordingTimeline.current, store = this.captureStore;
+    const current = () => !this.running && !this.stopping && !this.eskCapturePending &&
+      (archive ? this.recordingTimeline.current === archive : this.captureStore === store);
+    this.discardingRecording = true;
+    try {
+      const ok = await this.confirmDialog.ask({
+        title: t('rec.discard'), body: archive?.stored ? deletionPrompt(archive.stored) : t('rec.discardCurrent'),
+        confirm: t('rec.discardShort'), cancel: t('reset.cancel'),
+      }, this.el.discard);
+      if (!ok || !current()) return;
+      this.el.discard.disabled = true;
+      if (archive?.stored) await removeStoredRecording(archive.stored);
+      if (current()) {
+        this.clearDisplayedRecording();
+        this.el.transport.focus({preventScroll: true});
+      }
+    } catch (error) {
+      if (current()) this.fail('rec.discard', error);
+    } finally {
+      this.discardingRecording = false;
+      this.renderToolbarState();
+    }
+  }
+
   private async openEskRecorder(live: boolean, options?: import('./eskRecorder.js').EskRecordingOptions): Promise<void> {
     if (this.eskCapturePending || this.running || this.stopping) return;
     let previewShown = false;
@@ -7932,6 +7976,7 @@ export class App {
           this.stack.setViewport(left, left + span);
           this.dirty = true;
         });
+      this.renderToolbarState();
     };
     if (live && options && !options.ethernet && nativeRecorderAvailable()) {
       this.eskCapturePending = true;
@@ -7976,7 +8021,9 @@ export class App {
         this.renderSidebarContent();
       }
     } else {
-      showEskRecorder(live, display, this.confirmDialog, () => this.confirmDiscardCapture(), key => this.recordingTimeline.clear(key), options);
+      showEskRecorder(live, display, this.confirmDialog, () => this.confirmDiscardCapture(), key => {
+        if (this.recordingTimeline.current?.key === key) this.clearDisplayedRecording();
+      }, options);
     }
   }
 

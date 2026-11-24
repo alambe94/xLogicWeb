@@ -29,7 +29,8 @@ export function nativeRecordingTitle(row: NativeRecord): string {
 export async function displayNativeRecording(row: NativeRecord, display: RecordingDisplay, size: number, first?: number) {
   if (row.state !== 'saved') throw new Error(row.note || 'Recording is unavailable');
   if (!row.samples) throw new Error('This recording has no saved samples.');
-  const saved: SavedRecording = {key: row.id, samples: row.samples, summary: row.note,
+  const saved: SavedRecording = {key: row.id, stored: {key: row.id, name: row.title, source: 'native'},
+    samples: row.samples, summary: row.note,
     read: async (start, end) => {
       const bytes = new Uint8Array(await (await nativeRequest('window', {id: row.id, start, end})).arrayBuffer());
       if (bytes.length !== end - start) throw new Error('Incomplete native recording window');
