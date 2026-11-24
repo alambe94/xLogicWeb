@@ -73,9 +73,9 @@ export class RecordingTimeline {
           const start = requested;
           const bytes = await archive.read(start, Math.min(start + displaySamples, archive.samples));
           if (this.archive === archive && requested === start) {
+            this.windowStart = start;
             display(bytes, start);
             displayed = start;
-            this.windowStart = start;
             this.error.textContent = '';
           }
         }

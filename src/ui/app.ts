@@ -148,6 +148,10 @@ import {
 } from './captureAbort.js';
 import { classifyFailureNotice, failureNoticeKey } from './failureNotice.js';
 import { RecordingTimeline } from './recordingTimeline.js';
+import { TraceTools } from './traceTools.js';
+import { filteredTrace } from './traceFilter.js';
+import { scanBlock } from './traceSearch.js';
+import type { TraceInput, TraceHit } from './traceSearch.js';
 import { RecordingActivity } from './recordingActivity.js';
 import { deletionPrompt, displaySamples, removeStoredRecording, showEskRecorder, type SavedRecording } from './eskRecorder.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
@@ -515,6 +519,88 @@ export class App {
     this.dirty = true;
   }
   private nativePreviewStart: number | null = null;
+  private traceTools = new TraceTools(signal => this.analysisSource(signal), hit => this.inspectTraceHit(hit),
+    () => { this.layerFingerprint = null; this.dirty = true; }, () => this.filterWidths,
+    async (bit, samples) => {
+      if (samples) this.filterWidths.set(bit, samples); else this.filterWidths.delete(bit);
+      await this.updateFilteredView();
+    });
+  private filterWidths = new Map<number, number>();
+  private filterJob = new AbortController();
+  private filteredView: SampleStore | null = null;
+
+  private analysisSource(signal?: AbortSignal): TraceInput | null {
+    const raw = this.rawAnalysisSource();
+    return raw && filteredTrace(raw, new Map(this.filterWidths), signal ?? this.filterJob.signal);
+  }
+
+  private rawAnalysisSource(): TraceInput | null {
+    const raw = this.captureStore;
+    if (!raw?.length || raw.channelCount > 8 || this.running || this.stopping || this.eskCapturePending ||
+        this.nativePreviewStart !== null) return null;
+    const archive = this.recordingTimeline.current;
+    return {key: archive ?? raw, length: archive?.samples ?? raw.length, rate: raw.samplerate,
+      ...(archive?.readSize ? {readSize: archive.readSize} : {}),
+      channels: raw.channelCount, firstChannel: this.displayedEskBank === 'upper' ? 4 : 0,
+      gaps: archive ? [] : raw.gaps(), read: archive ? archive.read : async (start, end) => {
+        const bytes = new Uint8Array(end - start);
+        for (let bit = 0; bit < raw.channelCount; bit++) {
+          for (let i = 0; i < bytes.length; i++) bytes[i] |= raw.sampleAt(bit, start + i) << bit;
+        }
+        return bytes;
+      }};
+  }
+
+  private async updateFilteredView(): Promise<void> {
+    this.filterJob.abort();
+    const job = this.filterJob = new AbortController();
+    const raw = this.captureStore, source = this.rawAnalysisSource();
+    if (!source) return;
+    const filtered = filteredTrace(source, new Map(this.filterWidths), job.signal);
+    let view: SampleStore | null = null;
+    if (this.filterWidths.size) {
+      view = createSampleStore(channelWidthForProbes(raw.channelCount), raw.samplerate);
+      const offset = this.recordingTimeline.windowStart;
+      for (let i = 0; i < raw.length; i += scanBlock) {
+        const bytes = await filtered.read(offset + i, offset + Math.min(i + scanBlock, raw.length));
+        if (job.signal.aborted || raw !== this.captureStore) return;
+        view.append(bytes);
+        if (i + scanBlock < raw.length) await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      for (const gap of raw.gaps()) view.noteGap(gap.startSample, gap.endSample);
+    }
+    this.filteredView = view;
+    this.setDisplayStore(view ?? raw);
+    this.setFilterIndicator();
+    this.discardDecodeState();
+    this.autoDecodeGen++;
+    const decoded = this.analyzers.filter(a => a.result || this.autoDecode);
+    for (const a of this.analyzers) {
+      a.result = null; a.index = null; a.status = 'idle'; a.note = { kind: 'pending' };
+    }
+    this.resetBusBuilds();
+    this.layerFingerprint = null;
+    this.relayout();
+    this.renderPanels();
+    this.dirty = true;
+    for (const a of decoded) { if (job.signal.aborted) return; await this.runDecode(a.id); }
+  }
+
+  private setFilterIndicator(): void {
+    const label = document.querySelector('#btn-trace-tools .toolbar-item-label');
+    if (label) label.textContent = this.filteredView ? 'Analyze (filtered)' : 'Analyze';
+  }
+
+  private async inspectTraceHit(hit: TraceHit): Promise<void> {
+    const span = this.stack.viewport.end - this.stack.viewport.start;
+    const middle = hit.start + (hit.end - hit.start) / 2;
+    if (this.recordingTimeline.inspectSample) {
+      await this.recordingTimeline.inspectSample(Math.floor(middle), Math.min(span, displaySamples), 0.5);
+    } else {
+      this.stack.setViewport(middle - span / 2, middle + span / 2);
+    }
+    this.dirty = true;
+  }
   private eskRate = ESK_RATE;
   private eskBank: EskBank = 'lower';
   private displayedEskBank: EskBank | undefined;
@@ -4657,6 +4743,12 @@ export class App {
         }
       }
       for (const cursor of this.cursors) cursor.marker.draw(this.overlay, (sample) => this.toPx(sample));
+      const hit = this.traceTools.hit;
+      if (hit && !this.traceTools.root.hidden) {
+        const offset = this.recordingTimeline.windowStart;
+        const row = boxes.find(b => b.spec.kind === 'channel' && b.spec.channel === hit.bit);
+        if (row) this.overlay.drawTraceHit(this.toPx(hit.start - offset), this.toPx(hit.end - offset), row.top, row.band);
+      }
       if (this.hover) this.overlay.drawHover(this.hover);
     }
     this.layerFingerprint = fingerprint;
@@ -7265,6 +7357,7 @@ export class App {
    * vanished mid-run.
    */
   private renderToolbarState(): void {
+    this.traceTools.refresh();
     // Start/stop, open and save all re-render the toolbar: the unload guard follows them.
     this.syncUnloadGuard();
     const repeatPending = this.repeatTimer.pending;
@@ -7768,6 +7861,11 @@ export class App {
   private adoptCapture(store: SampleStore, names: string[], label: CaptureLabel, sameRecording = false, keepVisibility = label.kind === 'esk', preview = false, packedBank?: EskBank): void {
     const previousView = this.stack.viewport;
     if (!sameRecording) this.recordingTimeline.clear();
+    this.filterJob.abort();
+    this.filterJob = new AbortController();
+    this.filteredView = null;
+    if (!sameRecording || !this.recordingTimeline.current) this.filterWidths.clear();
+    this.setFilterIndicator();
     this.stopQuickScroll();
     this.repeatTimer.cancel();
     this.settleHeldCaptureStart();
@@ -7849,7 +7947,9 @@ export class App {
     else this.stack.zoomToFit();
     this.renderPanels();
     this.dirty = true;
-    if (!preview) this.scheduleAutoDecode();
+    if (!preview && this.filterWidths.size) {
+      void this.updateFilteredView().catch(error => { if (error?.name !== 'AbortError') this.fail('error.openCapture', error); });
+    } else if (!preview) this.scheduleAutoDecode();
   }
 
   private async openEskCapture(transport: 'usb' | 'ethernet'): Promise<void> {
@@ -8628,6 +8728,10 @@ export class App {
       this.viewIntent = false;
       if (newSession) {
         this.recordingTimeline.clear();
+        this.filterJob.abort();
+        this.filterWidths.clear();
+        this.filteredView = null;
+        this.setFilterIndicator();
         this.displayedEskBank = this.selectedRowBank = undefined;
         this.repeatMissed = false;
         this.captureSessionId += 1;
@@ -9893,9 +9997,9 @@ export class App {
   private async runDecode(id: string): Promise<void> {
     const a = this.analyzers.find((x) => x.id === id);
     if (!a) return;
-    const store = this.captureStore as CountingStore;
+    const store = (this.filteredView ?? this.captureStore) as CountingStore;
     const controller = new AbortController();
-    const stale = (): boolean => this.captureStore !== store || !this.analyzers.includes(a);
+    const stale = (): boolean => (this.filteredView ?? this.captureStore) !== store || !this.analyzers.includes(a);
     try {
       this.statusError = null;
       this.renderErrorBanner();

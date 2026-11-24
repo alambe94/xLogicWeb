@@ -245,6 +245,10 @@
       </button>
       <span class="toolbar-separator" role="separator" aria-orientation="vertical"></span>
       <div class="toolbar-group" role="group" aria-label="View and settings" data-i18n-aria-label="toolbar.viewGroup">
+        <button type="button" class="toolbar-item" id="btn-trace-tools" aria-controls="trace-tools" aria-expanded="false" title="Analyze capture">
+          <span class="toolbar-item-media" aria-hidden="true"><svg class="toolbar-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6M5 11h3V8h4v3h3"/></svg></span>
+          <span class="toolbar-item-label">Analyze</span>
+        </button>
         <button id="btn-fullscreen" class="toolbar-item toolbar-fullscreen" data-i18n-title="toolbar.enterFullscreenTitle" title="Enter fullscreen" aria-label="Fullscreen" aria-pressed="false">
           <span class="toolbar-item-media">
             <svg class="toolbar-item-icon fullscreen-icon-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" data-icon="inline-start">
@@ -367,6 +371,7 @@
     </div>
 
     <aside id="bridge-dock" aria-label="xBridgeWeb" hidden></aside>
+    <aside id="trace-tools" aria-label="Trace analysis" hidden></aside>
     <output id="native-status" hidden></output>
     <form id="rec-timeline" hidden>
       <div class="recording-position">

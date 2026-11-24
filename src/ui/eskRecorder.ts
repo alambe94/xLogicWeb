@@ -16,6 +16,7 @@ const MiB = 1024 * 1024;
 export const displaySamples = 65536;
 export interface StoredRecording { key: string; name: string; source: 'native' | 'browser' }
 export interface SavedRecording {
+  readSize?: number;
   key: string;
   stored?: StoredRecording;
   samples: number;
