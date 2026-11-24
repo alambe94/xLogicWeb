@@ -12,6 +12,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--lan-sdk", type=Path, help="Optional authorized xSDK checkout for a team package with offline Ethernet")
     parser.add_argument("--recorder-version", help="Release version of the supplied recorder executable")
     for name in ("dist", "recorder", "runtime-zip", "recorder-notices", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
@@ -43,6 +44,15 @@ def main():
             for name in ("Start xEskWeb.cmd", "esk_native.py"):
                 out.write(root / "dev" / name, name)
             out.write(root / "dev/esk_discovery.py", "runtime/esk_discovery.py")
+            if args.lan_sdk:
+                sdk = args.lan_sdk / "tools/xesk/xsdk_xesk"
+                if not (sdk / "tcp.py").is_file() or not (sdk / "__init__.py").is_file():
+                    parser.error("Expected tools/xesk/xsdk_xesk in --lan-sdk")
+                out.write(root / "dev/esk_local_board.py", "runtime/esk_local_board.py")
+                out.write(args.lan_sdk / "LICENSE", "licenses/lan-sdk/LICENSE.txt")
+                for module in sorted(sdk.rglob("*.py")):
+                    if all(part.isidentifier() for part in module.relative_to(sdk).parts[:-1]) and module.stem.isidentifier():
+                        out.write(module, "runtime/xsdk_xesk/" + module.relative_to(sdk).as_posix())
             recorder = args.recorder.read_bytes()
             out.writestr("xlogic_capture.exe", recorder)
             if args.recorder_version:

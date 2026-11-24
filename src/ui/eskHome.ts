@@ -10,6 +10,7 @@ import { initFirmwareCheck } from './eskFirmwareCheck.js';
 import { initBoardName } from './eskBoardName.js';
 import { initEskRestart } from './eskRestart.js';
 import { boardAddress } from '../device/eskBoardName.js';
+import { localBoard, localEthernetAvailable, selectLocalBoard } from '../device/eskLocalBoard.js';
 import { applyUpdate, getUpdateState, onUpdateStateChange } from './pwaUpdate.js';
 import { nativeRecorderAvailable, nativeRequest } from './nativeArchive.js';
 
@@ -43,9 +44,24 @@ export function initEskHome(): void {
   const lanChoice = document.querySelector<HTMLDetailsElement>('#esk-lan-choice')!;
   const address = document.querySelector<HTMLInputElement>('#esk-board-address')!;
   const form = document.querySelector<HTMLFormElement>('#esk-board-form')!;
+  const localConnect = document.querySelector<HTMLButtonElement>('#esk-connect-local')!;
+  const directConnect = document.querySelector<HTMLButtonElement>('#esk-connect-address')!;
+  const localAvailable = localEthernetAvailable();
+  let discovered: string | undefined;
+  localConnect.hidden = !localAvailable;
+  if (localAvailable) {
+    directConnect.dataset.i18n = 'home.openBoardAddress';
+    directConnect.textContent = t('home.openBoardAddress');
+  }
   const browserSite = new URL(location.href);
   browserSite.search = browserSite.hash = '';
   usbSite.href = browserSite.href;
+  const localSelection = localBoard();
+  if (localSelection) {
+    usbSite.target = '_self';
+    usbSite.dataset.i18n = 'home.changeConnection';
+    usbSite.textContent = t('home.changeConnection');
+  }
   const paired = fromBoard();
   const nativeHome = nativeRecorderAvailable();
   const discovery = document.getElementById('esk-lan-boards')!;
@@ -69,7 +85,7 @@ export function initEskHome(): void {
           connect.type = rename.type = 'button';
           connect.textContent = board.alias || board.name;
           connect.title = board.name + '.local · ' + board.address + ':' + board.port;
-          connect.onclick = () => { address.value = board.address + ':' + board.port; address.setCustomValidity(''); form.requestSubmit(); };
+          connect.onclick = () => { address.value = board.address + ':' + board.port; discovered = board.id; address.setCustomValidity(''); form.requestSubmit(); };
           rename.textContent = 'Rename on this laptop';
           rename.onclick = async () => {
             const value = window.prompt('Board name on this laptop', board.alias || board.name);
@@ -123,16 +139,16 @@ export function initEskHome(): void {
   }
   usbSite.hidden = !paired;
   lanChoice.hidden = paired || location.protocol === 'file:';
-  newLogic.hidden = paired || location.protocol === 'file:';
+  newLogic.hidden = (paired && !localSelection) || location.protocol === 'file:';
   newBridge.hidden = location.protocol === 'file:';
   document.getElementById('esk-analysis-demo')!.hidden = location.protocol === 'file:';
   for (const [link, view] of [[newLogic, 'logic'], [newBridge, 'bridge']] as const) {
-    const url = new URL(browserSite);
+    const url = new URL(localSelection ? location.href : browserSite);
     url.searchParams.set('view', view);
     link.href = url.href;
   }
-  address.oninput = () => address.setCustomValidity('');
-  form.onsubmit = event => {
+  address.oninput = () => { discovered = undefined; address.setCustomValidity(''); };
+  form.onsubmit = async event => {
     event.preventDefault();
     const url = boardAddress(address.value);
     if (!url) {
@@ -140,7 +156,12 @@ export function initEskHome(): void {
       address.reportValidity();
       return;
     }
-    location.assign(url);
+    if (!localAvailable || event.submitter === directConnect) { location.assign(url); return; }
+    if (localConnect.disabled) return;
+    localConnect.disabled = directConnect.disabled = true;
+    try { await selectLocalBoard(new URL(url), discovered); }
+    catch (error) { connection.textContent = error instanceof Error ? error.message : String(error); }
+    finally { localConnect.disabled = directConnect.disabled = false; }
   };
 
   const details = document.querySelector<HTMLDetailsElement>('#esk-details')!;

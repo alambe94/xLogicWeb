@@ -80,8 +80,12 @@ Ethernet counts must fit the capacity advertised by the board.
 The viewer remembers your USB selection until the device disconnects or you change it on Home.
 
 At 41.67, 83.33, 166.67 and 333.33 MS/s the board samples all eight inputs.
-At 500 MS/s choose D0–D3 (the default) or D4–D7. For longer captures the viewer
-saves samples to browser storage and displays a window of the recording. Select
+At 500 MS/s, boards advertising finite eight-channel USB capture offer D0–D7
+by default. Enter the desired count (for example `2G`) or choose **Use board maximum**.
+The board records in DDR, then downloads all eight channels over USB. Longer downloads
+use this browser profile’s disk archive. Stop during download to inspect the received prefix.
+Choose D0–D3 or D4–D7 for packed USB capture, streaming, or the packed trigger.
+Earlier firmware offers the two four-channel banks. Select
 **Record all** for an open-ended USB recording. The sustainable rate depends
 on the board, USB link and host storage. After Stop, use the slider to browse the trace.
 
@@ -116,9 +120,13 @@ disconnected. In the Windows launcher, expand **Connect via Ethernet** to scan
 the local LAN. Select the advertised board or choose **Rename on this laptop**
 to remember a name such as `lab-bench` with that recorder folder. The nickname
 follows the board's identity across DHCP changes. **Find boards** scans again.
-On networks that filter mDNS, or in the hosted viewer, enter the board address.
-This opens the board's one-tab viewer and its connection
-consent. The board loads that viewer from GitHub Pages.
+You can also enter the board's `.local` name or its numeric IP address. In a
+Windows package with the LAN adapter, **Connect on this laptop** keeps the app
+at `127.0.0.1`. Its viewer files come from the package and the helper talks to
+the selected board over Ethernet, including when the lab has no internet.
+**Open board address** opens the board's one-tab viewer from GitHub Pages and
+asks for connection consent. Opening the board's mDNS name or IP directly also
+uses this route.
 
 Choose the rate and sample count in Logic, then press **Capture** once. The waveform opens when the
 requested count is reached, or when you press **Stop**. Counts above 65,536 and

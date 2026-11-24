@@ -162,7 +162,8 @@ import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
 import { boardCaptureMaximum, boardCaptureRates, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
-import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_PACKED_RATE, type EskBank, requestEskDevice } from '../device/eskCapture.js';
+import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_PACKED_RATE, type EskBank, requestEskDevice, selectedEskUsbDevice } from '../device/eskCapture.js';
+import { inspectUsbDdr, receiveUsbDdr, usbDdrMaximum } from '../device/eskUsbDdr.js';
 import { capturePackedEdge } from './eskPackedCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
 // `?url&inline`: a data: URL in every build, so the portable file:// build needs no fetch.
@@ -516,7 +517,7 @@ export class App {
     const activity = new DownloadActivity(count, rate);
     const canvas = document.createElement('canvas');
     canvas.className = 'recording-activity download-activity';
-    canvas.setAttribute('aria-label', t('rec.ethernet'));
+    canvas.setAttribute('aria-label', t('rec.downloadOverview'));
     const preview = {session: this.captureSessionId, activity, canvas};
     return {
       append: (block: Uint8Array) => {
@@ -638,6 +639,11 @@ export class App {
   private eskRate = ESK_RATE;
   private eskLanRate = ESK_RATE;
   private eskBank: EskBank = 'lower';
+  private eskAllUsbChannels = true;
+  private get eskDdrCapacity(): number | undefined {
+    if (this.eskRate === ESK_PACKED_RATE && this.eskLength === 'count')
+      return usbDdrMaximum(selectedEskUsbDevice()) || undefined;
+  }
   private displayedEskBank: EskBank | undefined;
   private selectedRowBank: EskBank | undefined;
   private eskCountText = String(ESK_SAMPLES);
@@ -1245,7 +1251,7 @@ export class App {
 
   private updateEskBankView(): void {
     if (this.captureLabel.kind === 'none' || this.captureOrigin.model === 'ESK xLOGIC') {
-      this.selectedRowBank = this.eskRate === ESK_PACKED_RATE ? this.eskBank : undefined;
+      this.selectedRowBank = this.eskRate === ESK_PACKED_RATE && !(this.eskDdrCapacity && this.eskAllUsbChannels) ? this.eskBank : undefined;
       this.relayout();
     }
     this.renderSidebarContent();
@@ -6517,6 +6523,7 @@ export class App {
   }
 
   private wireToolbar(): void {
+    window.addEventListener('esk-usb-ddr', () => { if (!eskLanMode()) this.updateEskBankView(); });
     window.addEventListener('esk-capture-capacity', () => {
       if (!boardCaptureRates().includes(this.eskLanRate)) this.eskLanRate = ESK_RATE;
       this.renderSidebarContent();
@@ -7163,7 +7170,8 @@ export class App {
       const profile = document.createElement('p');
       profile.className = 'panel-note';
       const lan = !!eskLanMode();
-      const max = lan ? boardCaptureMaximum() : undefined;
+      const ddr = !lan && this.eskAllUsbChannels ? this.eskDdrCapacity : undefined;
+      const max = lan ? boardCaptureMaximum() : ddr;
       const rate = lan ? this.eskLanRate : this.eskRate;
       const rates = selectControl('esk-finite-rate', (lan ? 'Ethernet' : 'USB') + ' · ' + t('capturePanel.sampleRate'),
         (lan ? boardCaptureRates() : [ESK_PACKED_RATE, ...ESK_FINITE_RATES]).map(hz => [String(hz), formatRate(hz)]), String(rate));
@@ -7186,7 +7194,7 @@ export class App {
       const count = document.createElement('input');
       count.type = 'text';
       count.spellcheck = false;
-      const maximum = lan ? max ?? ESK_SAMPLES : Number.MAX_SAFE_INTEGER;
+      const maximum = max ?? (lan ? ESK_SAMPLES : Number.MAX_SAFE_INTEGER);
       count.id = 'esk-sample-count';
       count.className = 'viewer-input';
       count.required = true;
@@ -7197,8 +7205,9 @@ export class App {
       const updateEstimate = () => {
         const n = parseSampleCount(count.value, maximum);
         syncTrigger?.(n);
-        count.setCustomValidity(n === undefined ? t('esk.invalidSamples', {max: formatCount(maximum)}) : '');
-        const packedRecording = !lan && nativeRecorderAvailable() && rate === ESK_PACKED_RATE &&
+        const overDdr = ddr && (parseSampleCount(count.value) ?? 0) > ddr;
+        count.setCustomValidity(n === undefined ? t(overDdr ? 'esk.ddrLimit' : 'esk.invalidSamples', {max: formatCount(maximum)}) : '');
+        const packedRecording = !lan && !ddr && nativeRecorderAvailable() && rate === ESK_PACKED_RATE &&
           (this.eskLength === 'loop' || (n ?? 0) > ESK_SAMPLES);
         const bytes = Math.ceil((n ?? 0) / (packedRecording ? 2 : 1));
         const ramCap = !nativeRecorderAvailable() || document.querySelector('[data-ram-loop]') ? loopRamMiB() * 2 ** 20 : 0;
@@ -7214,13 +7223,18 @@ export class App {
       const fields = document.createElement('div');
       fields.className = 'esk-capture-fields';
       fields.append(rates.el, samplesLabel);
-      if (lan && max) {
+      if (max) {
         const useMax = document.createElement('button');
         useMax.type = 'button';
         useMax.className = 'pill';
         useMax.textContent = t('esk.boardMaximum');
         useMax.disabled = this.eskCapturePending;
-        useMax.onclick = () => { this.eskLanCount = count.value = String(max); updateEstimate(); };
+        useMax.onclick = () => {
+          count.value = String(max);
+          if (lan) this.eskLanCount = count.value;
+          else this.eskCountText = count.value;
+          updateEstimate();
+        };
         fields.append(useMax);
       }
       const trigger = document.createElement('details');
@@ -7241,7 +7255,7 @@ export class App {
           checkbox.type = 'checkbox';
           checkbox.checked = this.eskLength === mode;
           checkbox.disabled = this.eskCapturePending;
-          checkbox.onchange = () => { this.eskLength = checkbox.checked ? mode : 'count'; this.renderSidebarContent(); };
+          checkbox.onchange = () => { this.eskLength = checkbox.checked ? mode : 'count'; this.updateEskBankView(); };
           until.append(document.createTextNode(t(mode === 'untilStop' ? 'esk.untilStop' : 'esk.loop')), checkbox);
           modes.append(until);
         }
@@ -7256,7 +7270,7 @@ export class App {
         const position = selectControl('esk-pre-trigger', t('capturePanel.preTriggerBuffer'),
           [0, 25, 50, 75].map(n => [String(n), n + '%']), String(this.eskPrePercent));
         syncTrigger = n => {
-          const available = this.eskLength === 'count' && n !== undefined && n <= ESK_SAMPLES;
+          const available = !ddr && this.eskLength === 'count' && n !== undefined && n <= ESK_SAMPLES;
           edge.disabled = this.eskCapturePending || !available;
           edge.value = available ? this.eskEdge : 'none';
           channel.el.hidden = edge.value === 'none';
@@ -7282,26 +7296,31 @@ export class App {
       legend.textContent = t('esk.visibleChannels');
       const choices = document.createElement('div');
       channels.append(legend, choices);
-      if (rate === ESK_PACKED_RATE) {
+      if (!lan && rate === ESK_PACKED_RATE) {
         choices.className = 'segmented';
         legend.textContent = t('esk.captureBank');
-        for (const bank of ['lower', 'upper'] as const) {
+        const banks: readonly ('all' | EskBank)[] = this.eskDdrCapacity ? ['all','lower','upper'] : ['lower','upper'];
+        for (const bank of banks) {
           const label = document.createElement('label');
           const input = document.createElement('input');
-          label.className = 'seg' + (this.eskBank === bank ? ' on' : '');
+          const checked = bank === (ddr ? 'all' : this.eskBank);
+          label.className = 'seg' + (checked ? ' on' : '');
           input.type = 'radio';
           input.name = 'esk-bank';
           input.id = 'esk-bank-' + bank;
           input.value = bank;
-          input.checked = this.eskBank === bank;
+          input.checked = checked;
           input.disabled = this.eskCapturePending;
           input.onchange = () => {
             if (!input.checked) return;
-            this.eskBank = bank;
-            this.eskTriggerChannel = this.eskTriggerChannel % 4 + (bank === 'upper' ? 4 : 0);
+            this.eskAllUsbChannels = bank === 'all';
+            if (bank !== 'all') {
+              this.eskBank = bank;
+              this.eskTriggerChannel = this.eskTriggerChannel % 4 + (bank === 'upper' ? 4 : 0);
+            }
             this.updateEskBankView();
           };
-          label.append(input, bank === 'lower' ? 'D0–D3' : 'D4–D7');
+          label.append(input, bank === 'all' ? 'D0–D7' : bank === 'lower' ? 'D0–D3' : 'D4–D7');
           choices.append(label);
         }
       } else {
@@ -8050,7 +8069,17 @@ export class App {
   private async openEskCapture(transport: 'usb' | 'ethernet'): Promise<void> {
     if (this.eskCapturePending || this.discardingRecording || this.running || this.stopping) return;
     const lan = transport === 'ethernet';
-    const max = lan ? boardCaptureMaximum() : undefined;
+    if (!lan && this.eskRate === ESK_PACKED_RATE && this.eskLength === 'count' && this.eskAllUsbChannels &&
+        usbDdrMaximum(selectedEskUsbDevice()) === undefined) {
+      this.eskCapturePending = true;
+      try { await inspectUsbDdr(await requestEskDevice()); }
+      catch (error) {
+        if (!(error instanceof DOMException && error.name === 'NotFoundError')) this.fail('error.eskUsb', error);
+        return;
+      } finally { this.eskCapturePending = false; this.updateEskBankView(); }
+    }
+    const ddr = !lan && this.eskAllUsbChannels ? this.eskDdrCapacity : undefined;
+    const max = lan ? boardCaptureMaximum() : ddr;
     const untilStop = !lan && this.eskLength === 'untilStop';
     const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity
       : parseSampleCount(lan ? this.eskLanCount : this.eskCountText, max);
@@ -8073,7 +8102,7 @@ export class App {
     }
     const loop = !lan && this.eskLength === 'loop';
     if (n > ESK_SAMPLES || loop) {
-      this.openEskRecorder(true, {count: n, rate: lan ? this.eskLanRate : this.eskRate, bank: this.eskBank, ethernet: lan, loop});
+      this.openEskRecorder(true, {count: n, rate: lan ? this.eskLanRate : this.eskRate, bank: this.eskBank, ethernet: lan, usbDdr: !!ddr, loop});
       return;
     }
     this.eskCapturePending = true;
@@ -8088,10 +8117,14 @@ export class App {
       this.endPendingRepeatSession();
       const rate = device ? this.eskRate : this.eskLanRate;
       const bank = this.eskBank;
-      const packed = rate === ESK_PACKED_RATE;
+      const packed = !!device && rate === ESK_PACKED_RATE && !ddr;
       let samples: Uint8Array, ticks: string | undefined;
       let triggerIndex: number | undefined;
-      if (device) {
+      if (device && ddr) {
+        samples = new Uint8Array(n);
+        let offset = 0;
+        await receiveUsbDdr(device, n, controller.signal, async block => { samples.set(block, offset); offset += block.length; });
+      } else if (device) {
         const trigger = this.eskEdge !== 'none' ? {
           channel: this.eskTriggerChannel, edge: this.eskEdge, signal: controller.signal,
           onArmed: () => {
@@ -8259,7 +8292,7 @@ export class App {
         });
       this.renderToolbarState();
     };
-    if (live && options && !options.ethernet && nativeRecorderAvailable()) {
+    if (live && options && !options.ethernet && !options.usbDdr && nativeRecorderAvailable()) {
       this.eskCapturePending = true;
       this.renderToolbarState();
       this.renderSidebarContent();

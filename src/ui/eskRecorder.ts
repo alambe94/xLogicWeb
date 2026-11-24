@@ -3,6 +3,7 @@ import { OpfsRecordController, RecordArchive } from '../data/recordController.js
 import { createOpfsRecordStorage } from '../data/opfsStorage.js';
 import { ESK_STREAM_RATE, ESK_PACKED_RATE, requestEskDevice, type EskBank } from '../device/eskCapture.js';
 import { downloadBoardTrace } from '../device/eskLanRecording.js';
+import { receiveUsbDdr } from '../device/eskUsbDdr.js';
 import { openEskReplay } from './srLoad.js';
 import { selectControl } from './select.js';
 import type { ConfirmDialog } from './confirmDialog.js';
@@ -106,7 +107,7 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean; loop?: boolean }
+export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean; usbDdr?: boolean; loop?: boolean }
 type DownloadPreview = (count: number, rate: number) => {append(block: Uint8Array): void; close(): void};
 export function showEskRecorder(live: boolean, display: RecordingDisplay, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions, captureChanged = () => false, downloadPreview?: DownloadPreview): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
@@ -120,7 +121,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
   const reopen = get<HTMLButtonElement>('reopen'), remove = get<HTMLButtonElement>('delete');
   const close = get<HTMLButtonElement>('close'), status = get<HTMLOutputElement>('status');
   const heading = get<HTMLElement>('heading');
-  const titleKey = options?.ethernet ? 'rec.ethernet' : live ? 'rec.live' : 'rec.title';
+  const titleKey = options?.ethernet ? 'rec.ethernet' : options?.usbDdr ? 'rec.usbFinite' : live ? 'rec.live' : 'rec.title';
   heading.dataset.i18n = titleKey;
   heading.textContent = t(titleKey);
   const importer = get<HTMLDetailsElement>('import');
@@ -221,7 +222,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
     const replay = live ? null : await openEskReplay(file!);
     const rate = replay?.rate ?? options?.rate ?? ESK_STREAM_RATE;
     const bank = options?.bank ?? 'lower';
-    const title = options?.ethernet ? 'xLOGIC Ethernet' : live ? (rate === ESK_PACKED_RATE ? 'xLOGIC USB ' + (bank === 'upper' ? 'D4–D7' : 'D0–D3') : 'xLOGIC USB') : file!.name;
+    const title = options?.ethernet ? 'xLOGIC Ethernet' : options?.usbDdr ? 'xLOGIC USB D0–D7' : live ? (rate === ESK_PACKED_RATE ? 'xLOGIC USB ' + (bank === 'upper' ? 'D4–D7' : 'D0–D3') : 'xLOGIC USB') : file!.name;
     let budget = options?.count ?? (limit.value ? limit.valueAsNumber * MiB : Infinity);
     if (budget !== Infinity && !Number.isSafeInteger(budget)) throw new Error(t('rec.invalidLimit'));
     const ram = !!(device && options?.loop && budget <= loopRamMiB() * MiB);
@@ -261,6 +262,55 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
       const dir = ram ? undefined : await (await recordingRoot()).getDirectoryHandle(name, { create: true });
       const signal = (abort = new AbortController()).signal;
       update();
+      if (device && options?.usbDdr) {
+        const storage = await createOpfsRecordStorage(dir!);
+        const writer = new OpfsRecordController(storage, {profile: {profileId: title, calibrationId: null,
+          channels: 8, sampleRateHz: rate, bytesPerSample: 1}, maxBytes: budget});
+        const preview = downloadPreview?.(budget, rate);
+        const staging = new Uint8Array(Math.min(budget, 4 * MiB));
+        let used = 0, saved = 0;
+        async function flush() {
+          if (!used) return;
+          writer.capture(staging.subarray(0, used), {startSeconds: saved / rate, endSeconds: (saved + used) / rate});
+          await writer.whenIdle();
+          if (writer.lastError) throw new Error(writer.lastError);
+          saved += used; used = 0;
+        }
+        let keep = false;
+        try {
+          writer.arm();
+          await writer.whenIdle();
+          if (writer.lastError) throw new Error(writer.lastError);
+          try {
+            await receiveUsbDdr(device, budget, signal, async block => {
+              let offset = 0;
+              while (offset < block.length) {
+                const n = Math.min(staging.length - used, block.length - offset);
+                staging.set(block.subarray(offset, offset + n), used); used += n; offset += n;
+                if (used === staging.length) await flush();
+              }
+              preview?.append(block);
+              status.value = progress(saved + used, saved, used);
+            });
+          } catch (error) { if (!signal.aborted || error !== signal.reason) throw error; }
+          await flush();
+          await writer.close();
+          if (writer.lastError) throw new Error(writer.lastError);
+          if (saved && (!captureChanged() || await confirmReplace())) {
+            const archive = new RecordArchive(storage), start = Math.max(0, saved - displaySamples);
+            showSaved(await archive.readBytes(start, saved), rate, start, title, name, archive, saved, progress(saved, saved, 0));
+            keep = true;
+          }
+          dialog.close();
+        } finally {
+          preview?.close();
+          if (!keep) {
+            try { await writer.close(); }
+            finally { await (await recordingRoot()).removeEntry(name, {recursive: true}); }
+          }
+        }
+        return;
+      }
       if (device) {
         const worker = new Worker(new URL('../device/eskRecordWorker.ts', import.meta.url), { type: 'module' });
         const send = (message: LiveRequest) => worker.postMessage(message);
@@ -412,7 +462,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
   close.onclick = () => dialog.close();
   dialog.oncancel = event => { if (busy) { event.preventDefault(); abort?.abort(); update(); } };
   status.value = '';
-  if (options?.ethernet) dialog.show();
+  if (options?.ethernet || options?.usbDdr) dialog.show();
   else dialog.showModal();
   if (options) {
     ready = true;

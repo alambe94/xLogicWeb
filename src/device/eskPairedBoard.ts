@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { ESK_FINITE_RATES, ESK_RATE, ESK_SAMPLES } from './eskCapture.js';
 import { EskControlRejection } from './eskUsbSession.js';
+import { localBoard, localCapture, localRequest } from './eskLocalBoard.js';
 
 function boardWindow(): Window | null {
   if (window.parent !== window) return window.parent;
@@ -9,6 +10,7 @@ function boardWindow(): Window | null {
 
 let connected = false;
 let captureMaximum: number | undefined;
+let localBoot: string | undefined;
 const legacyRates = [ESK_RATE];
 let advertisedRates: number[] | undefined;
 export function boardCaptureRates(): readonly number[] { return advertisedRates ?? legacyRates; }
@@ -38,7 +40,7 @@ function launchingBoard(): string | undefined {
     if (board.origin === value && board.protocol === 'http:' && /^\d+\.\d+\.\d+\.\d+$/.test(board.hostname)) return value;
   } catch { /* Unrelated URL fragments do not select a board. */ }
 }
-export function fromBoard(): boolean { return launchingBoard() !== undefined; }
+export function fromBoard(): boolean { return launchingBoard() !== undefined || localBoard() !== undefined; }
 
 interface I2cTransfer { type: 'xesk.i2c.v1'; deviceId: string; boot: string; command: number; address: number; data: Uint8Array; count: number }
 function request(kind: 'capture' | 'status' | 'connect' | I2cTransfer): Promise<unknown> {
@@ -61,6 +63,11 @@ function request(kind: 'capture' | 'status' | 'connect' | I2cTransfer): Promise<
 }
 
 export async function capturePairedBoard(): Promise<{ samples: Uint8Array; ticks: string }> {
+  if (localBoard()) {
+    const samples = new Uint8Array(ESK_SAMPLES);
+    const ticks = await receiveBoardCapture(samples.length, new AbortController().signal, async (block, offset) => { samples.set(block, offset); });
+    return {samples, ticks};
+  }
   await connectBoard();
   const data = await request('capture') as { samples?: unknown; ticks?: unknown } | null;
   if (!(data?.samples instanceof Uint8Array) || data.samples.length !== ESK_SAMPLES ||
@@ -114,7 +121,8 @@ export async function transferBoardI2c(board: BoardStatus, address: number, data
   if (!limits || !Number.isInteger(address) || address < 8 || address > 0x77 ||
       !Number.isInteger(count) || count < 0 || count > limits.read || (!data.length && !count) ||
       data.length > (count ? limits.writeRead : limits.write)) throw new Error('I²C transaction exceeds the board’s Ethernet limits.');
-  const reply = await request({type: 'xesk.i2c.v1', deviceId: board.deviceId, boot: board.boot,
+  const reply = localBoard() ? new Uint8Array(await (await localRequest('lan_i2c',
+    {boot: board.boot, data: Array.from(data), address, count})).arrayBuffer()) : await request({type: 'xesk.i2c.v1', deviceId: board.deviceId, boot: board.boot,
     command: data.length ? (count ? 3 : 1) : 2, address, data, count});
   if (!(reply instanceof Uint8Array) || reply.length !== count) throw new Error('Invalid Ethernet I²C reply.');
   return reply;
@@ -126,7 +134,8 @@ function validRows(rows: unknown, limit: number): boolean {
 }
 export async function readBoardStatus(): Promise<BoardStatus> {
   await connectBoard();
-  const data = await request('status') as BoardStatus | null;
+  const local = localBoard();
+  const data = (local ? await (await localRequest('lan_status')).json() : await request('status')) as BoardStatus | null;
   if (!data || !/^[0-9a-f]{32}$/i.test(data.deviceId) || !/^\d{1,20}$/.test(data.boot) ||
       !Number.isSafeInteger(data.firmware) || !Array.isArray(data.features) || data.features.length > 64 ||
       !data.features.every(row => row && typeof row.name === 'string' && Number.isInteger(row.instance) &&
@@ -154,6 +163,7 @@ export async function readBoardStatus(): Promise<BoardStatus> {
     captureMaximum = max;
     window.dispatchEvent(new Event('esk-capture-capacity'));
   }
+  if (local) localBoot = data.boot;
   return data;
 }
 
@@ -162,6 +172,12 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
     accept: (block: Uint8Array, offset: number) => Promise<void>, rate = ESK_RATE): Promise<string> {
   await connectBoard();
   signal.throwIfAborted();
+  if (localBoard()) {
+    if (!localBoot) await readBoardStatus();
+    if (!Number.isSafeInteger(count) || count < 1 || count > (captureMaximum ?? 0) || !boardCaptureRates().includes(rate))
+      throw new Error('Capture exceeds the board limits.');
+    return localCapture(localBoot!, count, rate, signal, accept);
+  }
   const origin = launchingBoard(), peer = boardWindow();
   if (!origin || !peer || !Number.isSafeInteger(count) || count < 1 || count > (captureMaximum ?? 0)) {
     throw new Error('Capture exceeds board capacity');
