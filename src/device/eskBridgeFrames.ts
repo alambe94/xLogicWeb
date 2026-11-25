@@ -44,16 +44,18 @@ export function spiCommands(mode: number, hz: number, bytes: Uint8Array): Bridge
   return [{ op: 4, payload: Uint8Array.of(mode >> 1, mode & 1), reply: 0 },
     { op: 5, payload: speed, reply: 0 }, { op: 1, payload, reply: bytes.length }];
 }
-export async function bulkCommand(device: USBDevice, input: number, output: number, service: 'I2C' | 'SPI', connection: number, boot: bigint, session: bigint, sequence: number, command: BridgeCommand): Promise<Uint8Array> {
+const routes = { I2C: { magic: 'xEI2', channel: 1 }, SPI: { magic: 'xESP', channel: 2 },
+  GPIO: { magic: 'xEGP', channel: 6 }, PWM: { magic: 'xEGP', channel: 7 } } as const;
+export async function bulkCommand(device: USBDevice, input: number, output: number, service: keyof typeof routes, connection: number, boot: bigint, session: bigint, sequence: number, command: BridgeCommand): Promise<Uint8Array> {
   const request = new Uint8Array(40 + command.payload.length);
   const h = new DataView(request.buffer);
-  request.set(new TextEncoder().encode(service === 'I2C' ? 'xEI2' : 'xESP'));
+  request.set(new TextEncoder().encode(routes[service].magic));
   request[4] = 1;
   h.setUint16(6, connection, true);
   h.setBigUint64(8, boot, true);
   h.setBigUint64(16, session, true);
   h.setBigUint64(24, BigInt(sequence), true);
-  request[32] = service === 'I2C' ? 1 : 2;
+  request[32] = routes[service].channel;
   request[33] = command.op;
   h.setUint16(34, command.payload.length, true);
   h.setUint32(36, sequence, true);
@@ -62,7 +64,7 @@ export async function bulkCommand(device: USBDevice, input: number, output: numb
   const onFailure = (cause: unknown): never => { throw new Error(uncertain, { cause }); };
   const sent = await within(device.transferOut(output, request), 1000).catch(onFailure);
   requireField(sent.status === 'ok' && sent.bytesWritten === request.length, uncertain);
-  const received = await within(device.transferIn(input, 1068), 1000).catch(onFailure);
+  const received = await within(device.transferIn(input, routes[service].magic === 'xEGP' ? 64 : 1068), 1000).catch(onFailure);
   const r = received.data;
   requireField(received.status === 'ok' && r && r.byteLength >= 32 &&
     request.subarray(0, 32).every((byte, i) => i === 5 || r.getUint8(i) === byte), uncertain);

@@ -38,7 +38,7 @@ export class EskUsbSession {
   protected boot = 0n;
   protected session = 0n;
   private sequence = 0n;
-  constructor(protected readonly usb: USBDevice, readonly intf: number, private readonly base: number, private readonly service: number) {}
+  constructor(protected readonly usb: USBDevice, readonly intf: number, private readonly base: number, private readonly service: number, private readonly instance = 0) {}
 
   private setup(request: number, value = this.connection): USBControlTransferParameters {
     return { requestType: 'vendor', recipient: 'interface', request, value, index: this.intf };
@@ -95,6 +95,8 @@ export class EskUsbSession {
     v.setBigUint64(24, this.boot, true);
     v.setBigUint64(32, session, true);
     v.setUint16(40, service, true);
+    const instance = service ? this.instance : 0;
+    v.setUint16(42, instance, true);
     frame.set(payload, 48);
     await this.output(this.base + 1, frame.buffer);
     const reply = await this.fetchControl();
@@ -103,7 +105,7 @@ export class EskUsbSession {
       reply.getUint8(8) === 2 && reply.getUint8(9) === 2 && reply.getUint8(10) === opcode && status <= 10 &&
       reply.getUint16(12, true) === reply.byteLength && reply.getUint16(14, true) === 0 &&
       reply.getBigUint64(16, true) === this.sequence && reply.getBigUint64(24, true) === this.boot &&
-      reply.getUint16(40, true) === service && reply.getUint16(42, true) === 0 && reply.getUint32(44, true) === 0 &&
+      reply.getUint16(40, true) === service && reply.getUint16(42, true) === instance && reply.getUint32(44, true) === 0 &&
       (opcode === 2 && status === 0 ? reply.getBigUint64(32, true) !== 0n : reply.getBigUint64(32, true) === session) &&
       (status === 0 || reply.byteLength === 48), 'Mismatched ESK control reply');
     await this.output(this.base + 3, words(this.boot, this.sequence));
@@ -122,7 +124,7 @@ export class EskUsbSession {
     requireField(r.getUint32(48, false) === 0x7845534b && r.getUint8(52) === 1 && r.getUint8(53) === 5 &&
       r.getUint16(54, true) === 0 && r.getUint16(56, true) === 52 && r.getUint16(58, true) === 0 &&
       r.getBigUint64(60, true) === this.boot && r.getBigUint64(68, true) === sid &&
-      r.getUint16(84, true) === this.service && r.getUint16(86, true) === 0 && r.getUint32(88, true) === 1 &&
+      r.getUint16(84, true) === this.service && r.getUint16(86, true) === this.instance && r.getUint32(88, true) === 1 &&
       r.getUint8(92) === 1 && r.getUint8(93) === 1 && r.getUint8(95) === 1,
       'Unexpected ESK service session binding');
     const flags = r.getUint32(96, true);
@@ -144,7 +146,7 @@ export class EskUsbSession {
 }
 
 /** Some Windows WebUSB drivers expose no interface strings. Match only known ESK compositions. */
-export function eskBusInterface(device: USBDevice, bus: 'SPI' | 'CAN'): number {
+export function eskBusInterface(device: USBDevice, bus: 'SPI' | 'CAN' | 'GPIO/PWM'): number {
   const interfaces = (device.configuration ?? device.configurations.find(c => c.configurationValue === 1))?.interfaces ?? [];
   const named = interfaces.find(i => i.alternate.interfaceName === 'xESK x' + bus);
   if (named) return named.interfaceNumber;
@@ -155,7 +157,7 @@ export function eskBusInterface(device: USBDevice, bus: 'SPI' | 'CAN'): number {
     ['255,255,255,2,10,255,255,255,255,255', 7],
   ]).get(classes);
   requireField(spi !== undefined, 'Unknown ESK USB composition for ' + bus + '.');
-  const number = spi + (bus === 'CAN' ? 1 : 0);
+  const number = spi + { SPI: 0, CAN: 1, 'GPIO/PWM': 2 }[bus];
   const port = interfaces[number];
   requireField(port?.interfaceNumber === number && !port.alternate.interfaceName &&
     ['in', 'out'].every(dir => port.alternate.endpoints.some(e => e.type === 'bulk' && e.direction === dir)),

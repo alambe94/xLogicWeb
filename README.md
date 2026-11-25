@@ -43,6 +43,15 @@ Run becomes available when the selected board and browser support the chosen pro
 | UART | Choose baud, data bits, parity and stop bits, then **Open UART port** and select the serial port belonging to the same board. Enter hex bytes to transmit. The receive display retains the latest 256 bytes. Close the port to release it or change framing. |
 | SPI | Select mode and clock. **Transmit and receive** exchanges the entered MOSI bytes for the same number of MISO bytes under one CS0 assertion. **Receive** clocks 1–1,020 bytes using the selected MOSI fill byte (default `00`). For a target that needs a command before returning data, send the command and dummy bytes together using **Transmit and receive**. |
 | CAN | Select a nominal bitrate. **Internal loopback** verifies a standard classical CAN frame and its controller echo. **Send frame** and **Listen for one frame** use the external bus and require a transceiver and an active peer. On this USB profile, stop Logic capture before using CAN because channel control also claims interface zero. |
+| GPIO | Configure an output mask and its initial high bits, then write levels on those configured outputs. Both values use hex. **Stop and release outputs** drives the held pins low. |
+| PWM | Choose a timer, A/B outputs, period and duty. **Apply and start PWM** shows the realized frequency and duty from the timer. Applying new settings stops and restarts the timer. Stop and release when finished. |
+
+On SK-AM64B firmware 0.50.0, GPIO bits 0–7 map to J4 pins **15, 7, 16, 18,
+32, 33, 29, 31**, in that order. Bits 4–7 share their fixed-direction output
+pins with **PWM/0 A, PWM/0 B, PWM/1 A, PWM/1 B**. Release the current owner
+before changing a pin's function. Earlier firmware maps bits 0–6 to J4 pins
+15, 7, 16, 18, 22, 37, 13. Check the wiring for bits 4–6 when upgrading.
+
 
 To inspect the EEPROM read on the wires, attach two Logic inputs to SDA and SCL
 on that bus and record the channel assignments. On the SK-AM64B demo fixture,

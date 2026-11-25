@@ -143,6 +143,116 @@ assert.deepEqual(dtr, [true, false]);
 assert.ok(closed);
 console.log('CAN echo/RX, cleanup on failure and UART grant, transmit, receive and DTR lifecycle passed.');
 
+const { gpioCommand, pwmCommand, pwmTiming } = await import('./eskOutputs.js');
+assert.deepEqual([...gpioCommand(0x3100, true, 3, 2).payload], [3,0,0,0,2,0,0,0]);
+assert.equal(gpioCommand(0x3100, false, 1, 0).op, 2);
+for (const [mask, high] of [[0,0],[128,0],[1,2],[3,4]]) assert.throws(() => gpioCommand(0x3100, true, mask, high));
+assert.equal(gpioCommand(0x3100, true, 0x7f, 0).op, 1);
+assert.equal(gpioCommand(0x3200, true, 0xff, 0x80).op, 8);
+const bitSeven = gpioCommand(0x3200, false, 0x80, 0x80);
+assert.equal(bitSeven.op, 9);
+assert.deepEqual([...bitSeven.payload], [128,0,0,0,128,0,0,0]);
+for (const [mask, high] of [[256,0],[0x80,1]]) assert.throws(() => gpioCommand(0x3200, true, mask, high));
+const pwm = pwmCommand(1000000, 1, 12.5, 0);
+assert.equal(new DataView(pwm.payload.buffer).getUint32(4, true), 125);
+assert.throws(() => pwmCommand(1000000, 0, 50, 0));
+assert.throws(() => pwmCommand(1000000, 1, 0.01, 0));
+assert.equal(pwmTiming(new Uint8Array(new Uint32Array([100000000, 1, 100000, 50000, 0]).buffer)), (1000).toLocaleString() + ' Hz · A 50.00% · B 0.00%');
+assert.throws(() => pwmTiming(new Uint8Array(20)));
+assert.equal(eskBusInterface(profile([255,255,255,2,10,255,255,255,255,255]), 'GPIO/PWM'), 9);
+for (const [service, channel] of [['GPIO', 6], ['PWM', 7]]) {
+  let packet;
+  const usb = {
+    transferOut: async (_ep, data) => { packet = data.slice(); return {status: 'ok', bytesWritten: data.length}; },
+    transferIn: async (_ep, size) => {
+      assert.equal(size, 64);
+      assert.equal(new TextDecoder().decode(packet.subarray(0, 4)), 'xEGP');
+      assert.equal(packet[32], channel);
+      const reply = new Uint8Array(44);
+      reply.set(packet.subarray(0, 32));
+      reply[32] = channel;
+      new DataView(reply.buffer).setUint32(36, 5, true);
+      return {status: 'ok', data: new DataView(reply.buffer)};
+    }
+  };
+  assert.equal((await bulkCommand(usb, 2, 3, service, 1, 2n, 3n, 5, {op: 7, payload: new Uint8Array(), reply: 0})).length, 0);
+}
+console.log('GPIO/PWM output validation, timing and shared USB interface framing passed.');
+
+// A PWM/1 grant must keep its instance across renewal and safe release. A failed
+// bulk response must end the grant without resending the output command.
+const { openOutputs } = await import('./eskOutputs.js');
+for (const loseReply of [false, true]) {
+  const controls = [], bulkWrites = [];
+  const alt = {interfaceClass: 255, interfaceName: 'xESK xGPIO/PWM', endpoints: [
+    {type: 'bulk', direction: 'in', endpointNumber: 3}, {type: 'bulk', direction: 'out', endpointNumber: 3}
+  ]};
+  let request, bulk, opened = false, claimed = false;
+  const device = {
+    configuration: {interfaces: [{interfaceNumber: 9, alternate: alt}]},
+    get opened() { return opened; },
+    async open() { opened = true; }, async close() { opened = false; },
+    async claimInterface(n) { assert.equal(n, 9); claimed = true; },
+    async releaseInterface(n) { assert.equal(n, 9); claimed = false; },
+    async controlTransferOut(setup, bytes) {
+      assert.ok(claimed);
+      if (setup.request === 0x61) {
+        request = new DataView(bytes);
+        const op = request.getUint8(10);
+        assert.equal(request.getUint16(42, true), op === 1 ? 0 : 1);
+        controls.push(op);
+      }
+      return {status: 'ok', bytesWritten: bytes.byteLength};
+    },
+    async controlTransferIn(setup) {
+      if (setup.request === 0x60) {
+        const h = new DataView(new ArrayBuffer(24));
+        h.setUint16(0,1,true); h.setUint16(2,5,true); h.setBigUint64(8,2n,true);
+        h.setUint32(16,5000,true); h.setUint16(20,176,true);
+        return {status:'ok',data:h};
+      }
+      const op = request.getUint8(10), n = op === 6 ? 48 : 100;
+      const r = new DataView(new ArrayBuffer(n));
+      new Uint8Array(r.buffer).set(new Uint8Array(request.buffer,0,48));
+      r.setUint8(9,2); r.setUint16(12,n,true);
+      if (op === 2) r.setBigUint64(32,3n,true);
+      if (n > 48) {
+        r.setUint32(48,0x7845534b); r.setUint8(52,1); r.setUint16(56,52,true);
+        if (op === 1) {
+          r.setUint8(53,1); r.setUint8(60,1); r.setBigUint64(76,2n,true); r.setUint32(92,1,true); r.setUint32(96,1,true);
+        } else {
+          r.setUint8(53,5); r.setBigUint64(60,2n,true); r.setBigUint64(68,3n,true);
+          r.setUint16(84,12,true); r.setUint16(86,1,true); r.setUint32(88,1,true);
+          r.setUint8(92,1); r.setUint8(93,1); r.setUint8(94,op<=3?1:3); r.setUint8(95,1);
+          r.setUint32(96,op<=3?0:1,true);
+        }
+      }
+      return {status:'ok',data:r};
+    },
+    async transferOut(_ep, bytes) { bulk = bytes; bulkWrites.push(bytes[33]); return {status:'ok',bytesWritten:bytes.length}; },
+    async transferIn() {
+      if (loseReply) return {status:'stall'};
+      const r = new Uint8Array(44);
+      r.set(bulk.subarray(0,32)); r[32]=7; new DataView(r.buffer).setUint32(36,1,true);
+      return {status:'ok',data:new DataView(r.buffer)};
+    }
+  };
+  const handle = await openOutputs(device, {deviceId:'01'+'00'.repeat(15), boot:'2', features:[{name:'PWM',instance:1,enabled:true}]}, 'PWM', 1);
+  if (loseReply) {
+    await assert.rejects(handle.send(pwm), /uncertain/);
+    await assert.rejects(handle.done, /uncertain/);
+  } else {
+    await handle.send(pwm);
+    await new Promise(resolve => setTimeout(resolve, 1150));
+    assert.ok(controls.includes(3));
+    await handle.close();
+  }
+  assert.deepEqual(controls.slice(-2),[4,6]);
+  assert.deepEqual(bulkWrites,[1]);
+  assert.ok(!opened && !claimed);
+}
+console.log('PWM/1 wire identity, renewal, release and uncertain-delivery cleanup passed.');
+
 const {openEthernetUart} = await import('./eskEthernetUart.js');
 const board = {deviceId:'a'.repeat(32),boot:'42',uartLimits:{write:120,read:116}};
 const line = {baudRate:115200,dataBits:8,stopBits:1,parity:'none'};

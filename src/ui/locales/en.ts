@@ -180,7 +180,7 @@ export const en = {
   'home.connectUsb': 'Connect via USB',
   'home.nativeConnection': 'Connect via USB for Logic and Bridge, or via Ethernet for finite Logic captures.',
   'home.usbGone': 'USB disconnected',
-  'bridge.description': 'I²C, UART, SPI and CAN transactions',
+  'bridge.description': 'I²C, UART, SPI, CAN, GPIO and PWM',
   'home.unpaired': 'Open the board IP for Ethernet. Open Logic to view a saved capture.',
   'open.eskStatus': 'ESK device status',
   'esk.reading': 'Reading board status…',
