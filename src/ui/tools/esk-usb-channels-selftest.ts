@@ -3,7 +3,8 @@ import { supportsUsbEightChannelCount, USB_EIGHT_CHANNEL_MAXIMUM } from '../eskU
 
 for (const [count, expected] of [
   ['1', true], ['1.999999999G', true], [String(USB_EIGHT_CHANNEL_MAXIMUM), true],
-  ['2G', false], ['2000000000', false], ['2000M', false], ['2e9', false], ['2.000000001G', false],
+  ['2G', true], ['2000000000', true], ['2000M', true], ['2e9', true],
+  ['2000000001', false], ['2.000000001G', false],
   ['4G', false], ['', true],
 ] as const) {
   if (supportsUsbEightChannelCount(500000000, 'count', count) !== expected) throw Error('USB bank boundary at ' + count);
