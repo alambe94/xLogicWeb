@@ -7244,20 +7244,27 @@ export class App {
       };
       const fields = document.createElement('div');
       fields.className = 'esk-capture-fields';
-      fields.append(rates.el, samplesLabel);
-      if (max) {
+      fields.append(rates.el);
+      const usb500 = !lan && rate === ESK_PACKED_RATE;
+      if (lan && max) {
+        const sampleRow = document.createElement('div');
+        sampleRow.className = 'esk-sample-row';
         const useMax = document.createElement('button');
         useMax.type = 'button';
-        useMax.className = 'pill';
-        useMax.textContent = t('esk.boardMaximum');
+        useMax.className = 'mini';
+        useMax.textContent = t('capturePanel.measureMax');
+        useMax.title = t('esk.boardMaximum');
+        useMax.setAttribute('aria-label', useMax.title);
         useMax.disabled = this.eskCapturePending;
         useMax.onclick = () => {
           count.value = String(max);
-          if (lan) this.eskLanCount = count.value;
-          else this.eskCountText = count.value;
+          this.eskLanCount = count.value;
           updateEstimate();
         };
-        fields.append(useMax);
+        sampleRow.append(samplesLabel, useMax);
+        fields.append(sampleRow);
+      } else {
+        fields.append(samplesLabel);
       }
       const trigger = document.createElement('details');
       trigger.className = 'trace-trigger advanced';
@@ -7276,7 +7283,7 @@ export class App {
           checkbox.id = mode === 'untilStop' ? 'esk-until-stop' : 'esk-loop';
           checkbox.type = 'checkbox';
           checkbox.checked = this.eskLength === mode;
-          checkbox.disabled = this.eskCapturePending;
+          checkbox.disabled = this.eskCapturePending || (usb500 && !!ddr);
           checkbox.onchange = () => { this.eskLength = checkbox.checked ? mode : 'count'; this.updateEskBankView(); };
           until.append(document.createTextNode(t(mode === 'untilStop' ? 'esk.untilStop' : 'esk.loop')), checkbox);
           modes.append(until);
@@ -7342,11 +7349,13 @@ export class App {
           input.id = 'esk-bank-' + bank;
           input.value = bank;
           input.checked = checked;
-          input.disabled = this.eskCapturePending || (bank === 'all' && !this.eskDdrCapacity);
+          input.disabled = this.eskCapturePending || (bank === 'all' && !supportsUsbEightChannelCount(rate, 'count', this.eskCountText));
           input.onchange = () => {
             if (!input.checked) return;
             this.eskAllUsbChannels = bank === 'all';
-            if (bank !== 'all') {
+            if (bank === 'all') {
+              this.eskLength = 'count';
+            } else {
               this.eskBank = bank;
               this.eskTriggerChannel = this.eskTriggerChannel % 4 + (bank === 'upper' ? 4 : 0);
             }
