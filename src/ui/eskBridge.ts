@@ -6,6 +6,7 @@ import { transferBoardI2c, type BoardStatus } from '../device/eskPairedBoard.js'
 import { gpioCommand, openOutputs, pwmCommand, pwmTiming, type OutputHandle } from '../device/eskOutputs.js';
 import { BridgeUart, eskSerial } from '../device/eskSerial.js';
 import { openEthernetUart } from '../device/eskEthernetUart.js';
+import { ethernetOutputRoute, openEthernetOutputs } from '../device/eskEthernetOutputs.js';
 import { canTransaction, type CanAction } from '../device/eskCan.js';
 import { requireField } from '../device/eskUsbSession.js';
 function hexNumber(text: string): number {
@@ -43,8 +44,11 @@ export function initBridgeTools() {
   let uart: Pick<BridgeUart,'send'|'receive'|'close'> | undefined;
   let received = new Uint8Array();
   function available(name: string) {
-    const supported = device ? (name !== 'UART' || !!eskSerial) : name === 'I2C' ? !!board?.i2cLimits : name === 'UART' && !!board?.uartLimits;
-    return supported && !!board?.features.some(f => f.name === name && f.instance === (name === 'PWM' ? Number(timer.value) : 0) && f.enabled);
+    const instance = name === 'PWM' ? Number(timer.value) : 0;
+    if (!board?.features.some(f => f.name === name && f.instance === instance && f.enabled)) return false;
+    if (device) return name !== 'UART' || !!eskSerial;
+    if (name === 'GPIO' || name === 'PWM') return !!ethernetOutputRoute(board, name, instance);
+    return name === 'I2C' ? !!board.i2cLimits : name === 'UART' && !!board.uartLimits;
   }
   function commandLabel(name: string): string {
     switch (name) {
@@ -169,7 +173,6 @@ export function initBridgeTools() {
         await uart.send(bytes);
         return bytes.length + ' bytes submitted to serial port';
       }
-      if (!d) throw new Error('This protocol requires USB.');
       if (protocol.value === 'GPIO' || protocol.value === 'PWM') {
         const bus = protocol.value, isPwm = bus === 'PWM';
         const instance = isPwm ? Number(timer.value) : 0;
@@ -179,7 +182,7 @@ export function initBridgeTools() {
           : gpioCommand(b.firmware, gpioAction.value === 'configure', hexNumber(input('gpio-mask').value), hexNumber(input('gpio-high').value));
         const reconfigure = !!outputs;
         if (!outputs) {
-          const handle = await openOutputs(d, b, bus, instance);
+          const handle = d ? await openOutputs(d, b, bus, instance) : await openEthernetOutputs(b, bus, instance);
           if (epoch !== token) {
             await handle.close();
             return '';
@@ -198,6 +201,7 @@ export function initBridgeTools() {
         return 'PWM running · ' + timing;
       }
 
+      if (!d) throw new Error('This protocol requires USB.');
       if (protocol.value === 'CAN') {
         const action = canAction.value as CanAction;
         const identity = await readUsbBoardStatus(d);

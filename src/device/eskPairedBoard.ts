@@ -89,7 +89,16 @@ interface Feature { name: string; instance: number; enabled: boolean; ownership:
 interface Catalog { services: string[][]; resources: string[][] }
 interface I2cLimits { write: number; writeRead: number; read: number }
 export interface UartLimits { write: number; read: number }
-export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; captureTriggerRates?: number[]; capturePreTriggerPercents?: number[]; captureHistoryProfiles?: HistoryProfile[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null; uartLimits?: UartLimits | null }
+export interface OutputRoute { serviceId: 7 | 12; instanceId: number }
+export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; captureTriggerRates?: number[]; capturePreTriggerPercents?: number[]; captureHistoryProfiles?: HistoryProfile[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null; uartLimits?: UartLimits | null; outputRoutes?: OutputRoute[] }
+
+export function pairedOutputChannel(board: BoardStatus, route: OutputRoute): MessagePort {
+  const peer = boardWindow(), origin = launchingBoard();
+  if (!origin || !peer) throw new Error('Reconnect to the board to use Ethernet outputs.');
+  const {port1, port2} = new MessageChannel();
+  peer.postMessage({type: 'xesk.outputs.v1', deviceId: board.deviceId, boot: board.boot, ...route}, origin, [port2]);
+  return port1;
+}
 
 export function pairedUartChannel(board: BoardStatus, settings: Record<string, number>): MessagePort {
   const peer = boardWindow(), origin = launchingBoard();
@@ -163,6 +172,12 @@ export async function readBoardStatus(): Promise<BoardStatus> {
       !validRows(data.catalog.services, 32) || !validRows(data.catalog.resources, 64))) {
     throw new Error('Invalid ESK device catalog');
   }
+  const routes = data.outputRoutes;
+  if (routes !== undefined && (!Array.isArray(routes) || routes.length > 3 ||
+      routes.some(r => !r || !(r.serviceId === 7 && r.instanceId === 0 ||
+        r.serviceId === 12 && [0, 1].includes(r.instanceId))) ||
+      new Set(routes.map(r => r.serviceId + '/' + r.instanceId)).size !== routes.length ||
+      (routes.length > 0 && data.firmware < 0x3200))) throw new Error('Invalid Ethernet output routes.');
   const max = data.captureMaxSamples;
   if (data.networkManagement !== undefined && typeof data.networkManagement !== 'boolean') throw new Error('Invalid Ethernet management capability');
   if (data.i2cLimits != null && ![data.i2cLimits.write, data.i2cLimits.writeRead, data.i2cLimits.read].every(

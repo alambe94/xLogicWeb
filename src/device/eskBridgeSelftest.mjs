@@ -289,3 +289,69 @@ for (const local of [false,true]) {
   assert.deepEqual(parts,[...expected]); assert.ok(retired);
 }
 console.log('Paired and localhost UART retain one grant across chunked writes and received bytes, then close.');
+
+const {openEthernetOutputs, ethernetOutputRoute} = await import('./eskEthernetOutputs.js');
+const outputBoard = {...board, outputRoutes: [{serviceId: 7, instanceId: 0}, {serviceId: 12, instanceId: 1}]};
+assert.equal(ethernetOutputRoute(board, 'PWM', 1), undefined);
+assert.equal(ethernetOutputRoute(outputBoard, 'PWM', 0), undefined);
+for (const local of [false, true]) {
+  for (const fault of ['none', 'busy', 'correlation']) {
+    let seq = 0, runs = 0, renewals = 0, releases = 0;
+    const opened = [];
+    const receive = (action, msg) => {
+      assert.equal(msg.id, ++seq);
+      if (action === 'renew') {
+        renewals++;
+        return local ? {id: seq, renewed: true} : {id: seq, alive: true};
+      }
+      if (action === 'close') {
+        releases++;
+        return {id: seq, closed: true};
+      }
+      runs++;
+      assert.equal(local ? msg.command : msg.op, 1);
+      assert.deepEqual([...msg.payload], [...pwm.payload]);
+      return {id: fault === 'correlation' ? seq + 1 : seq, status: fault === 'busy' ? 0x204006 : 0,
+        data: local ? [] : new Uint8Array()};
+    };
+    globalThis.location = new URL(local ? 'http://127.0.0.1:42000/#eskLocal='+'b'.repeat(32) :
+      'https://example.org/#eskBoard=http%3A%2F%2F192.0.2.1%3A5555');
+    globalThis.window = {parent: {postMessage(msg, origin, [port]) {
+      assert.equal(origin, 'http://192.0.2.1:5555');
+      assert.equal(msg.type, 'xesk.outputs.v1');
+      opened.push(msg);
+      port.onmessage = ({data}) => {
+        port.postMessage(receive(data.alive ? 'renew' : data.close ? 'close' : 'run', data));
+        if (data.close || fault === 'correlation') port.close();
+      };
+      port.postMessage({ready: true});
+    }}};
+    globalThis.fetch = async (_url, options) => {
+      const msg = JSON.parse(options.body);
+      if (msg.op === 'lan_outputs_open') {
+        opened.push(msg);
+        return Response.json('c'.repeat(32));
+      }
+      assert.equal(msg.token, 'c'.repeat(32));
+      assert.equal(msg.boot, outputBoard.boot);
+      return Response.json(receive(msg.op.replace('lan_outputs_', ''), msg));
+    };
+    const handle = await openEthernetOutputs(outputBoard, 'PWM', 1);
+    assert.deepEqual([opened[0].serviceId, opened[0].instanceId, opened[0].deviceId, opened[0].boot],
+      [12, 1, board.deviceId, board.boot]);
+    if (fault === 'none') {
+      assert.deepEqual(await handle.send(pwm), new Uint8Array());
+      await new Promise(resolve => setTimeout(resolve, 1150));
+      await handle.close(); await handle.close();
+      assert.equal(releases, 1);
+      assert.ok(renewals >= 1);
+    } else {
+      const problem = fault === 'busy' ? /busy/ : /uncertain/;
+      await Promise.all([assert.rejects(handle.done, problem), assert.rejects(handle.send(pwm), problem)]);
+      assert.equal(releases, fault === 'busy' ? 1 : 0);
+    }
+    await assert.rejects(handle.send(pwm), /lease ended/);
+    assert.equal(runs, 1);
+  }
+}
+console.log('Paired and localhost Ethernet PWM/1 grant, heartbeat, release, busy and no-replay checks passed.');

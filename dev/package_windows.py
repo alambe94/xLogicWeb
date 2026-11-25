@@ -48,8 +48,8 @@ def main():
                 sdk = args.lan_sdk / "tools/xesk/xsdk_xesk"
                 if not (sdk / "tcp.py").is_file() or not (sdk / "__init__.py").is_file():
                     parser.error("Expected tools/xesk/xsdk_xesk in --lan-sdk")
-                out.write(root / "dev/esk_local_board.py", "runtime/esk_local_board.py")
-                out.write(root / "dev/esk_local_uart.py", "runtime/esk_local_uart.py")
+                for name in ("esk_local_board.py", "esk_local_grants.py", "esk_local_outputs.py", "esk_local_uart.py"):
+                    out.write(root / "dev" / name, "runtime/" + name)
                 out.write(args.lan_sdk / "LICENSE", "licenses/lan-sdk/LICENSE.txt")
                 for module in sorted(sdk.rglob("*.py")):
                     if all(part.isidentifier() for part in module.relative_to(sdk).parts[:-1]) and module.stem.isidentifier():
