@@ -77,7 +77,9 @@ class LoopSink:
         self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         self.kernel.CreateNamedPipeW.restype = wintypes.HANDLE
         self.name = r"\\.\pipe\xesk-" + uuid.uuid4().hex
-        self.handle = self.kernel.CreateNamedPipeW(self.name, 0x80001, 8, 1, 0, 1024**2, 0, None)
+        # Absorb brief scheduler and filesystem stalls while the USB recorder
+        # replenishes its reads. This buffer does not change the retained window.
+        self.handle = self.kernel.CreateNamedPipeW(self.name, 0x80001, 8, 1, 0, 16 * 1024**2, 0, None)
         if self.handle == wintypes.HANDLE(-1).value:
             raise ctypes.WinError(ctypes.get_last_error())
         self.path, self.capacity = path, capacity
@@ -353,7 +355,7 @@ class Recordings:
             raise ValueError("Invalid recording window")
         return self.read_samples(row, start, end)
 
-    def read_samples(self, row, start, end):
+    def read_samples(self, row, start, end, *, wire=False):
         packed = row["rate"] == RATES[-1]
         start += row.get("firstSample", 0)
         end += row.get("firstSample", 0)
@@ -379,7 +381,7 @@ class Recordings:
                     data = stream.read(size)
         if len(data) != finish - begin:
             raise ValueError("Recording was truncated")
-        if packed:
+        if packed and not wire:
             expanded = bytearray(2 * len(data))
             expanded[::2] = data.translate(LOW_NIBBLE)
             expanded[1::2] = data.translate(HIGH_NIBBLE)
@@ -413,8 +415,16 @@ class Recordings:
                     row["samples"] = ring.total * factor
                     oldest = max(0, row["samples"] - row["limit"])
                     start = max(start, (oldest + stride - 1) // stride * stride)
-                    end = min(row["samples"] // stride * stride, start + 1024**2)
-                bins = self.loop_bins(row, start, end, stride)
+                    end = min(row["samples"] // stride * stride, start + 4 * 1024**2)
+                # Take a bounded copy while the writer is locked. Process the
+                # snapshot outside the lock, directly in the recorder's format.
+                data = self.read_samples(row, start, end, wire=True) if end > start else b""
+            if packed and stride == 1:
+                bins = [((v >> shift) & 15) * 257 for v in data for shift in (0, 4)]
+                bins = bins[start % 2:start % 2 + end - start]
+            else:
+                step = stride // factor
+                bins = [activity_masks(data[i:i + step], packed, False) for i in range(0, len(data), step)]
         else:
             bins = self.activity_range(key, start, end, stride, packed)
         return dict(record=row, first=start, end=end, stride=stride, bins=bins)

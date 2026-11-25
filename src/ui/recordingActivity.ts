@@ -71,7 +71,10 @@ export class RecordingActivity {
     this.lastFrame = now;
     if (this.inspect || this.end >= this.history.end) return false;
     const rate = this.record.rate, stride = this.history.stride;
-    const next = Math.max(this.end + elapsed * rate / 1000, this.history.end - rate * 0.075);
+    // A short Loop can overwrite the complete previous frame between polls.
+    // Its old time axis has no samples in the new snapshot.
+    const next = this.end < this.history.first ? this.history.end
+      : Math.max(this.end + elapsed * rate / 1000, this.history.end - rate * 0.075);
     const end = Math.min(this.history.end, Math.floor(next / stride) * stride);
     if (end <= this.end) return false;
     this.end = end;

@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from esk_native import GIB, Recordings, RATES, WINDOW
 
@@ -139,6 +139,41 @@ class RecordingTests(unittest.TestCase):
         with path.open("ab") as f:
             f.write(bytes([1]))
         self.assertEqual(self.store.overview(self.key, frame["end"])["bins"], [0x0100])
+
+    def test_live_loop_snapshots_recent_bins_before_reducing_them(self):
+        from esk_native import activity_masks, LoopSink
+        limit = 4 * 1024**2 + 1
+        for rate, factor in ((RATES[-2], 1), (RATES[-1], 2)):
+            with self.subTest(rate=rate):
+                capacity = (limit + factor - 1) // factor
+                end = 6 * 1024**2
+                data = bytearray(end // factor)
+                data[-1] = 0x80
+                with self.store.path(self.key, ".bin").open("wb") as f:
+                    LoopSink.append(f, capacity, 0, data)
+                self.store.save(dict(id=self.key, loop=True, state="recording", samples=0,
+                                     limit=limit, rate=rate, bank="lower"))
+                self.store.active = self.key
+                lock = MagicMock()
+                self.store.loop_sink = Mock(total=len(data), lock=lock)
+                def reduce(chunk, packed, odd):
+                    self.assertEqual(lock.__enter__.call_count, lock.__exit__.call_count)
+                    return activity_masks(chunk, packed, odd)
+                with patch("esk_native.activity_masks", side_effect=reduce):
+                    frame = self.store.overview(self.key, 0)
+                self.assertEqual((frame["first"], frame["end"]), (end - 4 * 1024**2, end))
+                self.assertEqual(frame["bins"][:-1], [0] * (len(frame["bins"]) - 1))
+                self.assertEqual(frame["bins"][-1], 0x800 if factor == 2 else 0x8000)
+                self.assertEqual(self.store.overview(self.key, end)["bins"], [])
+
+    def test_single_sample_live_bins_start_on_the_retained_nibble(self):
+        self.store.save(dict(id=self.key, loop=True, state="recording", samples=0,
+                             limit=3, rate=RATES[-1], bank="upper"))
+        self.store.path(self.key, ".bin").write_bytes(bytes.fromhex("2143"))
+        self.store.active = self.key
+        self.store.loop_sink = Mock(total=2, lock=MagicMock())
+        frame = self.store.overview(self.key, 0)
+        self.assertEqual((frame["first"], frame["end"], frame["bins"]), (1, 4, [0x202, 0x303, 0x404]))
 
     @patch("esk_native.subprocess.Popen")
     def test_selected_usb_serial_reaches_native_recorder(self, launch):
