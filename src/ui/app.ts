@@ -7336,6 +7336,23 @@ export class App {
           label.append(input, bank === 'all' ? 'D0–D7' : bank === 'lower' ? 'D0–D3' : 'D4–D7');
           choices.append(label);
         }
+        if (navigator.usb && usbDdrMaximum(selectedEskUsbDevice()) === undefined) {
+          const connect = document.createElement('button');
+          connect.type = 'button';
+          connect.className = 'mini';
+          connect.textContent = t('home.connectUsb');
+          connect.disabled = this.eskCapturePending;
+          connect.onclick = async () => {
+            if (this.eskCapturePending) return;
+            this.eskCapturePending = true;
+            connect.disabled = true;
+            try { await inspectUsbDdr(await requestEskDevice()); }
+            catch (error) {
+              if (!(error instanceof DOMException && error.name === 'NotFoundError')) this.fail('error.eskUsb', error);
+            } finally { this.eskCapturePending = false; this.updateEskBankView(); }
+          };
+          channels.append(connect);
+        }
       } else {
         choices.className = 'chip-grid channel-bank-grid';
         for (let physical = 0; physical < Math.min(this.channels.length, this.displayChannelCount()); physical++) {

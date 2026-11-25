@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { announceBoardView, fromBoard, needsBoardConsent, readBoardStatus } from '../device/eskPairedBoard.js';
-import { requestEskDevice, selectedEskUsbDevice, selectEskUsbDevice } from '../device/eskCapture.js';
+import { eskLanMode } from '../device/eskLanCapture.js';
+import { requestEskDevice, restoreEskLogicDevice, selectedEskUsbDevice, selectEskUsbDevice } from '../device/eskCapture.js';
 import { initBridgeTools } from './eskBridge.js';
 import { readUsbBoardStatus } from '../device/eskUsbHome.js';
 import type { BoardStatus } from '../device/eskPairedBoard.js';
@@ -313,6 +314,9 @@ export function initEskHome(): void {
     } else {
       if (focus) (atBridge ? document.getElementById('bridge-title')! : goHome).focus();
       if (atBridge && !paired) void updateStatus();
+      if (!atBridge && !eskLanMode()) void restoreEskLogicDevice().catch(() => {
+        // The Capture panel still offers an explicit USB connection if enumeration or MI0 is unavailable.
+      });
     }
   }
   function navigate(view: 'home' | 'logic' | 'bridge'): void {

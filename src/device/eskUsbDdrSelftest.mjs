@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import {inspectUsbDdr, receiveUsbDdr, usbDdrMaximum} from './eskUsbDdr.js';
+import {forgetUsbDdr, inspectUsbDdr, receiveUsbDdr, usbDdrMaximum} from './eskUsbDdr.js';
+import {requestEskDevice, restoreEskLogicDevice, selectedEskUsbDevice, selectEskUsbDevice} from './eskCapture.js';
 
 const MiB = 1024 * 1024, maximum = 2147483520;
 const wait = ms => new Promise(done => setTimeout(done, ms));
@@ -94,6 +95,39 @@ class Board {
   }
 }
 
+// A single browser grant restores MI0 in a new tab. Multiple grants require an
+// explicit choice unless the previously selected serial uniquely matches.
+{
+  const a = Object.assign(new Board(), {vendorId: 0x1209, productId: 3, serialNumber: 'A'});
+  const b = Object.assign(new Board(), {vendorId: 0x1209, productId: 3, serialNumber: 'B', capacity: 0});
+  const other = {vendorId: 0, productId: 3};
+  let grants = [a,b,other], pickCount = 0;
+  const storage = new Map();
+  const oldStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'localStorage', {configurable: true, value: {
+    getItem: key => storage.get(key) ?? null, setItem: (key, val) => storage.set(key, val), removeItem: key => storage.delete(key),
+  }});
+  const usb = {getDevices: async () => grants, requestDevice: async () => { pickCount++; return a; }};
+  Object.defineProperty(globalThis, 'navigator', {configurable: true, value: {usb}});
+  await restoreEskLogicDevice();
+  assert.equal(selectedEskUsbDevice(), undefined);
+  grants = [a,other];
+  await Promise.all([restoreEskLogicDevice(), restoreEskLogicDevice()]);
+  assert.equal(selectedEskUsbDevice(), a); assert.equal(usbDdrMaximum(a), maximum);
+  assert.deepEqual(a.common, [1,1]); assert.equal(pickCount, 0);
+  selectEskUsbDevice(undefined); grants = [a,b];
+  await restoreEskLogicDevice();
+  assert.equal(selectedEskUsbDevice(), a); assert.deepEqual(a.common, [1,1]);
+  selectEskUsbDevice(undefined); grants = [b];
+  await restoreEskLogicDevice(); assert.equal(selectedEskUsbDevice(), undefined);
+  await requestEskDevice(true); assert.equal(pickCount, 1); assert.equal(selectedEskUsbDevice(), a);
+  forgetUsbDdr(a); a.capacity = 0;
+  await requestEskDevice(); assert.equal(usbDdrMaximum(a), 0); assert.equal(pickCount, 1);
+  selectEskUsbDevice(undefined);
+  if (oldStorage) Object.defineProperty(globalThis, 'localStorage', oldStorage); else delete globalThis.localStorage;
+  if (oldNavigator) Object.defineProperty(globalThis, 'navigator', oldNavigator); else delete globalThis.navigator;
+}
 const signal = () => new AbortController().signal;
 for (const changes of [{capacity: 0}, {flags: 67}, {transport: 2}, {hz: 333333333}]) {
   const board = Object.assign(new Board(), changes);

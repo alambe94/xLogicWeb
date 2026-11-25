@@ -3,7 +3,6 @@ import { eskBusInterface, EskUsbSession, requireField, withUsbInterface } from '
 import { bulkCommand, i2cCommand, type BridgeCommand } from './eskBridgeFrames.js';
 import type { BoardStatus } from './eskPairedBoard.js';
 import { restartBoard } from './eskRestart.js';
-import { observeUsbDdr } from './eskUsbDdr.js';
 import { readBoardPolicy, saveBoardName, type NetworkManagement } from './eskBoardName.js';
 
 const names = ['', 'Device', 'Logic', 'DAP', 'UART', 'I2C', 'SPI', 'GPIO', 'USB analyzer',
@@ -27,7 +26,6 @@ class HomeSession extends EskUsbSession {
 
   async status(): Promise<BoardStatus> {
     const identity = await this.identity();
-    await observeUsbDdr(this.usb, query => this.exchange(1, query));
     const features: BoardStatus['features'] = [];
     let snapshot = 0n, observed = 0n, timebase = 0, flags = 0, total = 0, lastKey = 0;
     do {
