@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """One owned UART grant per loopback viewer session."""
 from contextlib import ExitStack
-from threading import RLock, Timer
+from esk_local_grants import IdleGrants
 import time
-from uuid import uuid4
 
 
 def uart_limits(catalog):
@@ -13,13 +12,7 @@ def uart_limits(catalog):
     return dict(write=min(120, service.max_request_bytes), read=min(116, service.max_reply_bytes))
 
 
-class LocalUart:
-    IDLE = 5
-
-    def __init__(self):
-        self.lock = RLock()
-        self.active = {}
-
+class LocalUart(IdleGrants):
     def open(self, selection, body):
         from xsdk_xesk import Device
         address, identity = selection
@@ -40,32 +33,7 @@ class LocalUart:
                 raise ValueError("Board changed or UART unavailable")
             uart = stack.enter_context(client.uart())
             uart.configure(baud, data_bits=bits, stop_bits=stops, parity=("none", "odd", "even")[parity])
-            token = uuid4().hex
-            self.active[selection] = dict(token=token, boot=body["boot"], stack=stack.pop_all(), uart=uart, limits=limits,
-                                          last=time.monotonic(), sequence=1)
-            self.schedule(selection, token, self.IDLE)
-            return token
-
-    def schedule(self, selection, token, delay):
-        timer = Timer(delay, self.expire, args=(selection, token))
-        timer.daemon = True
-        self.active[selection]["timer"] = timer
-        timer.start()
-
-    def close(self, selection):
-        current = self.active.pop(selection)
-        current["timer"].cancel()
-        current["stack"].close()
-
-    def expire(self, selection, token):
-        with self.lock:
-            current = self.active.get(selection)
-            if current and current["token"] == token:
-                remaining = self.IDLE - (time.monotonic() - current["last"])
-                if remaining > 0:
-                    self.schedule(selection, token, remaining)
-                else:
-                    self.close(selection)
+            return self.remember(selection, stack, boot=body["boot"], uart=uart, limits=limits, sequence=1)
 
     def request(self, selection, body):
         from xsdk_xesk.runtime_errors import UartLineError

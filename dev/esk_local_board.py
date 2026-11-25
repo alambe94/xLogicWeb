@@ -8,6 +8,7 @@ import socket
 from threading import Lock
 import time
 from uuid import uuid4
+from esk_local_outputs import LocalOutputs, output_routes
 from esk_local_uart import LocalUart, uart_limits
 
 
@@ -95,6 +96,7 @@ def status(client):
                 captureTriggerRates=list(RATES) if maximum and trigger_supported(catalog) else [],
                 capturePreTriggerPercents=list(PRETRIGGER_PERCENTS) if history else [], captureHistoryProfiles=history,
                 networkManagement=bool(management and device.firmware_version >= 0x2900), i2cLimits=limits, uartLimits=uart_limits(catalog),
+                outputRoutes=output_routes(catalog),
                 features=[dict(name=NAMES[r.feature_id], instance=r.instance_id, enabled=bool(r.capability_flags & 2),
                                ownership=OWNERS[r.ownership]) for r in rows], catalog=dict(services=services, resources=resources))
 
@@ -103,6 +105,7 @@ class LocalBoards:
     def __init__(self):
         self.selections = {}
         self.uarts = LocalUart()
+        self.outputs = LocalOutputs()
         self.lock = Lock()
 
     def select(self, body):
@@ -142,6 +145,8 @@ class LocalBoards:
         op = body["op"]
         if op == "lan_select":
             return self.select(body)
+        if op.startswith("lan_outputs_"):
+            return self.outputs.request(self.selected(body), body)
         if op.startswith("lan_uart_"):
             return self.uarts.request(self.selected(body), body)
         if op == "lan_i2c":
