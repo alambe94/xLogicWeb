@@ -8,6 +8,7 @@ import socket
 from threading import Lock
 import time
 from uuid import uuid4
+from esk_local_uart import LocalUart, uart_limits
 
 
 NETWORKS = tuple(map(IPv4Network, ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16")))
@@ -93,7 +94,7 @@ def status(client):
                 hardwareId=device.hardware_id, captureMaxSamples=maximum, captureRates=list(rates),
                 captureTriggerRates=list(RATES) if maximum and trigger_supported(catalog) else [],
                 capturePreTriggerPercents=list(PRETRIGGER_PERCENTS) if history else [], captureHistoryProfiles=history,
-                networkManagement=bool(management and device.firmware_version >= 0x2900), i2cLimits=limits,
+                networkManagement=bool(management and device.firmware_version >= 0x2900), i2cLimits=limits, uartLimits=uart_limits(catalog),
                 features=[dict(name=NAMES[r.feature_id], instance=r.instance_id, enabled=bool(r.capability_flags & 2),
                                ownership=OWNERS[r.ownership]) for r in rows], catalog=dict(services=services, resources=resources))
 
@@ -101,6 +102,7 @@ def status(client):
 class LocalBoards:
     def __init__(self):
         self.selections = {}
+        self.uarts = LocalUart()
         self.lock = Lock()
 
     def select(self, body):
@@ -140,6 +142,8 @@ class LocalBoards:
         op = body["op"]
         if op == "lan_select":
             return self.select(body)
+        if op.startswith("lan_uart_"):
+            return self.uarts.request(self.selected(body), body)
         if op == "lan_i2c":
             from xsdk_xesk import Device
             address, identity = self.selected(body)

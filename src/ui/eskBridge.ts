@@ -4,6 +4,7 @@ import { hexBytes, i2cCommand, parseHex, spiCommands, spiReceiveBytes } from '..
 import { readUsbBoardStatus, runUsbBridge } from '../device/eskUsbHome.js';
 import { transferBoardI2c, type BoardStatus } from '../device/eskPairedBoard.js';
 import { BridgeUart, eskSerial } from '../device/eskSerial.js';
+import { openEthernetUart } from '../device/eskEthernetUart.js';
 import { canTransaction, type CanAction } from '../device/eskCan.js';
 import { requireField } from '../device/eskUsbSession.js';
 function hexNumber(text: string): number {
@@ -33,10 +34,11 @@ export function initBridgeTools() {
   const port = byId<HTMLButtonElement>('bus-port'), result = byId<HTMLOutputElement>('bridge-result');
   const rx = byId<HTMLOutputElement>('bus-uart-rx');
   let device: USBDevice | undefined, board: BoardStatus | undefined, epoch = 0, busy = false;
-  let uart: BridgeUart | undefined;
+  let uart: Pick<BridgeUart,'send'|'receive'|'close'> | undefined;
   let received = new Uint8Array();
   function available(name: string) {
-    return (!!device || (name === 'I2C' && !!board?.i2cLimits)) && !!board?.features.some(f => f.name === name && f.instance === 0 && f.enabled) && (name !== 'UART' || !!eskSerial);
+    const supported = device ? (name !== 'UART' || !!eskSerial) : name === 'I2C' ? !!board?.i2cLimits : name === 'UART' && !!board?.uartLimits;
+    return supported && !!board?.features.some(f => f.name === name && f.instance === 0 && f.enabled);
   }
   function render() {
     protocol.disabled = busy || !!uart;
@@ -88,13 +90,14 @@ export function initBridgeTools() {
     if (current)
       await current.close();
   }
-  port.onclick = () => void operate(async (_device, _board, token) => {
+  port.onclick = () => void operate(async (device, board, token) => {
     if (uart) {
       await closeUart();
       return 'UART closed';
     }
-    const opened = await BridgeUart.open({ baudRate: input('baud').valueAsNumber, dataBits: Number(bits.value),
-      parity: parity.value as 'none' | 'odd' | 'even', stopBits: Number(stop.value) });
+    const settings = { baudRate: input('baud').valueAsNumber, dataBits: Number(bits.value),
+      parity: parity.value as 'none' | 'odd' | 'even', stopBits: Number(stop.value) };
+    const opened = device ? await BridgeUart.open(settings) : await openEthernetUart(board,settings);
     if (epoch !== token) {
       await opened.close();
       return '';
@@ -137,13 +140,13 @@ export function initBridgeTools() {
           : await transferBoardI2c(b, address, tx, count);
         return reply.length ? hexBytes(reply) : tx.length + ' bytes written';
       }
-      if (!d) throw new Error('This protocol requires USB.');
       if (protocol.value === 'UART') {
         const bytes = parseHex(input('uart-tx').value);
         requireField(uart && bytes.length && bytes.length <= 1024, 'Enter 1–1,024 UART bytes.');
         await uart.send(bytes);
         return bytes.length + ' bytes submitted to serial port';
       }
+      if (!d) throw new Error('This protocol requires USB.');
       if (protocol.value === 'CAN') {
         const action = canAction.value as CanAction;
         const identity = await readUsbBoardStatus(d);
@@ -167,7 +170,7 @@ export function initBridgeTools() {
   window.addEventListener('pagehide', () => { void closeUart().catch(() => { }); });
   render();
   return (next?: USBDevice, status?: BoardStatus) => {
-    if (next !== device || status?.boot !== board?.boot) {
+    if (next !== device || status?.boot !== board?.boot || status?.deviceId !== board?.deviceId) {
       epoch++;
       result.value = rx.value = '';
       void closeUart().catch(() => { });
