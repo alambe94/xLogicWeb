@@ -13,6 +13,7 @@ from uuid import uuid4
 NETWORKS = tuple(map(IPv4Network, ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16")))
 RATES = (333333333, 166666666, 83333333, 41666666)
 HIGH_RATE = 500000000
+PRETRIGGER_PERCENTS = (25, 50, 75)
 HIGH_RATE_MAX = 2147483520
 # The network image expires idle TCP connections after ten seconds.
 RENEW_SECONDS = 2
@@ -54,6 +55,11 @@ def trigger_supported(catalog):
     return catalog.device.firmware_version >= 0x2c00 and "trigger_kind" in signature(Lease.logic_finite_start).parameters
 
 
+def pretrigger_supported(catalog):
+    from xsdk_xesk import Lease
+    return catalog.device.firmware_version >= 0x2d00 and trigger_supported(catalog) and "pre_percent" in signature(Lease.logic_finite_start).parameters
+
+
 def status(client):
     catalog = client.inspect()
     device = catalog.device
@@ -72,6 +78,7 @@ def status(client):
     return dict(deviceId=device.device_id.hex(), boot=str(device.boot_id), firmware=device.firmware_version,
                 hardwareId=device.hardware_id, captureMaxSamples=maximum, captureRates=list(rates),
                 captureTriggerRates=list(RATES) if maximum and trigger_supported(catalog) else [],
+                capturePreTriggerPercents=list(PRETRIGGER_PERCENTS) if maximum >= 1024 and 41666666 in rates and pretrigger_supported(catalog) else [],
                 networkManagement=bool(management and device.firmware_version >= 0x2900), i2cLimits=limits,
                 features=[dict(name=NAMES[r.feature_id], instance=r.instance_id, enabled=bool(r.capability_flags & 2),
                                ownership=OWNERS[r.ownership]) for r in rows], catalog=dict(services=services, resources=resources))
@@ -174,6 +181,12 @@ class LocalBoards:
                         or rate not in RATES or not trigger_supported(catalog)):
                     raise ValueError("Unsupported Ethernet edge trigger")
                 trigger_args = dict(trigger_kind=1 if trigger["edge"] == "rising" else 2, trigger_channel=trigger["channel"])
+                percent = trigger.get("prePercent", 0)
+                if type(percent) is not int or (percent != 0 and (percent not in PRETRIGGER_PERCENTS or
+                        rate != 41666666 or count != 1024 or not pretrigger_supported(catalog))):
+                    raise ValueError("Unsupported Ethernet pretrigger geometry")
+                if percent:
+                    trigger_args["pre_percent"] = percent
             with client.claim(ServiceId.LOGIC, lease_ticks=60000) as lease:
                 record = lease.logic_finite_start(rate, size, max_capture_bytes=size, **trigger_args)
                 renewal = time.monotonic() + RENEW_SECONDS

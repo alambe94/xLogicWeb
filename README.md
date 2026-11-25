@@ -93,6 +93,12 @@ board can wait on any D0–D7 input, acquire eight channels in DDR after the
 edge, and download the result over USB or Ethernet. The waiting indicator
 appears once the board accepts the trigger. Cancel an armed capture to change
 the settings and arm again. Packed USB offers its own pretrigger control.
+
+For eight-channel DDR captures on supported firmware (0.45.0 or later),
+select **41.67 MS/s**, enter **1024** samples, and choose a rising or falling
+edge. **Pre-trigger buffer** offers 25%, 50% and 75% when the connection
+supports them. The waveform marks the edge at sample 256, 512 or 768
+respectively. Entering `1K` requests 1,000 samples and uses ordinary edge capture.
 Earlier firmware offers the two four-channel banks. Select
 **Record** for an open-ended USB recording. The sustainable rate depends
 on the board, USB link and host storage. After Stop, use the slider to browse the trace.
