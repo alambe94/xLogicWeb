@@ -355,3 +355,39 @@ for (const local of [false, true]) {
   }
 }
 console.log('Paired and localhost Ethernet PWM/1 grant, heartbeat, release, busy and no-replay checks passed.');
+
+const {transferBoardSpi} = await import('./eskPairedBoard.js');
+for (const local of [false, true]) {
+  globalThis.location = new URL(local ? 'http://127.0.0.1:42000/#eskLocal='+'b'.repeat(32) :
+    'https://example.org/#eskBoard=http%3A%2F%2F192.0.2.1%3A5555');
+  const maximum = local ? 1020 : 116;
+  const target = {...board, spiLimits: {transfer: maximum}};
+  const tx = Uint8Array.from({length: maximum}, (_, i) => i);
+  const rx = tx.map(value => value ^ 0xa5);
+  let short = false, requests = 0;
+  function transfer(msg) {
+    requests++;
+    assert.deepEqual([msg.deviceId, msg.boot, msg.mode, msg.hz], [board.deviceId, board.boot, 2, 1000000]);
+    assert.deepEqual(Uint8Array.from(msg.data), tx);
+    return short ? rx.slice(1) : rx;
+  }
+  globalThis.window = {parent: {postMessage(msg, origin, [port]) {
+    assert.equal(msg.type, 'xesk.spi.v1');
+    assert.equal(origin, 'http://192.0.2.1:5555');
+    port.postMessage({data: transfer(msg)});
+    port.close();
+  }}};
+  globalThis.fetch = async (_url, options) => {
+    const msg = JSON.parse(options.body);
+    assert.equal(msg.op, 'lan_spi');
+    return new Response(transfer(msg));
+  };
+  assert.deepEqual(await transferBoardSpi(target, 2, 1000000, tx), rx);
+  await assert.rejects(transferBoardSpi(target, 2, 1000000, new Uint8Array(maximum + 1)), /bytes/);
+  await assert.rejects(transferBoardSpi(target, 4, 1000000, tx), /mode/);
+  await assert.rejects(transferBoardSpi(board, 2, 1000000, tx));
+  short = true;
+  await assert.rejects(transferBoardSpi(target, 2, 1000000, tx), /uncertain/);
+  assert.equal(requests, 2);
+}
+console.log('Ethernet SPI sends one full-duplex transaction within the advertised window and rejects incomplete replies.');

@@ -2,7 +2,7 @@
 import { selectControl, type SelectOptionTuple } from './select.js';
 import { hexBytes, i2cCommand, parseHex, spiCommands, spiReceiveBytes } from '../device/eskBridgeFrames.js';
 import { readUsbBoardStatus, runUsbBridge } from '../device/eskUsbHome.js';
-import { transferBoardI2c, type BoardStatus } from '../device/eskPairedBoard.js';
+import { transferBoardI2c, transferBoardSpi, type BoardStatus } from '../device/eskPairedBoard.js';
 import { gpioCommand, openOutputs, pwmCommand, pwmTiming, type OutputHandle } from '../device/eskOutputs.js';
 import { BridgeUart, eskSerial } from '../device/eskSerial.js';
 import { openEthernetUart } from '../device/eskEthernetUart.js';
@@ -48,6 +48,7 @@ export function initBridgeTools() {
     if (!board?.features.some(f => f.name === name && f.instance === instance && f.enabled)) return false;
     if (device) return name !== 'UART' || !!eskSerial;
     if (name === 'GPIO' || name === 'PWM') return !!ethernetOutputRoute(board, name, instance);
+    if (name === 'SPI') return !!board.spiLimits;
     return name === 'I2C' ? !!board.i2cLimits : name === 'UART' && !!board.uartLimits;
   }
   function commandLabel(name: string): string {
@@ -73,6 +74,7 @@ export function initBridgeTools() {
     }
     input('duty-a').disabled = !(Number(pwmMask.value) & 1);
     input('duty-b').disabled = !(Number(pwmMask.value) & 2);
+    input('spi-count').max = String(device ? 1020 : board?.spiLimits?.transfer ?? 1020);
     const receive = spiAction.value === 'receive';
     for (const id of ['spi-tx', 'spi-count', 'spi-fill']) {
       const field = input(id);
@@ -201,19 +203,21 @@ export function initBridgeTools() {
         return 'PWM running · ' + timing;
       }
 
+      if (protocol.value === 'SPI') {
+        const tx = spiAction.value === 'receive'
+          ? spiReceiveBytes(input('spi-count').valueAsNumber, input('spi-fill').value)
+          : parseHex(input('spi-tx').value);
+        const spiMode = Number(mode.value), hz = input('clock').valueAsNumber;
+        const reply = d ? await runUsbBridge(d, b, 'SPI', spiCommands(spiMode, hz, tx))
+          : await transferBoardSpi(b, spiMode, hz, tx);
+        return 'RX (MISO) · ' + hexBytes(reply);
+      }
       if (!d) throw new Error('This protocol requires USB.');
       if (protocol.value === 'CAN') {
         const action = canAction.value as CanAction;
         const identity = await readUsbBoardStatus(d);
         requireField(identity.deviceId === b.deviceId && identity.boot === b.boot, 'Board changed. Refresh Home.');
         return canTransaction(d, action, Number(bitrate.value), action === 'listen' ? 0 : hexNumber(input('can-id').value), action === 'listen' ? new Uint8Array() : parseHex(input('can-tx').value));
-      }
-      if (protocol.value === 'SPI') {
-        const tx = spiAction.value === 'receive'
-          ? spiReceiveBytes(input('spi-count').valueAsNumber, input('spi-fill').value)
-          : parseHex(input('spi-tx').value);
-        const commands = spiCommands(Number(mode.value), input('clock').valueAsNumber, tx);
-        return 'RX (MISO) · ' + hexBytes(await runUsbBridge(d, b, 'SPI', commands));
       }
       throw new Error('Unknown Bridge protocol.');
     });

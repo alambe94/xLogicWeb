@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from esk_local_board import HIGH_RATE, HIGH_RATE_MAX, RATES, LocalBoards, capabilities, history_profiles, locator
+from esk_local_board import HIGH_RATE, HIGH_RATE_MAX, RATES, LocalBoards, capabilities, history_profiles, locator, spi_limits
 from esk_native import Handler, ThreadingHTTPServer
 
 
@@ -22,6 +22,43 @@ class LocalBoardTests(unittest.TestCase):
         self.assertEqual(capabilities(catalog)[1], RATES)
         service.flags = 0
         self.assertEqual(capabilities(catalog)[1], ())
+
+    def test_spi_full_duplex_one_cs_window_and_catalog_bounds(self):
+        boards = LocalBoards()
+        ident = bytes(range(16))
+        boards.selections["id"] = ("tcp://192.0.2.1:5555", ident)
+        sdk = MagicMock()
+        device = sdk.Device.return_value.__enter__.return_value
+        spi = device.spi.return_value.__enter__.return_value
+        spi.transfer.side_effect = lambda data: data[::-1]
+        route = SimpleNamespace(service_id=6, instance_id=0, transports=2, max_request_bytes=1024, max_reply_bytes=1020)
+        catalog = SimpleNamespace(device=SimpleNamespace(device_id=ident, boot_id=42), services=[route])
+        device.inspect.return_value = catalog
+        data = bytes(range(255)) * 4
+        req = dict(op="lan_spi", board="id", deviceId=ident.hex(), boot="42", mode=3, hz=1000000, data=list(data))
+        with patch.dict("sys.modules", xsdk_xesk=sdk):
+            self.assertEqual(spi_limits(catalog), dict(transfer=1020))
+            self.assertEqual(boards.request(req), data[::-1])
+            spi.set_mode.assert_called_once_with(3)
+            spi.set_speed.assert_called_once_with(1000000)
+            spi.transfer.assert_called_once_with(data)
+            for changes in (dict(mode=True), dict(hz=0), dict(data=[]), dict(data=[True]), dict(data=[0] * 1021),
+                            dict(boot="43"), dict(deviceId="0"*32)):
+                with self.assertRaises(ValueError):
+                    boards.request(dict(req, **changes))
+            self.assertEqual(device.spi.call_count, 1)
+            route.max_reply_bytes = 4
+            self.assertEqual(spi_limits(catalog), dict(transfer=4))
+            with self.assertRaises(ValueError):
+                boards.request(req)
+            route.transports = 1
+            self.assertIsNone(spi_limits(catalog))
+            route.transports = 2
+            spi.transfer.side_effect = TimeoutError("uncertain")
+            with self.assertRaises(TimeoutError):
+                boards.request(dict(req, data=[0]))
+            self.assertEqual(spi.transfer.call_count, 2)
+            self.assertEqual(device.spi.return_value.__exit__.call_count, 2)
 
     def test_name_is_resolved_once_and_pinned_to_board_identity(self):
         boards = LocalBoards()
@@ -178,6 +215,19 @@ class LocalHttpTest(unittest.TestCase):
                         else:
                             with self.assertRaises(http.client.IncompleteRead):
                                 reply.read()
+                    finally:
+                        conn.close()
+                # A full SPI request needs more room than ordinary JSON controls.
+                server.boards.request.return_value = bytes(1020)
+                for op, expected in (("lan_spi", 200), ("lan_select", 400)):
+                    conn = http.client.HTTPConnection(server.authority, timeout=3)
+                    try:
+                        conn.request("POST", "/api/native", json.dumps(dict(op=op, data=[255] * 1020)),
+                                     {"Origin": "http://" + server.authority, "Content-Type": "application/json"})
+                        reply = conn.getresponse()
+                        self.assertEqual(reply.status, expected)
+                        if expected == 200:
+                            self.assertEqual(reply.read(), bytes(1020))
                     finally:
                         conn.close()
             finally:
