@@ -161,10 +161,10 @@ import { formatBytes as recordingBytes } from './format.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
 import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
-import { boardCaptureMaximum, boardCaptureRates, receiveBoardCapture } from '../device/eskPairedBoard.js';
+import { boardCaptureMaximum, boardCaptureRates, boardDdrTriggerAvailable, receiveBoardCapture } from '../device/eskPairedBoard.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
 import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_PACKED_RATE, type EskBank, requestEskDevice, selectedEskUsbDevice } from '../device/eskCapture.js';
-import { inspectUsbDdr, receiveUsbDdr, usbDdrMaximum } from '../device/eskUsbDdr.js';
+import { inspectUsbDdr, receiveUsbDdr, usbDdrMaximum, usbDdrTriggerMaximum } from '../device/eskUsbDdr.js';
 import { supportsUsbEightChannelCount, USB_EIGHT_CHANNEL_MAXIMUM } from './eskUsbChannels.js';
 import { capturePackedEdge } from './eskPackedCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
@@ -646,6 +646,13 @@ export class App {
     const available = usbDdrMaximum(selectedEskUsbDevice());
     if (available && supportsUsbEightChannelCount(this.eskRate, this.eskLength, this.eskCountText))
       return Math.min(available, USB_EIGHT_CHANNEL_MAXIMUM);
+  }
+  private get eskUsbFiniteCapacity(): number | undefined {
+    if (this.eskLength === 'count' && this.eskEdge !== 'none') {
+      const maximum = usbDdrTriggerMaximum(selectedEskUsbDevice(), this.eskRate);
+      if (maximum) return maximum;
+    }
+    return this.eskAllUsbChannels ? this.eskDdrCapacity : undefined;
   }
   private displayedEskBank: EskBank | undefined;
   private selectedRowBank: EskBank | undefined;
@@ -7177,7 +7184,7 @@ export class App {
       const profile = document.createElement('p');
       profile.className = 'panel-note';
       const lan = !!eskLanMode();
-      const ddr = !lan && this.eskAllUsbChannels ? this.eskDdrCapacity : undefined;
+      const ddr = lan ? undefined : this.eskUsbFiniteCapacity;
       const max = lan ? boardCaptureMaximum(this.eskLanRate) : ddr;
       const rate = lan ? this.eskLanRate : this.eskRate;
       const rates = selectControl('esk-finite-rate', (lan ? 'Ethernet' : 'USB') + ' · ' + t('capturePanel.sampleRate'),
@@ -7273,9 +7280,12 @@ export class App {
           modes.append(until);
         }
         fields.append(modes);
+      }
+      const boardTrigger = lan ? boardDdrTriggerAvailable(rate) : !!usbDdrTriggerMaximum(selectedEskUsbDevice(), rate);
+      if (!lan || boardTrigger) {
         const edge = selectControl('esk-trigger-edge', t('overview.originTrigger'),
           [['none', t('trigger.off')], ['rising', t('trigger.rising')], ['falling', t('trigger.falling')]], this.eskEdge);
-        const packed = rate === ESK_PACKED_RATE;
+        const packed = !lan && rate === ESK_PACKED_RATE && !ddr;
         const base = packed && this.eskBank === 'upper' ? 4 : 0;
         const channel = selectControl('esk-trigger-channel', t('esk.triggerChannel'),
           Array.from({length: packed ? 4 : ESK_CHANNELS}, (_, i) => [String(base + i), 'D' + (base + i)]),
@@ -7283,16 +7293,17 @@ export class App {
         const position = selectControl('esk-pre-trigger', t('capturePanel.preTriggerBuffer'),
           [0, 25, 50, 75].map(n => [String(n), n + '%']), String(this.eskPrePercent));
         syncTrigger = n => {
-          const available = !ddr && this.eskLength === 'count' && n !== undefined && n <= ESK_SAMPLES;
+          const available = (lan || this.eskLength === 'count') && n !== undefined &&
+            (boardTrigger || (!lan && !ddr && n <= ESK_SAMPLES));
           edge.disabled = this.eskCapturePending || !available;
           edge.value = available ? this.eskEdge : 'none';
           channel.el.hidden = edge.value === 'none';
-          position.el.hidden = channel.el.hidden || rate !== ESK_PACKED_RATE;
+          position.el.hidden = channel.el.hidden || !packed;
           channel.disabled = this.eskCapturePending;
         };
         edge.addEventListener('change', () => {
           this.eskEdge = edge.value as typeof this.eskEdge;
-          updateEstimate();
+          this.renderSidebarContent();
         });
         channel.addEventListener('change', () => { this.eskTriggerChannel = Number(channel.value); });
         position.disabled = this.eskCapturePending;
@@ -7367,7 +7378,7 @@ export class App {
       acquisition.className = 'panel-section';
       acquisition.append(fields, channels, profile);
       panel.replaceChildren(acquisition, this.traceTools.edges);
-      if (!lan) panel.append(trigger);
+      if (!lan || boardTrigger) panel.append(trigger);
       panel.append(this.traceTools.root);
       if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
       return;
@@ -8108,7 +8119,7 @@ export class App {
         return;
       } finally { this.eskCapturePending = false; this.updateEskBankView(); }
     }
-    const ddr = !lan && this.eskAllUsbChannels ? this.eskDdrCapacity : undefined;
+    const ddr = lan ? undefined : this.eskUsbFiniteCapacity;
     const max = lan ? boardCaptureMaximum(this.eskLanRate) : ddr;
     const untilStop = !lan && this.eskLength === 'untilStop';
     const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity
@@ -8131,12 +8142,18 @@ export class App {
       }
     }
     const loop = !lan && this.eskLength === 'loop';
+    const rate = lan ? this.eskLanRate : this.eskRate;
+    const ddrEdge = this.eskEdge !== 'none' && (lan ? boardDdrTriggerAvailable(rate) :
+      this.eskLength === 'count' && !!usbDdrTriggerMaximum(selectedEskUsbDevice(), rate))
+      ? {edge: this.eskEdge, channel: this.eskTriggerChannel} : undefined;
     if (n > ESK_SAMPLES || loop) {
-      this.openEskRecorder(true, {count: n, rate: lan ? this.eskLanRate : this.eskRate, bank: this.eskBank, ethernet: lan, usbDdr: !!ddr, loop});
+      this.openEskRecorder(true, {count: n, rate, bank: this.eskBank, ethernet: lan, usbDdr: !!ddr, ...(ddrEdge ? {trigger: ddrEdge} : {}), loop});
       return;
     }
     this.eskCapturePending = true;
     const controller = new AbortController();
+    const abandon = () => controller.abort();
+    window.addEventListener('pagehide', abandon);
     this.renderToolbarState();
     this.renderSidebarContent();
     const previous = this.captureSessionId;
@@ -8145,23 +8162,24 @@ export class App {
       if (!(await this.confirmDiscardCapture())) return;
       if (previous !== this.captureSessionId || this.running || this.stopping) return;
       this.endPendingRepeatSession();
-      const rate = device ? this.eskRate : this.eskLanRate;
       const bank = this.eskBank;
       const packed = !!device && rate === ESK_PACKED_RATE && !ddr;
       let samples: Uint8Array, ticks: string | undefined;
       let triggerIndex: number | undefined;
+      const onArmed = () => {
+        this.eskArmed = controller;
+        this.setFileNotice({key: 'esk.waitingForTrigger', vars: {channel: this.eskTriggerChannel}});
+        this.renderToolbarState();
+      };
+      const ddrTrigger = ddrEdge ? {...ddrEdge, onArmed} : undefined;
       if (device && ddr) {
         samples = new Uint8Array(n);
         let offset = 0;
-        await receiveUsbDdr(device, n, controller.signal, async block => { samples.set(block, offset); offset += block.length; });
+        await receiveUsbDdr(device, n, controller.signal, async block => { samples.set(block, offset); offset += block.length; }, rate, ddrTrigger);
       } else if (device) {
         const trigger = this.eskEdge !== 'none' ? {
           channel: this.eskTriggerChannel, edge: this.eskEdge, signal: controller.signal,
-          onArmed: () => {
-            this.eskArmed = controller;
-            this.setFileNotice({key: 'esk.waitingForTrigger', vars: {channel: this.eskTriggerChannel}});
-            this.renderToolbarState();
-          },
+          onArmed,
         } : undefined;
         if (packed && trigger) {
           triggerIndex = Math.floor(n * this.eskPrePercent / 100);
@@ -8176,7 +8194,7 @@ export class App {
           ticks = await receiveBoardCapture(n, controller.signal, async (block, offset) => {
             samples.set(block, offset);
             preview.append(block);
-          }, rate);
+          }, rate, ddrTrigger);
         } finally { preview.close(); }
       } else ({samples, ticks} = await captureEskLan());
       // Another open or acquisition can replace the display while the capture is in progress.
@@ -8197,6 +8215,7 @@ export class App {
         this.fail(transport === 'ethernet' ? 'error.eskEthernet' : 'error.eskUsb', error);
       }
     } finally {
+      window.removeEventListener('pagehide', abandon);
       this.eskCapturePending = false;
       this.eskArmed = null;
       if (this.fileNotice?.key === 'esk.waitingForTrigger') this.setFileNotice(null);

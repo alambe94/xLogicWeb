@@ -90,6 +90,25 @@ class LocalBoardTests(unittest.TestCase):
             client.inspect.return_value.device.firmware_version = 0x2900
             with self.assertRaisesRegex(ValueError, "Unsupported Ethernet"), boards.capture(high_fields):
                 self.fail("older firmware started a 500 MS/s capture")
+            trigger = dict(edge="falling", channel=3)
+            client.inspect.return_value.device.firmware_version = 0x2c00
+            sdk.Lease.logic_finite_start = lambda *, trigger_kind=0, trigger_channel=0: None
+            with self.assertRaisesRegex(ValueError, "Unsupported Ethernet"), boards.capture(dict(high_fields, trigger=trigger)):
+                self.fail("trigger offered at 500 MS/s")
+            waiting = SimpleNamespace(flags=256)
+            ready = SimpleNamespace(flags=512, sample_rate=fields["rate"], format=1, channel_mask=255,
+                                    stored_bytes=128, timestamp_ticks=987)
+            rec.status.side_effect = [waiting, ready]
+            armed = MagicMock()
+            triggered = dict(fields, trigger=trigger)
+            with boards.capture(triggered, armed=armed) as (ticks, blocks, _):
+                self.assertEqual((ticks, b"".join(blocks)), ("987", bytes(range(99))))
+            armed.assert_called_once_with()
+            lease.logic_finite_start.assert_called_with(fields["rate"],128,max_capture_bytes=128,trigger_kind=2,trigger_channel=3)
+            rec.cancel.reset_mock()
+            with self.assertRaises(BrokenPipeError), boards.capture(triggered, armed=armed, check_connection=MagicMock(side_effect=BrokenPipeError)):
+                self.fail("disconnected viewer remained armed")
+            rec.cancel.assert_called_once()
 
 
 class LocalHttpTest(unittest.TestCase):

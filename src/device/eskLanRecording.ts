@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { receiveBoardCapture } from './eskPairedBoard.js';
+import type { DdrTrigger } from './eskDdrTrigger.js';
 
 function committed(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -9,7 +10,7 @@ function committed(tx: IDBTransaction): Promise<void> {
 }
 
 /** The HTTP board embeds the viewer. IndexedDB also works in that insecure ancestor context. */
-export async function downloadBoardTrace(count: number, rate: number, signal: AbortSignal, progress: (bytes: number, block: Uint8Array) => void) {
+export async function downloadBoardTrace(count: number, rate: number, signal: AbortSignal, progress: (bytes: number, block: Uint8Array) => void, trigger?: DdrTrigger) {
   const id = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16)).join('-');
   const key = 'xesk-ethernet-' + id;
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -36,7 +37,7 @@ export async function downloadBoardTrace(count: number, rate: number, signal: Ab
         progress(samples, block);
       });
       await pendingWrite;
-    }, rate);
+    }, rate, trigger);
   } catch (error) {
     if (!signal.aborted) { dispose(); throw error; }
     // Stop can arrive between the last IndexedDB add and its commit.

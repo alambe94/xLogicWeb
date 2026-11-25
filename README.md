@@ -87,6 +87,12 @@ then downloads all eight channels over USB. At `2G` and above, or when **Record*
 or **Loop** is selected, choose D0–D3 or D4–D7. The bank updates as you edit the count. Longer eight-channel downloads
 use this browser profile’s disk archive. Stop during download to inspect the received prefix.
 Choose D0–D3 or D4–D7 for packed USB capture, streaming, or the packed trigger.
+With compatible firmware, choose a finite sample count and a rising or falling
+edge in **Capture → Trigger**. At 41.67, 83.33, 166.67 and 333.33 MS/s the
+board can wait on any D0–D7 input, acquire eight channels in DDR after the
+edge, and download the result over USB or Ethernet. The waiting indicator
+appears once the board accepts the trigger. Cancel an armed capture to change
+the settings and arm again. Packed USB offers its own pretrigger control.
 Earlier firmware offers the two four-channel banks. Select
 **Record** for an open-ended USB recording. The sustainable rate depends
 on the board, USB link and host storage. After Stop, use the slider to browse the trace.

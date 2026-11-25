@@ -4,6 +4,7 @@ import { createOpfsRecordStorage } from '../data/opfsStorage.js';
 import { ESK_STREAM_RATE, ESK_PACKED_RATE, requestEskDevice, type EskBank } from '../device/eskCapture.js';
 import { downloadBoardTrace } from '../device/eskLanRecording.js';
 import { receiveUsbDdr } from '../device/eskUsbDdr.js';
+import type { DdrEdge } from '../device/eskDdrTrigger.js';
 import { openEskReplay } from './srLoad.js';
 import { selectControl } from './select.js';
 import type { ConfirmDialog } from './confirmDialog.js';
@@ -107,7 +108,7 @@ function waitForBlock(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean; usbDdr?: boolean; loop?: boolean }
+export interface EskRecordingOptions { count: number; rate: number; bank: EskBank; ethernet?: boolean; usbDdr?: boolean; loop?: boolean; trigger?: DdrEdge }
 type DownloadPreview = (count: number, rate: number) => {append(block: Uint8Array): void; close(): void};
 export function showEskRecorder(live: boolean, display: RecordingDisplay, confirmation: ConfirmDialog, confirmReplace: () => Promise<boolean>, removed: (key: string) => void, options?: EskRecordingOptions, captureChanged = () => false, downloadPreview?: DownloadPreview): void {
   const dialog = document.querySelector<HTMLDialogElement>('#esk-recorder')!;
@@ -221,6 +222,8 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
     if (!(await confirmReplace())) { if (options) dialog.close(); return; }
     const replay = live ? null : await openEskReplay(file!);
     const rate = replay?.rate ?? options?.rate ?? ESK_STREAM_RATE;
+    const edge = options?.trigger;
+    const trigger = edge ? {...edge, onArmed() { status.value = t('esk.waitingForTrigger', {channel: edge.channel}); }} : undefined;
     const bank = options?.bank ?? 'lower';
     const title = options?.ethernet ? 'xLOGIC Ethernet' : options?.usbDdr ? 'xLOGIC USB D0–D7' : live ? (rate === ESK_PACKED_RATE ? 'xLOGIC USB ' + (bank === 'upper' ? 'D4–D7' : 'D0–D3') : 'xLOGIC USB') : file!.name;
     let budget = options?.count ?? (limit.value ? limit.valueAsNumber * MiB : Infinity);
@@ -237,7 +240,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
       const saved = await downloadBoardTrace(budget, rate, abort.signal, (bytes, block) => {
         preview?.append(block);
         status.value = progress(bytes, bytes, 0);
-      }).finally(() => preview?.close());
+      }, trigger).finally(() => preview?.close());
       if (saved.samples) {
         const start = Math.max(0, saved.samples - displaySamples);
         try {
@@ -291,7 +294,7 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
               }
               preview?.append(block);
               status.value = progress(saved + used, saved, used);
-            });
+            }, rate, trigger);
           } catch (error) { if (!signal.aborted || error !== signal.reason) throw error; }
           await flush();
           await writer.close();
@@ -460,6 +463,9 @@ export function showEskRecorder(live: boolean, display: RecordingDisplay, confir
   };
   source.onchange = first.oninput = limit.oninput = update;
   close.onclick = () => dialog.close();
+  const abandon = () => abort?.abort();
+  window.addEventListener('pagehide', abandon);
+  dialog.addEventListener('close', () => { window.removeEventListener('pagehide', abandon); }, {once: true});
   dialog.oncancel = event => { if (busy) { event.preventDefault(); abort?.abort(); update(); } };
   status.value = '';
   if (options?.ethernet || options?.usbDdr) dialog.show();

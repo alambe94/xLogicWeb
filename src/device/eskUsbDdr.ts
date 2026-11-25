@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { EskControlRejection, EskUsbSession, requireField, within, withUsbInterface } from './eskUsbSession.js';
+import { type DdrTrigger, validDdrEdge } from './eskDdrTrigger.js';
+import { ESK_FINITE_RATES } from './eskCapture.js';
 
 const RATE = 500_000_000;
 const QUANTUM = 192;
@@ -10,11 +12,15 @@ const START = 2, STATUS = 3, CANCEL = 5, RELEASE = 6;
 const LEASE_TICKS = 60000n;
 const capacities = new WeakMap<USBDevice, number>();
 const probes = new WeakMap<USBDevice, Promise<number>>();
+const triggerCapacities = new WeakMap<USBDevice, number>();
 export const usbDdrMaximum = (device?: USBDevice) => device && capacities.get(device);
-export function forgetUsbDdr(device: USBDevice): void { capacities.delete(device); }
+export function usbDdrTriggerMaximum(device: USBDevice | undefined, rate: number): number | undefined {
+  return device && ESK_FINITE_RATES.includes(rate) ? triggerCapacities.get(device) : undefined;
+}
+export function forgetUsbDdr(device: USBDevice): void { capacities.delete(device); triggerCapacities.delete(device); }
 
 /** A Logic descriptor is transport-specific. Earlier firmware returns zero arena bytes on USB. */
-async function observeUsbDdr(device: USBDevice, describe: (query: Uint8Array) => Promise<DataView>): Promise<number> {
+async function observeUsbDdr(describe: (query: Uint8Array) => Promise<DataView>): Promise<number> {
   const query = new Uint8Array(8);
   query[0] = 2;
   let capacity = 0;
@@ -30,12 +36,9 @@ async function observeUsbDdr(device: USBDevice, describe: (query: Uint8Array) =>
     const finiteAndContinuous = 3, ethernetRateProfile = 64;
     if ((flags & (finiteAndContinuous | ethernetRateProfile)) === finiteAndContinuous &&
         row.getUint32(68, true) === 1 && row.getBigUint64(80, true) === BigInt(RATE) &&
-        bytes >= BigInt(QUANTUM) && bytes <= 0xffffffffn) capacity = Math.floor(Number(bytes) / QUANTUM) * QUANTUM;
+        bytes >= BigInt(QUANTUM) && bytes <= 0xffffffffn) capacity = Number(bytes);
     break;
   }
-  const previous = capacities.get(device);
-  capacities.set(device, capacity);
-  if (capacity !== previous && typeof window !== 'undefined') window.dispatchEvent(new Event('esk-usb-ddr'));
   return capacity;
 }
 
@@ -43,12 +46,21 @@ class DdrSession extends EskUsbSession {
   constructor(device: USBDevice) { super(device, 0, 0x70, LOGIC); }
   async inspect() {
     await this.openConnection();
-    return observeUsbDdr(this.usb, query => this.exchange(1, query));
+    const bytes = await observeUsbDdr(query => this.exchange(1, query));
+    const capacity = Math.floor(bytes / QUANTUM) * QUANTUM;
+    const maximum = capacity && (await this.identity()).firmware >= 0x2c00 ? Math.floor(bytes / 64) * 64 : 0;
+    const changed = capacities.get(this.usb) !== capacity || triggerCapacities.get(this.usb) !== maximum;
+    capacities.set(this.usb, capacity);
+    triggerCapacities.set(this.usb, maximum);
+    if (changed && typeof window !== 'undefined') window.dispatchEvent(new Event('esk-usb-ddr'));
+    return capacity;
   }
-  async capture(count: number, signal: AbortSignal, accept: (bytes: Uint8Array) => Promise<void>) {
+  async capture(count: number, signal: AbortSignal, accept: (bytes: Uint8Array) => Promise<void>, rate: number, trigger?: DdrTrigger) {
     const maximum = await this.inspect();
-    const extent = Math.ceil(count / QUANTUM) * QUANTUM;
-    requireField(Number.isSafeInteger(count) && count > 0 && extent <= maximum,
+    const quantum = rate === RATE ? QUANTUM : 64;
+    const extent = Math.ceil(count / quantum) * quantum;
+    requireField(trigger ? validDdrEdge(trigger) && !!usbDdrTriggerMaximum(this.usb, rate) : rate === RATE, 'Unsupported USB DDR trigger or rate.');
+    requireField(Number.isSafeInteger(count) && count > 0 && extent <= (trigger ? usbDdrTriggerMaximum(this.usb, rate)! : maximum),
       'The requested eight-channel capture exceeds the USB DDR capacity.');
     let id = 0n;
     const command = async (op: typeof START | typeof STATUS | typeof CANCEL | typeof RELEASE) => {
@@ -62,7 +74,11 @@ class DdrSession extends EskUsbSession {
         v.setUint16(12, 1, true);
         v.setUint16(14, 255, true);
         v.setBigUint64(24, BigInt(extent), true);
-        v.setUint32(32, RATE, true);
+        v.setUint32(32, rate, true);
+        if (trigger) {
+          v.setUint8(36, trigger.edge === 'rising' ? 1 : 2);
+          v.setUint8(37, trigger.channel);
+        }
       }
       const frame = await this.exchange(7,q,LOGIC,this.session);
       const r = new DataView(frame.buffer,frame.byteOffset + 48,frame.byteLength - 48);
@@ -77,7 +93,7 @@ class DdrSession extends EskUsbSession {
       if (op === CANCEL || op === RELEASE) requireField(state === 0, 'Board has not retired the capture.');
       else {
         requireField((state === ACQUIRING || state === READY) && r.getUint8(18) === 1 && r.getUint8(19) === 255 &&
-          r.getUint32(32,true) === RATE && r.getBigUint64(40,true) === BigInt(extent) &&
+          r.getUint32(32,true) === rate && r.getBigUint64(40,true) === BigInt(extent) &&
           r.getBigUint64(48,true) === BigInt(extent) && !r.getBigUint64(56,true) &&
           r.getBigUint64(24,true) > 0n && r.getBigUint64(72,true) > 0n, 'Unexpected eight-channel USB capture geometry.');
         id = r.getBigUint64(24,true);
@@ -97,12 +113,13 @@ class DdrSession extends EskUsbSession {
     let complete = false;
     try {
       await command(START);
+      trigger?.onArmed();
       let result = await command(STATUS);
-      const deadline = performance.now() + 10000 + 1000 * extent / RATE;
+      const deadline = performance.now() + 10000 + 1000 * extent / rate;
       while (!result.ready) {
         signal.throwIfAborted();
-        requireField(performance.now() < deadline, 'USB DDR acquisition timed out.');
-        await sleep(10);
+        requireField(trigger || performance.now() < deadline, 'USB DDR acquisition timed out.');
+        await sleep(trigger ? 40 : 10);
         await renew();
         result = await command(STATUS);
       }
@@ -158,10 +175,11 @@ export function inspectUsbDdr(device: USBDevice): Promise<number> {
   return probe;
 }
 
-export async function receiveUsbDdr(device: USBDevice, count: number, signal: AbortSignal, accept: (block: Uint8Array) => Promise<void>) {
+export async function receiveUsbDdr(device: USBDevice, count: number, signal: AbortSignal,
+    accept: (block: Uint8Array) => Promise<void>, rate = RATE, trigger?: DdrTrigger) {
   const session = new DdrSession(device);
   await withUsbInterface(device, session, alt => {
     requireField(alt.endpoints.some(ep => ep.direction === 'in' && ep.endpointNumber === 1 && ep.type === 'bulk'), 'Missing USB Logic data endpoint.');
-    return session.capture(count, signal, accept);
+    return session.capture(count, signal, accept, rate, trigger);
   });
 }

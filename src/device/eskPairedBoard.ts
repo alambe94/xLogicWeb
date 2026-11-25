@@ -2,6 +2,7 @@
 import { ESK_FINITE_RATES, ESK_PACKED_RATE, ESK_RATE, ESK_SAMPLES } from './eskCapture.js';
 import { EskControlRejection } from './eskUsbSession.js';
 import { localBoard, localCapture, localRequest } from './eskLocalBoard.js';
+import { type DdrTrigger, validDdrEdge } from './eskDdrTrigger.js';
 
 function boardWindow(): Window | null {
   if (window.parent !== window) return window.parent;
@@ -13,6 +14,8 @@ let captureMaximum: number | undefined;
 let localBoot: string | undefined;
 const legacyRates = [ESK_RATE];
 let advertisedRates: number[] | undefined;
+let triggerRates: number[] = [];
+export function boardDdrTriggerAvailable(rate: number): boolean { return triggerRates.includes(rate); }
 export function boardCaptureRates(): readonly number[] { return advertisedRates ?? legacyRates; }
 export function boardCaptureMaximum(rate = ESK_RATE): number | undefined {
   if (rate !== ESK_PACKED_RATE || captureMaximum === undefined) return captureMaximum;
@@ -81,7 +84,7 @@ export async function capturePairedBoard(): Promise<{ samples: Uint8Array; ticks
 interface Feature { name: string; instance: number; enabled: boolean; ownership: string }
 interface Catalog { services: string[][]; resources: string[][] }
 interface I2cLimits { write: number; writeRead: number; read: number }
-export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null }
+export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; captureTriggerRates?: number[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null }
 
 /** Keep a single DEVICE grant across read, apply, observation and EEPROM save. */
 export async function withBoardManagement<T>(board: BoardStatus, run: (exchange: (payload: Uint8Array) => Promise<Uint8Array>) => Promise<T>): Promise<T> {
@@ -161,7 +164,11 @@ export async function readBoardStatus(): Promise<BoardStatus> {
   if (rates !== undefined && (!Array.isArray(rates) || rates.length > 32 || rates.some(rate => !Number.isSafeInteger(rate) || rate <= 0 || rate > 0xffffffff) ||
       (!!rates.length !== !!max) || (max && !rates.includes(ESK_RATE)))) throw new Error('Invalid Ethernet sampling rates');
   const supported = rates && [ESK_PACKED_RATE, ...ESK_FINITE_RATES].filter(hz => rates.includes(hz));
-  if (captureMaximum !== max || advertisedRates?.join() !== supported?.join()) {
+  const triggers = data.captureTriggerRates ?? [];
+  if (!Array.isArray(triggers) || triggers.length > ESK_FINITE_RATES.length || triggers.some(hz =>
+      data.firmware < 0x2c00 || !ESK_FINITE_RATES.includes(hz) || !supported?.includes(hz))) throw new Error('Invalid Ethernet trigger rates.');
+  if (captureMaximum !== max || advertisedRates?.join() !== supported?.join() || triggerRates.join() !== triggers.join()) {
+    triggerRates = triggers;
     advertisedRates = supported;
     captureMaximum = max;
     window.dispatchEvent(new Event('esk-capture-capacity'));
@@ -172,14 +179,15 @@ export async function readBoardStatus(): Promise<BoardStatus> {
 
 /** Receive one board block at a time. Acknowledge only after the sink accepts it. */
 export async function receiveBoardCapture(count: number, signal: AbortSignal,
-    accept: (block: Uint8Array, offset: number) => Promise<void>, rate = ESK_RATE): Promise<string> {
+    accept: (block: Uint8Array, offset: number) => Promise<void>, rate = ESK_RATE, trigger?: DdrTrigger): Promise<string> {
   await connectBoard();
   signal.throwIfAborted();
+  if (trigger && (!validDdrEdge(trigger) || !boardDdrTriggerAvailable(rate))) throw new Error('Unsupported Ethernet edge trigger.');
   if (localBoard()) {
     if (!localBoot) await readBoardStatus();
     if (!Number.isSafeInteger(count) || count < 1 || count > (boardCaptureMaximum(rate) ?? 0) || !boardCaptureRates().includes(rate))
       throw new Error('Capture exceeds the board limits.');
-    return localCapture(localBoot!, count, rate, signal, accept);
+    return localCapture(localBoot!, count, rate, signal, accept, trigger);
   }
   const origin = launchingBoard(), peer = boardWindow();
   if (!origin || !peer || !Number.isSafeInteger(count) || count < 1 || count > (boardCaptureMaximum(rate) ?? 0)) {
@@ -191,6 +199,7 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
   return new Promise((resolve, reject) => {
     let bytes = 0, receiving = false, finished = false;
     let timer: ReturnType<typeof setTimeout>;
+      let armed = false;
     function finish() {
       finished = true;
       clearTimeout(timer);
@@ -213,6 +222,11 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
       try {
         if (receiving || !data) throw new Error('Unexpected board capture reply');
         if (typeof data.error === 'string') throw new Error(data.error);
+        if (trigger && data.armed === true && !armed && !bytes) {
+          armed = true; deadline(); trigger.onArmed(); return;
+        }
+        if (trigger && armed && data.waiting === true && !bytes) { deadline(); port1.postMessage('alive'); return; }
+        if (trigger && !armed) throw new Error('Board did not confirm the trigger was armed.');
         if (data.done === true) {
           if (bytes !== count || (rated && data.rate !== rate) || typeof data.ticks !== 'string' || !/^\d{1,20}$/.test(data.ticks)) throw new Error('Incomplete board capture');
           if (rate === ESK_PACKED_RATE && (data.format !== 1 || data.channelMask !== 255)) throw new Error('Invalid eight-channel capture format');
@@ -233,7 +247,9 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
     port1.onmessageerror = () => fail(new Error('Unreadable capture block'));
     signal.addEventListener('abort', abort, {once: true});
     deadline();
-    try { peer.postMessage(rated ? {type: 'xesk.capture.v3', count, rate} : {type: 'xesk.capture.v2', count}, origin, [port2]); }
+    const message = trigger ? {type: 'xesk.capture.v4', count, rate, trigger: {edge: trigger.edge, channel: trigger.channel}}
+      : rated ? {type: 'xesk.capture.v3', count, rate} : {type: 'xesk.capture.v2', count};
+    try { peer.postMessage(message, origin, [port2]); }
     catch (error) { finish(); port2.close(); reject(error); }
   });
 }

@@ -2,6 +2,7 @@
 """Board-specific LAN operations for the packaged loopback viewer."""
 from contextlib import contextmanager
 from ipaddress import IPv4Address, IPv4Network
+from inspect import signature
 import re
 import socket
 from threading import Lock
@@ -48,6 +49,11 @@ def capabilities(catalog):
     return maximum, rates, limits
 
 
+def trigger_supported(catalog):
+    from xsdk_xesk import Lease
+    return catalog.device.firmware_version >= 0x2c00 and "trigger_kind" in signature(Lease.logic_finite_start).parameters
+
+
 def status(client):
     catalog = client.inspect()
     device = catalog.device
@@ -65,6 +71,7 @@ def status(client):
                   f"{r.minimum}..{r.maximum}", r.unit.name.lower()] for r in catalog.resources]
     return dict(deviceId=device.device_id.hex(), boot=str(device.boot_id), firmware=device.firmware_version,
                 hardwareId=device.hardware_id, captureMaxSamples=maximum, captureRates=list(rates),
+                captureTriggerRates=list(RATES) if maximum and trigger_supported(catalog) else [],
                 networkManagement=bool(management and device.firmware_version >= 0x2900), i2cLimits=limits,
                 features=[dict(name=NAMES[r.feature_id], instance=r.instance_id, enabled=bool(r.capability_flags & 2),
                                ownership=OWNERS[r.ownership]) for r in rows], catalog=dict(services=services, resources=resources))
@@ -143,13 +150,14 @@ class LocalBoards:
             raise ValueError("Unsupported local board operation")
 
     @contextmanager
-    def capture(self, body):
+    def capture(self, body, *, armed=None, check_connection=None):
         from xsdk_xesk import LogicCaptureError, ServiceId
         count, rate = body.get("count"), body.get("rate")
         if type(count) is not int or count < 1 or type(rate) is not int:
             raise ValueError("Invalid finite capture")
         with self.open(body) as client:
-            maximum, rates, _ = capabilities(client.inspect())
+            catalog = client.inspect()
+            maximum, rates, _ = capabilities(catalog)
             if rate not in rates:
                 raise ValueError("Unsupported Ethernet capture rate")
             quantum = 192 if rate == HIGH_RATE else 64
@@ -158,8 +166,16 @@ class LocalBoards:
                 maximum = min(maximum, HIGH_RATE_MAX)
             if size > maximum:
                 raise ValueError("Capture exceeds available board memory")
+            trigger = body.get("trigger")
+            trigger_args = {}
+            if trigger is not None:
+                if (not isinstance(trigger, dict) or trigger.get("edge") not in ("rising", "falling")
+                        or type(trigger.get("channel")) is not int or not 0 <= trigger["channel"] < 8
+                        or rate not in RATES or not trigger_supported(catalog)):
+                    raise ValueError("Unsupported Ethernet edge trigger")
+                trigger_args = dict(trigger_kind=1 if trigger["edge"] == "rising" else 2, trigger_channel=trigger["channel"])
             with client.claim(ServiceId.LOGIC, lease_ticks=60000) as lease:
-                record = lease.logic_finite_start(rate, size, max_capture_bytes=size)
+                record = lease.logic_finite_start(rate, size, max_capture_bytes=size, **trigger_args)
                 renewal = time.monotonic() + RENEW_SECONDS
                 deadline = time.monotonic() + size / rate + 5
 
@@ -188,12 +204,16 @@ class LocalBoards:
                             yield block.data[:count - block.offset]
 
                 try:
+                    if trigger and armed:
+                        armed()
                     while True:
+                        if trigger and check_connection:
+                            check_connection()
                         keep_alive()
                         result = record.status()
                         if result.flags & 512:
                             break
-                        if result.flags & 1024 or time.monotonic() > deadline:
+                        if result.flags & 1024 or (not trigger and time.monotonic() > deadline):
                             raise ValueError("Finite capture did not complete")
                         time.sleep(.03)
                     if (result.sample_rate, result.format, result.channel_mask, result.stored_bytes) != (rate, 1, 255, size):
