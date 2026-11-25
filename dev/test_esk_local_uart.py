@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import unittest
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -54,3 +55,11 @@ class LocalUartTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "settings"):
             self.sessions.request(self.selection, dict(self.open, settings=dict(self.open["settings"], baud=True)))
         self.client.uart.assert_not_called()
+
+    def test_abandoned_client_releases_its_grant_without_another_request(self):
+        retired = Event()
+        self.client.uart.return_value.__exit__.side_effect = lambda *_: retired.set()
+        with patch.object(self.sessions, "IDLE", .03):
+            self.sessions.request(self.selection, self.open)
+            self.assertTrue(retired.wait(2))
+        self.assertFalse(self.sessions.active)
