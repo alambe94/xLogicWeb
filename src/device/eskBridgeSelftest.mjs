@@ -144,9 +144,15 @@ assert.ok(closed);
 console.log('CAN echo/RX, cleanup on failure and UART grant, transmit, receive and DTR lifecycle passed.');
 
 const { gpioCommand, pwmCommand, pwmTiming } = await import('./eskOutputs.js');
-assert.deepEqual([...gpioCommand(true, 3, 2).payload], [3,0,0,0,2,0,0,0]);
-assert.equal(gpioCommand(false, 1, 0).op, 2);
-for (const [mask, high] of [[0,0],[128,0],[1,2],[3,4]]) assert.throws(() => gpioCommand(true, mask, high));
+assert.deepEqual([...gpioCommand(0x3100, true, 3, 2).payload], [3,0,0,0,2,0,0,0]);
+assert.equal(gpioCommand(0x3100, false, 1, 0).op, 2);
+for (const [mask, high] of [[0,0],[128,0],[1,2],[3,4]]) assert.throws(() => gpioCommand(0x3100, true, mask, high));
+assert.equal(gpioCommand(0x3100, true, 0x7f, 0).op, 1);
+assert.equal(gpioCommand(0x3200, true, 0xff, 0x80).op, 8);
+const bitSeven = gpioCommand(0x3200, false, 0x80, 0x80);
+assert.equal(bitSeven.op, 9);
+assert.deepEqual([...bitSeven.payload], [128,0,0,0,128,0,0,0]);
+for (const [mask, high] of [[256,0],[0x80,1]]) assert.throws(() => gpioCommand(0x3200, true, mask, high));
 const pwm = pwmCommand(1000000, 1, 12.5, 0);
 assert.equal(new DataView(pwm.payload.buffer).getUint32(4, true), 125);
 assert.throws(() => pwmCommand(1000000, 0, 50, 0));

@@ -57,6 +57,7 @@ export function initBridgeTools() {
     }
   }
   function render() {
+    byId('bus-gpio-mask-label').textContent = board ? 'Output mask (hex, bits 0–' + (board.firmware >= 0x3200 ? 7 : 6) + ')' : 'Output mask (hex)';
     protocol.disabled = busy || !!uart || !!outputs;
     timer.disabled = !!outputs;
     release.hidden = !outputs;
@@ -175,7 +176,7 @@ export function initBridgeTools() {
         const mask = Number(pwmMask.value);
         const command = isPwm ? pwmCommand(input('period').valueAsNumber, mask,
           mask & 1 ? input('duty-a').valueAsNumber : 0, mask & 2 ? input('duty-b').valueAsNumber : 0)
-          : gpioCommand(gpioAction.value === 'configure', hexNumber(input('gpio-mask').value), hexNumber(input('gpio-high').value));
+          : gpioCommand(b.firmware, gpioAction.value === 'configure', hexNumber(input('gpio-mask').value), hexNumber(input('gpio-high').value));
         const reconfigure = !!outputs;
         if (!outputs) {
           const handle = await openOutputs(d, b, bus, instance);

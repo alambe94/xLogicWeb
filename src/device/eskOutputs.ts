@@ -11,10 +11,14 @@ function words(...values: number[]): Uint8Array {
   values.forEach((v, i) => view.setUint32(i * 4, v, true));
   return bytes;
 }
-export function gpioCommand(configure: boolean, mask: number, high: number): BridgeCommand {
-  requireField(Number.isInteger(mask) && mask >= 1 && mask <= 127 &&
-    Number.isInteger(high) && high >= 0 && high <= mask && !(high & ~mask), 'Select outputs 0–6. High bits must be selected outputs.');
-  return {op: configure ? 1 : 2, payload: words(mask, high), reply: 0};
+export function gpioCommand(firmware: number, configure: boolean, mask: number, high: number): BridgeCommand {
+  const combo = firmware >= 0x3200;
+  requireField(Number.isInteger(mask) && mask >= 1 && mask <= (combo ? 255 : 127),
+    'Select GPIO output bits 0–' + (combo ? 7 : 6) + '.');
+  requireField(Number.isInteger(high) && high >= 0 && high <= mask && !(high & ~mask), 'High bits must be selected outputs.');
+  const configureOp = combo ? 8 : 1;
+  const writeOp = combo ? 9 : 2;
+  return {op: configure ? configureOp : writeOp, payload: words(mask, high), reply: 0};
 }
 export function pwmCommand(period: number, mask: number, a: number, b: number): BridgeCommand {
   const duties = [a, b].map(percent => Math.round(percent * 10));
