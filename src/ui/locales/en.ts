@@ -94,7 +94,7 @@ export const en = {
   'esk.loop': 'Loop',
   'esk.latestSamples': 'Latest samples',
   'settings.sections.storage': 'Storage',
-  'esk.untilStop': 'Record all',
+  'esk.untilStop': 'Record',
   'esk.mode': 'Mode',
   'esk.finite': 'Finite',
   'esk.continuous': 'Continuous',

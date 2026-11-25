@@ -99,6 +99,7 @@ import {
 
 /** A .lwcap save this large shows its progress in the capture panel. */
 const SAVE_PROGRESS_MIN_BYTES = 8 << 20;
+const ESK_DEFAULT_SAMPLE_COUNT = '100K';
 import {
   captureFileName, formatForFileName, localDateParts, saveFilePickerTypes, type CaptureFileFormat,
 } from './captureFileName.js';
@@ -648,9 +649,13 @@ export class App {
   }
   private displayedEskBank: EskBank | undefined;
   private selectedRowBank: EskBank | undefined;
-  private eskCountText = String(ESK_SAMPLES);
+  private eskCountText = ESK_DEFAULT_SAMPLE_COUNT;
   private eskLength: 'count' | 'untilStop' | 'loop' = 'count';
-  private eskLanCount = String(ESK_SAMPLES);
+  private eskLanCount?: string;
+  private ethernetSampleCountText(maximum?: number): string {
+    if (maximum === undefined) return String(ESK_SAMPLES);
+    return this.eskLanCount ?? (parseSampleCount(ESK_DEFAULT_SAMPLE_COUNT, maximum) ? ESK_DEFAULT_SAMPLE_COUNT : String(maximum));
+  }
   private eskCapturePending = false;
   private stopNativeRecording: (() => void) | undefined;
   private eskTriggerExpanded = false;
@@ -7197,7 +7202,7 @@ export class App {
       count.id = 'esk-sample-count';
       count.className = 'viewer-input';
       count.required = true;
-      count.value = lan ? (max === undefined ? String(ESK_SAMPLES) : this.eskLanCount) : this.eskCountText;
+      count.value = lan ? this.ethernetSampleCountText(max) : this.eskCountText;
       count.disabled = this.eskCapturePending || (lan ? !max : this.eskLength === 'untilStop');
       samplesLabel.append(count);
       let syncTrigger: ((samples: number | undefined) => void) | undefined;
@@ -8090,7 +8095,7 @@ export class App {
     const max = lan ? boardCaptureMaximum(this.eskLanRate) : ddr;
     const untilStop = !lan && this.eskLength === 'untilStop';
     const n = lan && max === undefined ? ESK_SAMPLES : untilStop ? Infinity
-      : parseSampleCount(lan ? this.eskLanCount : this.eskCountText, max);
+      : parseSampleCount(lan ? this.ethernetSampleCountText(max) : this.eskCountText, max);
     if (n === undefined) {
       this.selectPage('capture');
       document.querySelector<HTMLInputElement>('#esk-sample-count')?.reportValidity();
