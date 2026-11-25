@@ -70,6 +70,7 @@ class LocalBoardTests(unittest.TestCase):
             with self.assertRaises(BrokenPipeError), boards.capture(fields):
                 raise BrokenPipeError()
             rec.cancel.assert_called_once()
+
             with self.assertRaisesRegex(ValueError, "exceeds available"), boards.capture(dict(fields, count=129)):
                 self.fail("oversized capture started")
             service = client.inspect.return_value.services[0]
@@ -109,6 +110,24 @@ class LocalBoardTests(unittest.TestCase):
             with self.assertRaises(BrokenPipeError), boards.capture(triggered, armed=armed, check_connection=MagicMock(side_effect=BrokenPipeError)):
                 self.fail("disconnected viewer remained armed")
             rec.cancel.assert_called_once()
+
+            pilot = dict(triggered, rate=41666666, count=1024, trigger=dict(trigger, prePercent=25))
+            with self.assertRaisesRegex(ValueError, "pretrigger geometry"), boards.capture(pilot):
+                self.fail("older SDK and firmware armed")
+            client.inspect.return_value.device.firmware_version = 0x2d00
+            with self.assertRaisesRegex(ValueError, "pretrigger geometry"), boards.capture(pilot):
+                self.fail("older SDK armed")
+            sdk.Lease.logic_finite_start = lambda *, trigger_kind=0, trigger_channel=0, pre_percent=0: None
+            rec.status.side_effect = None
+            rec.status.return_value = SimpleNamespace(flags=512, sample_rate=41666666, format=1, channel_mask=255,
+                                                      stored_bytes=1024, timestamp_ticks=123)
+            for p in (25, 50, 75):
+                with boards.capture(dict(pilot, trigger=dict(trigger, prePercent=p))):
+                    pass
+                lease.logic_finite_start.assert_called_with(41666666,1024,max_capture_bytes=1024,trigger_kind=2,trigger_channel=3,pre_percent=p)
+            for n, hz, p in ((1000,41666666,50), (1023,41666666,50), (1024,83333333,50), (1024,41666666,True)):
+                with self.assertRaisesRegex(ValueError, "pretrigger geometry"), boards.capture(dict(pilot, count=n,rate=hz,trigger=dict(trigger,prePercent=p))):
+                    self.fail("invalid pretrigger occurrence armed")
 
 
 class LocalHttpTest(unittest.TestCase):

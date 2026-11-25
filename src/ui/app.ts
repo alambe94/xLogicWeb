@@ -161,10 +161,11 @@ import { formatBytes as recordingBytes } from './format.js';
 import { nativeRecorderAvailable } from './nativeArchive.js';
 import { recordNative } from './eskNativeRecorder.js';
 import { showEskStatus } from './eskStatusDialog.js';
-import { boardCaptureMaximum, boardCaptureRates, boardDdrTriggerAvailable, receiveBoardCapture } from '../device/eskPairedBoard.js';
+import { boardCaptureMaximum, boardCaptureRates, boardDdrTriggerAvailable, boardPreTriggerPercents, receiveBoardCapture } from '../device/eskPairedBoard.js';
+import { DDR_PRETRIGGER_PERCENTS, pretriggerGeometry } from '../device/eskDdrTrigger.js';
 import { captureEskLan, eskLanMode } from '../device/eskLanCapture.js';
 import { captureEsk, ESK_FINITE_RATES, ESK_CHANNELS, ESK_RATE, ESK_SAMPLES, ESK_PACKED_RATE, type EskBank, requestEskDevice, selectedEskUsbDevice } from '../device/eskCapture.js';
-import { inspectUsbDdr, receiveUsbDdr, usbDdrMaximum, usbDdrTriggerMaximum } from '../device/eskUsbDdr.js';
+import { inspectUsbDdr, receiveUsbDdr, usbDdrMaximum, usbDdrTriggerMaximum, usbPreTriggerPercents } from '../device/eskUsbDdr.js';
 import { supportsUsbEightChannelCount, USB_EIGHT_CHANNEL_MAXIMUM } from './eskUsbChannels.js';
 import { capturePackedEdge } from './eskPackedCapture.js';
 import { exampleCaptureFile } from './exampleCapture.js';
@@ -669,6 +670,7 @@ export class App {
   private eskEdge: 'none' | 'rising' | 'falling' = 'none';
   private eskTriggerChannel = 0;
   private eskPrePercent = 50;
+  private eskDdrPrePercent = 0;
   private eskArmed: AbortController | null = null;
   private captureWaveGeneration = 0;
   private measurementStats: MeasurementStatsState = emptyMeasurementStats();
@@ -7290,15 +7292,17 @@ export class App {
         const channel = selectControl('esk-trigger-channel', t('esk.triggerChannel'),
           Array.from({length: packed ? 4 : ESK_CHANNELS}, (_, i) => [String(base + i), 'D' + (base + i)]),
           String(this.eskTriggerChannel));
+        const percents = packed ? DDR_PRETRIGGER_PERCENTS : lan ? boardPreTriggerPercents() : usbPreTriggerPercents(selectedEskUsbDevice());
+        const percent = packed ? this.eskPrePercent : this.eskDdrPrePercent;
         const position = selectControl('esk-pre-trigger', t('capturePanel.preTriggerBuffer'),
-          [0, 25, 50, 75].map(n => [String(n), n + '%']), String(this.eskPrePercent));
+          [0, ...percents].map(n => [String(n), n + '%']), String(percents.includes(percent) ? percent : 0));
         syncTrigger = n => {
           const available = (lan || this.eskLength === 'count') && n !== undefined &&
             (boardTrigger || (!lan && !ddr && n <= ESK_SAMPLES));
           edge.disabled = this.eskCapturePending || !available;
           edge.value = available ? this.eskEdge : 'none';
           channel.el.hidden = edge.value === 'none';
-          position.el.hidden = channel.el.hidden || !packed;
+          position.el.hidden = channel.el.hidden || (!packed && (!pretriggerGeometry(rate, n) || !percents.length));
           channel.disabled = this.eskCapturePending;
         };
         edge.addEventListener('change', () => {
@@ -7307,7 +7311,10 @@ export class App {
         });
         channel.addEventListener('change', () => { this.eskTriggerChannel = Number(channel.value); });
         position.disabled = this.eskCapturePending;
-        position.addEventListener('change', () => { this.eskPrePercent = Number(position.value); });
+        position.addEventListener('change', () => {
+          if (packed) this.eskPrePercent = Number(position.value);
+          else this.eskDdrPrePercent = Number(position.value);
+        });
         const triggerFields = document.createElement('div');
         triggerFields.className = 'trace-fields';
         triggerFields.append(edge.el, channel.el, position.el);
@@ -8143,9 +8150,11 @@ export class App {
     }
     const loop = !lan && this.eskLength === 'loop';
     const rate = lan ? this.eskLanRate : this.eskRate;
+    const percents = lan ? boardPreTriggerPercents() : usbPreTriggerPercents(selectedEskUsbDevice());
+    const prePercent = pretriggerGeometry(rate, n) && percents.includes(this.eskDdrPrePercent) ? this.eskDdrPrePercent : 0;
     const ddrEdge = this.eskEdge !== 'none' && (lan ? boardDdrTriggerAvailable(rate) :
       this.eskLength === 'count' && !!usbDdrTriggerMaximum(selectedEskUsbDevice(), rate))
-      ? {edge: this.eskEdge, channel: this.eskTriggerChannel} : undefined;
+      ? {edge: this.eskEdge, channel: this.eskTriggerChannel, ...(prePercent ? {prePercent} : {})} : undefined;
     if (n > ESK_SAMPLES || loop) {
       this.openEskRecorder(true, {count: n, rate, bank: this.eskBank, ethernet: lan, usbDdr: !!ddr, ...(ddrEdge ? {trigger: ddrEdge} : {}), loop});
       return;
@@ -8165,7 +8174,7 @@ export class App {
       const bank = this.eskBank;
       const packed = !!device && rate === ESK_PACKED_RATE && !ddr;
       let samples: Uint8Array, ticks: string | undefined;
-      let triggerIndex: number | undefined;
+      let triggerIndex = ddrEdge?.prePercent ? n * ddrEdge.prePercent / 100 : undefined;
       const onArmed = () => {
         this.eskArmed = controller;
         this.setFileNotice({key: 'esk.waitingForTrigger', vars: {channel: this.eskTriggerChannel}});

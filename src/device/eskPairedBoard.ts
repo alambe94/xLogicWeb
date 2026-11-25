@@ -2,7 +2,7 @@
 import { ESK_FINITE_RATES, ESK_PACKED_RATE, ESK_RATE, ESK_SAMPLES } from './eskCapture.js';
 import { EskControlRejection } from './eskUsbSession.js';
 import { localBoard, localCapture, localRequest } from './eskLocalBoard.js';
-import { type DdrTrigger, validDdrEdge } from './eskDdrTrigger.js';
+import { DDR_PRETRIGGER_PERCENTS, type DdrTrigger, ddrEdgeRequest, validDdrEdge } from './eskDdrTrigger.js';
 
 function boardWindow(): Window | null {
   if (window.parent !== window) return window.parent;
@@ -15,6 +15,8 @@ let localBoot: string | undefined;
 const legacyRates = [ESK_RATE];
 let advertisedRates: number[] | undefined;
 let triggerRates: number[] = [];
+let preTriggerPercents: number[] = [];
+export const boardPreTriggerPercents = (): readonly number[] => preTriggerPercents;
 export function boardDdrTriggerAvailable(rate: number): boolean { return triggerRates.includes(rate); }
 export function boardCaptureRates(): readonly number[] { return advertisedRates ?? legacyRates; }
 export function boardCaptureMaximum(rate = ESK_RATE): number | undefined {
@@ -84,7 +86,7 @@ export async function capturePairedBoard(): Promise<{ samples: Uint8Array; ticks
 interface Feature { name: string; instance: number; enabled: boolean; ownership: string }
 interface Catalog { services: string[][]; resources: string[][] }
 interface I2cLimits { write: number; writeRead: number; read: number }
-export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; captureTriggerRates?: number[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null }
+export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; captureTriggerRates?: number[]; capturePreTriggerPercents?: number[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null }
 
 /** Keep a single DEVICE grant across read, apply, observation and EEPROM save. */
 export async function withBoardManagement<T>(board: BoardStatus, run: (exchange: (payload: Uint8Array) => Promise<Uint8Array>) => Promise<T>): Promise<T> {
@@ -167,7 +169,13 @@ export async function readBoardStatus(): Promise<BoardStatus> {
   const triggers = data.captureTriggerRates ?? [];
   if (!Array.isArray(triggers) || triggers.length > ESK_FINITE_RATES.length || triggers.some(hz =>
       data.firmware < 0x2c00 || !ESK_FINITE_RATES.includes(hz) || !supported?.includes(hz))) throw new Error('Invalid Ethernet trigger rates.');
-  if (captureMaximum !== max || advertisedRates?.join() !== supported?.join() || triggerRates.join() !== triggers.join()) {
+  const percents = data.capturePreTriggerPercents ?? [];
+  if (!Array.isArray(percents) || percents.length > DDR_PRETRIGGER_PERCENTS.length || new Set(percents).size !== percents.length ||
+      percents.some(p => data.firmware < 0x2d00 || (max ?? 0) < 1024 || !triggers.includes(41_666_666) ||
+        !DDR_PRETRIGGER_PERCENTS.includes(p))) throw new Error('Invalid Ethernet pretrigger capabilities.');
+  if (captureMaximum !== max || advertisedRates?.join() !== supported?.join() || triggerRates.join() !== triggers.join() ||
+      preTriggerPercents.join() !== percents.join()) {
+    preTriggerPercents = percents;
     triggerRates = triggers;
     advertisedRates = supported;
     captureMaximum = max;
@@ -182,7 +190,7 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
     accept: (block: Uint8Array, offset: number) => Promise<void>, rate = ESK_RATE, trigger?: DdrTrigger): Promise<string> {
   await connectBoard();
   signal.throwIfAborted();
-  if (trigger && (!validDdrEdge(trigger) || !boardDdrTriggerAvailable(rate))) throw new Error('Unsupported Ethernet edge trigger.');
+  if (trigger && (!validDdrEdge(trigger, rate, count, preTriggerPercents) || !boardDdrTriggerAvailable(rate))) throw new Error('Unsupported Ethernet edge trigger.');
   if (localBoard()) {
     if (!localBoot) await readBoardStatus();
     if (!Number.isSafeInteger(count) || count < 1 || count > (boardCaptureMaximum(rate) ?? 0) || !boardCaptureRates().includes(rate))
@@ -247,7 +255,7 @@ export async function receiveBoardCapture(count: number, signal: AbortSignal,
     port1.onmessageerror = () => fail(new Error('Unreadable capture block'));
     signal.addEventListener('abort', abort, {once: true});
     deadline();
-    const message = trigger ? {type: 'xesk.capture.v4', count, rate, trigger: {edge: trigger.edge, channel: trigger.channel}}
+    const message = trigger ? {type: 'xesk.capture.v4', count, rate, trigger: ddrEdgeRequest(trigger)}
       : rated ? {type: 'xesk.capture.v3', count, rate} : {type: 'xesk.capture.v2', count};
     try { peer.postMessage(message, origin, [port2]); }
     catch (error) { finish(); port2.close(); reject(error); }

@@ -156,3 +156,36 @@ await assert.rejects(receive(controller.signal,{...edge,onArmed() {controller.ab
 await canceled;
 assert.equal(await receive(new AbortController().signal,edge),'123');
 console.log('DDR trigger arming, heartbeat, cancel and rearm passed for board and helper protocols');
+
+const slowRate = 41666666, percentages = [25,50,75];
+const triggerAt = (n,hz,p) => receiveBoardCapture(n,new AbortController().signal,async () => {},hz,{...edge,prePercent:p});
+status.capturePreTriggerPercents = percentages;
+await assert.rejects(readBoardStatus(), /pretrigger capabilities/);
+status.firmware = 0x2d00;
+let expectedPercent = 0;
+window.parent.postMessage = (message,_origin,[port]) => {
+  if (message === 'xesk.status.v1') {port.postMessage(status); port.close(); return;}
+  assert.deepEqual(message,{type:'xesk.capture.v4',count:1024,rate:slowRate,trigger:{edge:'falling',channel:3,prePercent:expectedPercent}});
+  port.onmessage = () => {port.postMessage({done:true, ticks:'345', rate:slowRate}); port.close();};
+  port.postMessage({armed:true}); port.postMessage({offset:0,data:new Uint8Array(1024)});
+};
+await readBoardStatus();
+for (expectedPercent of percentages) assert.equal(await triggerAt(1024,slowRate,expectedPercent),'345');
+await assert.rejects(triggerAt(1000,slowRate,50),/Unsupported/);
+await assert.rejects(triggerAt(1024,rates[0],50),/Unsupported/);
+status.capturePreTriggerPercents = [];
+await readBoardStatus(); await assert.rejects(triggerAt(1024,slowRate,50),/Unsupported/);
+
+globalThis.location = new URL('http://127.0.0.1:40000/#eskLocal=' + 'a'.repeat(32));
+window.parent = window;
+status.capturePreTriggerPercents = percentages;
+globalThis.fetch = async (_url,opts) => {
+  const req = JSON.parse(opts.body);
+  if (req.op === 'lan_status') return Response.json(status);
+  assert.deepEqual(req.trigger, {edge:'falling',channel:3,prePercent:expectedPercent});
+  const body = new Uint8Array(1033);
+  body[0] = 1; body[1] = 42;
+  return new Response(body,{headers:{'Content-Type':'application/octet-stream','Content-Length':'1033','X-ESK-Armed':'1','X-ESK-Rate':String(slowRate),'X-ESK-Channel-Mask':'255','X-ESK-Format':'raw8'}});
+};
+await readBoardStatus();
+for (expectedPercent of percentages) assert.equal(await triggerAt(1024,slowRate,expectedPercent),'42');

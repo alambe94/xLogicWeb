@@ -66,7 +66,8 @@ class Board {
       if (cmd === 2) {
         assert.equal(req.getBigUint64(64,true), 0n); this.requestedRate = req.getUint32(80,true);
         this.edge = [req.getUint8(84), req.getUint8(85)];
-        assert.equal(req.getUint16(86,true), 0);
+        this.prePercent = req.getUint8(86);
+        assert.equal(req.getUint8(87), 0);
         assert.equal(req.getUint16(60,true), 1); assert.equal(req.getUint16(62,true), 255);
         this.extent = req.getBigUint64(72,true);
         assert.equal(this.extent % (this.requestedRate === 500000000 ? 192n : 64n), 0n);
@@ -206,4 +207,22 @@ for (const [i,rate] of [333333333,166666666,83333333,41666666].entries()) {
   await assert.rejects(receiveUsbDdr(board, 193, controller.signal, assert.fail, rate, {...trigger,
     onArmed() { controller.abort(); }}), {name: 'AbortError'});
   assert.equal(board.native.at(-1),5);
+}
+
+{
+  const board = new Board(), hz = 41666666;
+  const capture = (count, rate, prePercent) => receiveUsbDdr(board,count,signal(),async () => {},rate,
+    {edge:'rising',channel:7,prePercent,onArmed() {}});
+  board.firmware = 0x2c00;
+  await assert.rejects(capture(1024,hz,25), /Unsupported/);
+  board.firmware = 0x2d00;
+  for (const p of [25,50,75,0]) {
+    await capture(1024,hz,p);
+    assert.equal(board.prePercent,p);
+    assert.equal(board.extent,1024n); assert.deepEqual(board.edge,[1,7]);
+  }
+  for (const [n,rate,p] of [[1000,hz,50],[1023,hz,50],[1025,hz,50],[1024,83333333,50],[1024,hz,49]]) {
+    const starts = board.native.length;
+    await assert.rejects(capture(n,rate,p), /Unsupported/); assert.equal(board.native.length,starts);
+  }
 }

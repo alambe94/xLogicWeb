@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { BoardStatus } from './eskPairedBoard.js';
-import type { DdrTrigger } from './eskDdrTrigger.js';
+import { type DdrTrigger, ddrEdgeRequest } from './eskDdrTrigger.js';
 
 export function localEthernetAvailable(): boolean {
   return typeof location !== 'undefined' && location.hostname === '127.0.0.1' &&
@@ -39,7 +39,7 @@ export async function localBoardName(board: BoardStatus, name?: string): Promise
 export async function localCapture(boot: string, count: number, rate: number, signal: AbortSignal,
     accept: (data: Uint8Array, offset: number) => Promise<void>, trigger?: DdrTrigger): Promise<string> {
   const response = await localRequest('lan_capture', {boot, count, rate,
-    ...(trigger ? {trigger: {edge: trigger.edge, channel: trigger.channel}} : {})}, signal);
+    ...(trigger ? {trigger: ddrEdgeRequest(trigger)} : {})}, signal);
   const prefix = trigger ? new Uint8Array(9) : undefined;
   let prefixUsed = 0;
   let ticks = response.headers.get('X-ESK-Ticks') ?? '';
