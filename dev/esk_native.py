@@ -688,10 +688,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(400)
         try:
             size = int(self.headers.get("Content-Length", 0))
-            if not 0 < size <= 1024:
+            if not 0 < size <= 8192:
                 raise ValueError("Invalid request length")
             body = json.loads(self.rfile.read(size))
-            if not isinstance(body, dict):
+            if not isinstance(body, dict) or (size > 1024 and body.get("op") != "lan_spi"):
                 raise ValueError("Invalid request")
             if isinstance(body.get("op"), str) and body["op"].startswith("lan_"):
                 if not self.server.boards:

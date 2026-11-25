@@ -53,14 +53,15 @@ function launchingBoard(): string | undefined {
 export function fromBoard(): boolean { return launchingBoard() !== undefined || localBoard() !== undefined; }
 
 interface I2cTransfer { type: 'xesk.i2c.v1'; deviceId: string; boot: string; command: number; address: number; data: Uint8Array; count: number }
-function request(kind: 'capture' | 'status' | 'connect' | I2cTransfer): Promise<unknown> {
+interface SpiTransfer { type: 'xesk.spi.v1'; deviceId: string; boot: string; mode: number; hz: number; data: Uint8Array }
+function request(kind: 'capture' | 'status' | 'connect' | I2cTransfer | SpiTransfer): Promise<unknown> {
   const board = launchingBoard();
   const peer = boardWindow();
   if (!board || !peer) return Promise.reject(new Error('Open xEskWeb at the board IP address.'));
   const {port1, port2} = new MessageChannel();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { port1.close(); reject(new Error(typeof kind === 'object'
-      ? 'I²C reply timed out. Delivery is uncertain.' : 'Board tab did not reply. Reopen the viewer from the board.')); }, 65000);
+      ? 'Bridge reply timed out. Delivery is uncertain.' : 'Board tab did not reply. Reopen the viewer from the board.')); }, 65000);
     const finish = () => { clearTimeout(timer); port1.close(); };
     port1.onmessage = ({data}) => {
       finish();
@@ -90,7 +91,7 @@ interface Catalog { services: string[][]; resources: string[][] }
 interface I2cLimits { write: number; writeRead: number; read: number }
 export interface UartLimits { write: number; read: number }
 export interface OutputRoute { serviceId: 7 | 12; instanceId: number }
-export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; captureTriggerRates?: number[]; capturePreTriggerPercents?: number[]; captureHistoryProfiles?: HistoryProfile[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null; uartLimits?: UartLimits | null; outputRoutes?: OutputRoute[] }
+export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; captureTriggerRates?: number[]; capturePreTriggerPercents?: number[]; captureHistoryProfiles?: HistoryProfile[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null; spiLimits?: {transfer: number} | null; uartLimits?: UartLimits | null; outputRoutes?: OutputRoute[] }
 
 export function pairedOutputChannel(board: BoardStatus, route: OutputRoute): MessagePort {
   const peer = boardWindow(), origin = launchingBoard();
@@ -156,6 +157,23 @@ export async function transferBoardI2c(board: BoardStatus, address: number, data
   return reply;
 }
 
+export async function transferBoardSpi(board: BoardStatus, mode: number, hz: number, data: Uint8Array): Promise<Uint8Array> {
+  const maximum = board.spiLimits?.transfer;
+  if (!maximum || data.length < 1 || data.length > maximum) throw new Error('Ethernet SPI requires 1–' + (maximum ?? 0) + ' bytes per transfer.');
+  if (!Number.isInteger(mode) || mode < 0 || mode > 3 || !Number.isInteger(hz) || hz < 100000 || hz > 24000000)
+    throw new Error('Invalid SPI mode or clock.');
+  const fields = {deviceId: board.deviceId, boot: board.boot, mode, hz};
+  let result: unknown;
+  if (localBoard()) {
+    result = new Uint8Array(await (await localRequest('lan_spi', {...fields, data: Array.from(data)})).arrayBuffer());
+  } else {
+    const reply = await request({type: 'xesk.spi.v1', ...fields, data}) as {data?: unknown} | null;
+    result = reply?.data;
+  }
+  if (!(result instanceof Uint8Array) || result.length !== data.length) throw new Error('Invalid Ethernet SPI reply. Delivery is uncertain.');
+  return result;
+}
+
 function validRows(rows: unknown, limit: number): boolean {
   return Array.isArray(rows) && rows.length <= limit && rows.every(row =>
     Array.isArray(row) && row.length === 5 && row.every(cell => typeof cell === 'string'));
@@ -182,6 +200,9 @@ export async function readBoardStatus(): Promise<BoardStatus> {
   if (data.networkManagement !== undefined && typeof data.networkManagement !== 'boolean') throw new Error('Invalid Ethernet management capability');
   if (data.i2cLimits != null && ![data.i2cLimits.write, data.i2cLimits.writeRead, data.i2cLimits.read].every(
     n => Number.isInteger(n) && n > 0 && n <= 128)) throw new Error('Invalid board I²C limits');
+  if (data.spiLimits != null && (!Number.isInteger(data.spiLimits.transfer) || data.spiLimits.transfer < 1 ||
+      data.spiLimits.transfer > (local ? 1020 : 116) || (!local && data.firmware < 0x3400)))
+    throw new Error('Invalid board SPI limit');
   if (data.uartLimits != null && (data.firmware < 0x3000 || !Number.isInteger(data.uartLimits.write) || data.uartLimits.write < 8 ||
       data.uartLimits.write > 120 || !Number.isInteger(data.uartLimits.read) || data.uartLimits.read < 1 || data.uartLimits.read > 116))
     throw new Error('Invalid board UART limits');

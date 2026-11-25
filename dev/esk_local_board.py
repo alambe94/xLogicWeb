@@ -52,6 +52,29 @@ def capabilities(catalog):
     return maximum, rates, limits
 
 
+def spi_limits(catalog):
+    from xsdk_xesk import Device
+    spi = next((s for s in catalog.services if s.service_id == 6 and s.instance_id == 0 and s.transports & 2), None)
+    if spi and hasattr(Device, "spi"):
+        maximum = min(1020, spi.max_request_bytes - 4, spi.max_reply_bytes)
+        if maximum > 0:
+            return dict(transfer=maximum)
+    return None
+
+
+def spi_transfer(device, catalog, body):
+    limits = spi_limits(catalog)
+    data, mode, hz = body.get("data"), body.get("mode"), body.get("hz")
+    if (not limits or not isinstance(data, list) or not 1 <= len(data) <= limits["transfer"] or
+            any(type(b) is not int or not 0 <= b <= 255 for b in data) or
+            type(mode) is not int or not 0 <= mode <= 3 or type(hz) is not int or not 100000 <= hz <= 24000000):
+        raise ValueError("Invalid Ethernet SPI transfer")
+    with device.spi() as bus:
+        bus.set_mode(mode)
+        bus.set_speed(hz)
+        return bus.transfer(bytes(data))
+
+
 def trigger_supported(catalog):
     from xsdk_xesk import Lease
     return catalog.device.firmware_version >= 0x2c00 and "trigger_kind" in signature(Lease.logic_finite_start).parameters
@@ -95,7 +118,7 @@ def status(client):
                 hardwareId=device.hardware_id, captureMaxSamples=maximum, captureRates=list(rates),
                 captureTriggerRates=list(RATES) if maximum and trigger_supported(catalog) else [],
                 capturePreTriggerPercents=list(PRETRIGGER_PERCENTS) if history else [], captureHistoryProfiles=history,
-                networkManagement=bool(management and device.firmware_version >= 0x2900), i2cLimits=limits, uartLimits=uart_limits(catalog),
+                networkManagement=bool(management and device.firmware_version >= 0x2900), i2cLimits=limits, spiLimits=spi_limits(catalog), uartLimits=uart_limits(catalog),
                 outputRoutes=output_routes(catalog),
                 features=[dict(name=NAMES[r.feature_id], instance=r.instance_id, enabled=bool(r.capability_flags & 2),
                                ownership=OWNERS[r.ownership]) for r in rows], catalog=dict(services=services, resources=resources))
@@ -149,13 +172,18 @@ class LocalBoards:
             return self.outputs.request(self.selected(body), body)
         if op.startswith("lan_uart_"):
             return self.uarts.request(self.selected(body), body)
-        if op == "lan_i2c":
+        if op in ("lan_i2c", "lan_spi"):
             from xsdk_xesk import Device
             address, identity = self.selected(body)
             with Device(address) as device:
-                state = device.inspect().device
+                catalog = device.inspect()
+                state = catalog.device
                 if state.device_id != identity or str(state.boot_id) != body.get("boot"):
                     raise ValueError("Board changed. Refresh Home.")
+                if op == "lan_spi":
+                    if body.get("deviceId") != identity.hex():
+                        raise ValueError("Selected SPI board changed. Refresh Home.")
+                    return spi_transfer(device, catalog, body)
                 data, count, target = body.get("data"), body.get("count"), body.get("address")
                 if (not isinstance(data, list) or len(data) > 116 or type(count) is not int or not 0 <= count <= 116
                         or not (count or data) or any(type(n) is not int or not 0 <= n <= 255 for n in data)):
