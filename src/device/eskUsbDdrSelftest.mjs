@@ -70,7 +70,7 @@ class Board {
         assert.equal(req.getUint8(87), 0);
         assert.equal(req.getUint16(60,true), 1); assert.equal(req.getUint16(62,true), 255);
         this.extent = req.getBigUint64(72,true);
-        assert.equal(this.extent % (this.requestedRate === 500000000 ? 192n : 64n), 0n);
+        if (!this.prePercent) assert.equal(this.extent % (this.requestedRate === 500000000 ? 192n : 64n), 0n);
       } else assert.equal(req.getBigUint64(64,true), this.capture);
       if (cmd === 2 || cmd === 3) {
         const ready = !this.hold;
@@ -224,5 +224,17 @@ for (const [i,rate] of [333333333,166666666,83333333,41666666].entries()) {
   for (const [n,rate,p] of [[1000,hz,50],[1023,hz,50],[1025,hz,50],[1024,83333333,50],[1024,hz,49]]) {
     const starts = board.native.length;
     await assert.rejects(capture(n,rate,p), /Unsupported/); assert.equal(board.native.length,starts);
+  }
+  await assert.rejects(capture(100000,hz,50), /Unsupported/);
+  for (const [firmware, rates] of [[0x2e00,[hz]], [0x2f00,[hz,83333333]]]) {
+    board.firmware = firmware;
+    for (const rate of rates) for (const n of [1024,100000,1000000]) for (const p of [25,50,75]) {
+      board.reads = [];
+      await capture(n,rate,p);
+      assert.equal(board.extent,BigInt(n));
+      assert.deepEqual(board.reads,[n]);
+    }
+    await assert.rejects(capture(100001,hz,50), /Unsupported/);
+    if (firmware === 0x2e00) await assert.rejects(capture(100000,83333333,50), /Unsupported/);
   }
 }
