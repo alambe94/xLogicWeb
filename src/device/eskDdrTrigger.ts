@@ -16,7 +16,9 @@ export function ddrHistoryProfiles(firmware: number, capacity: number): HistoryP
   if (firmware < 0x2d00 || capacity < 1024) return [];
   const counts = (firmware >= 0x2e00 ? [1024, 100_000, 1_000_000] : [1024]).filter(n => n <= capacity);
   const rates = firmware >= 0x2f00 ? [41_666_666, 83_333_333] : [41_666_666];
-  return rates.map(rate => ({rate, counts}));
+  const profiles = rates.map(rate => ({rate, counts}));
+  if (firmware >= 0x3100 && capacity >= 100_000) profiles.push({rate: 166_666_666, counts: [100_000]});
+  return profiles;
 }
 
 export function pretriggerGeometry(rate: number, count: number | undefined, profiles: readonly HistoryProfile[]): boolean {

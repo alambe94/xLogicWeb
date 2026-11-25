@@ -103,6 +103,7 @@ the connection supports that combination.
 | 0.45.x | 41.67 MS/s | 1,024 |
 | 0.46.x | 41.67 MS/s | 1,024, 100,000, 1,000,000 |
 | 0.47.0 or later | 41.67 or 83.33 MS/s | 1,024, 100,000, 1,000,000 |
+| 0.49.0 or later | 166.67 MS/s | 100,000 |
 
 For example, enter `100K` and select 25% to mark the edge at sample 25,000.
 Enter `1024` for the shortest history window. Entering `1K` requests 1,000

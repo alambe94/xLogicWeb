@@ -226,6 +226,11 @@ for (const [i,rate] of [333333333,166666666,83333333,41666666].entries()) {
     await assert.rejects(capture(n,rate,p), /Unsupported/); assert.equal(board.native.length,starts);
   }
   await assert.rejects(capture(100000,hz,50), /Unsupported/);
+  board.firmware = 0x3000;
+  await assert.rejects(capture(100000,166666666,50), /Unsupported/);
+  board.firmware = 0x3100;
+  for (const percent of [25,50,75]) await capture(100000,166666666,percent);
+  for (const count of [1024,99999,100001,1000000]) await assert.rejects(capture(count,166666666,50), /Unsupported/);
   for (const [firmware, rates] of [[0x2e00,[hz]], [0x2f00,[hz,83333333]]]) {
     board.firmware = firmware;
     for (const rate of rates) for (const n of [1024,100000,1000000]) for (const p of [25,50,75]) {
