@@ -25,7 +25,7 @@ compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWe
 
 You can inspect [xBridgeWeb](https://alambe94.github.io/xLogicWeb/?view=bridge)
 from any laptop that can open the viewer. Choose a protocol and prepare its command before connecting. To run it,
-connect a compatible board over USB on Home in that tab.
+connect a compatible board over USB on Home in that tab, or open the board name on the LAN for Ethernet I²C and UART.
 
 On the hosted xEskWeb Home page, choose **Connect via USB** and select the ESK
 application device. Home displays its identity, boot ID, firmware and advertised
@@ -213,7 +213,11 @@ later when the board advertises the 500 MHz finite profile. When opening the boa
 address directly, its embedded connector must also advertise 500 MS/s. Earlier
 single-rate connectors offer 333.33 MS/s. Enter a sample count or choose
 **Max** beside Samples for the selected rate.
-Open xBridge in the Logic toolbar for I²C transfers when the board advertises Ethernet I²C.
+Open xBridge in the Logic toolbar for Ethernet I²C. On boards advertising Ethernet UART
+(firmware 0.48.0 or later), choose **UART**, set the line settings to match the
+peripheral, then choose **Open UART port**. Enter hex bytes and choose **Send bytes**.
+Received bytes appear in the UART receive field. **Close UART port** releases the
+port so another client can claim it.
 The bus and Logic use independent sessions. The board collects the requested
 samples first. As blocks arrive, the waveform fills from left to right across
 the requested time span. A shaded band marks activity within that interval.

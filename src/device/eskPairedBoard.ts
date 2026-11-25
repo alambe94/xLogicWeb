@@ -88,7 +88,16 @@ export async function capturePairedBoard(): Promise<{ samples: Uint8Array; ticks
 interface Feature { name: string; instance: number; enabled: boolean; ownership: string }
 interface Catalog { services: string[][]; resources: string[][] }
 interface I2cLimits { write: number; writeRead: number; read: number }
-export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; captureTriggerRates?: number[]; capturePreTriggerPercents?: number[]; captureHistoryProfiles?: HistoryProfile[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null }
+export interface UartLimits { write: number; read: number }
+export interface BoardStatus { deviceId: string; boot: string; firmware: number; hardwareId?: number; networkManagement?: boolean; captureMaxSamples?: number; captureRates?: number[]; captureTriggerRates?: number[]; capturePreTriggerPercents?: number[]; captureHistoryProfiles?: HistoryProfile[]; features: Feature[]; catalog?: Catalog; i2cLimits?: I2cLimits | null; uartLimits?: UartLimits | null }
+
+export function pairedUartChannel(board: BoardStatus, settings: Record<string, number>): MessagePort {
+  const peer = boardWindow(), origin = launchingBoard();
+  if (!origin || !peer || !board.uartLimits) throw new Error('Reconnect to a board with Ethernet UART support.');
+  const {port1,port2} = new MessageChannel();
+  peer.postMessage({type:'xesk.uart.v1',deviceId:board.deviceId,boot:board.boot,settings},origin,[port2]);
+  return port1;
+}
 
 /** Keep a single DEVICE grant across read, apply, observation and EEPROM save. */
 export async function withBoardManagement<T>(board: BoardStatus, run: (exchange: (payload: Uint8Array) => Promise<Uint8Array>) => Promise<T>): Promise<T> {
@@ -158,6 +167,9 @@ export async function readBoardStatus(): Promise<BoardStatus> {
   if (data.networkManagement !== undefined && typeof data.networkManagement !== 'boolean') throw new Error('Invalid Ethernet management capability');
   if (data.i2cLimits != null && ![data.i2cLimits.write, data.i2cLimits.writeRead, data.i2cLimits.read].every(
     n => Number.isInteger(n) && n > 0 && n <= 128)) throw new Error('Invalid board I²C limits');
+  if (data.uartLimits != null && (data.firmware < 0x3000 || !Number.isInteger(data.uartLimits.write) || data.uartLimits.write < 8 ||
+      data.uartLimits.write > 120 || !Number.isInteger(data.uartLimits.read) || data.uartLimits.read < 1 || data.uartLimits.read > 116))
+    throw new Error('Invalid board UART limits');
   if (data.hardwareId !== undefined && (!Number.isInteger(data.hardwareId) || data.hardwareId < 0 || data.hardwareId > 0xffffffff)) {
     throw new Error('Invalid ESK hardware ID');
   }

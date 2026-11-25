@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { requireField } from './eskUsbSession.js';
-interface Settings {
+export interface Settings {
   baudRate: number;
   dataBits: number;
   parity: 'none' | 'odd' | 'even';
