@@ -276,7 +276,8 @@ html, body {
 .esk-channel-picker .seg:has(:focus-visible) { outline: 2px solid var(--ring); outline-offset: 1px; z-index: 1; }
 .esk-channel-picker .seg:has(:disabled) { opacity: .45; cursor: default; }
 .esk-capture-fields input[type="text"] { min-width: 0; max-width: 60%; }
-.esk-capture-fields .pill { justify-self: end; }
+.esk-sample-row { display: flex; align-items: center; gap: .5rem; }
+.esk-sample-row label { flex: 1; min-width: 0; }
 .esk-capture-fields .settings-toggle { justify-self: stretch; }
 .esk-instrument { display: grid; gap: .45rem; text-align: left; width: 100%; margin-top: .7rem; padding: 1.2rem; }
 .esk-connections { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; }
@@ -3212,5 +3213,6 @@ html[data-theme="light"] .bus-dialog::backdrop { background: var(--backdrop); }
 #trace-search .trace-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #trace-search .trace-search-actions, #trace-search output { grid-column: 1 / -1; }
 
+.esk-length-modes .settings-toggle:has(input:disabled) { opacity: .5; cursor: not-allowed; }
 .esk-length-modes { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; grid-column: 1 / -1; }
 #esk-sample-count:disabled { background: var(--muted); color: var(--muted-foreground); cursor: not-allowed; }
