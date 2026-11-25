@@ -55,15 +55,29 @@ def trigger_supported(catalog):
     return catalog.device.firmware_version >= 0x2c00 and "trigger_kind" in signature(Lease.logic_finite_start).parameters
 
 
-def pretrigger_supported(catalog):
+def history_profiles(catalog, maximum, rates):
     from xsdk_xesk import Lease
-    return catalog.device.firmware_version >= 0x2d00 and trigger_supported(catalog) and "pre_percent" in signature(Lease.logic_finite_start).parameters
+    version = catalog.device.firmware_version
+    if maximum < 1024 or version < 0x2d00 or not trigger_supported(catalog) or "pre_percent" not in signature(Lease.logic_finite_start).parameters:
+        return []
+    try:
+        from xsdk_xesk.network_logic import history_counts
+    except ImportError:
+        # SDKs built for the 0.45 pilot accept only its original geometry.
+        return [dict(rate=41666666, counts=[1024])] if 41666666 in rates else []
+    profiles = []
+    for rate in rates:
+        counts = [n for n in history_counts((version >> 16, version >> 8 & 255, version & 255), rate) if n <= maximum]
+        if counts:
+            profiles.append(dict(rate=rate, counts=counts))
+    return profiles
 
 
 def status(client):
     catalog = client.inspect()
     device = catalog.device
     maximum, rates, limits = capabilities(catalog)
+    history = history_profiles(catalog, maximum, rates)
     management = next((s for s in catalog.services if int(s.service_id) == 1 and not s.instance_id and s.transports & 2), None)
     rows = client.feature_status().rows if management and management.flags & 16 else ()
     services = []
@@ -78,7 +92,7 @@ def status(client):
     return dict(deviceId=device.device_id.hex(), boot=str(device.boot_id), firmware=device.firmware_version,
                 hardwareId=device.hardware_id, captureMaxSamples=maximum, captureRates=list(rates),
                 captureTriggerRates=list(RATES) if maximum and trigger_supported(catalog) else [],
-                capturePreTriggerPercents=list(PRETRIGGER_PERCENTS) if maximum >= 1024 and 41666666 in rates and pretrigger_supported(catalog) else [],
+                capturePreTriggerPercents=list(PRETRIGGER_PERCENTS) if history else [], captureHistoryProfiles=history,
                 networkManagement=bool(management and device.firmware_version >= 0x2900), i2cLimits=limits,
                 features=[dict(name=NAMES[r.feature_id], instance=r.instance_id, enabled=bool(r.capability_flags & 2),
                                ownership=OWNERS[r.ownership]) for r in rows], catalog=dict(services=services, resources=resources))
@@ -171,8 +185,6 @@ class LocalBoards:
             size = (count + quantum - 1) // quantum * quantum
             if rate == HIGH_RATE:
                 maximum = min(maximum, HIGH_RATE_MAX)
-            if size > maximum:
-                raise ValueError("Capture exceeds available board memory")
             trigger = body.get("trigger")
             trigger_args = {}
             if trigger is not None:
@@ -183,10 +195,13 @@ class LocalBoards:
                 trigger_args = dict(trigger_kind=1 if trigger["edge"] == "rising" else 2, trigger_channel=trigger["channel"])
                 percent = trigger.get("prePercent", 0)
                 if type(percent) is not int or (percent != 0 and (percent not in PRETRIGGER_PERCENTS or
-                        rate != 41666666 or count != 1024 or not pretrigger_supported(catalog))):
+                        not any(profile["rate"] == rate and count in profile["counts"] for profile in history_profiles(catalog, maximum, rates)))):
                     raise ValueError("Unsupported Ethernet pretrigger geometry")
                 if percent:
                     trigger_args["pre_percent"] = percent
+                    size = count
+            if size > maximum:
+                raise ValueError("Capture exceeds available board memory")
             with client.claim(ServiceId.LOGIC, lease_ticks=60000) as lease:
                 record = lease.logic_finite_start(rate, size, max_capture_bytes=size, **trigger_args)
                 renewal = time.monotonic() + RENEW_SECONDS

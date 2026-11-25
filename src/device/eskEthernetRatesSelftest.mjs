@@ -162,12 +162,18 @@ const triggerAt = (n,hz,p) => receiveBoardCapture(n,new AbortController().signal
 status.capturePreTriggerPercents = percentages;
 await assert.rejects(readBoardStatus(), /pretrigger capabilities/);
 status.firmware = 0x2d00;
-let expectedPercent = 0;
+let expectedPercent = 0, expectedCount = 1024, expectedRate = slowRate;
 window.parent.postMessage = (message,_origin,[port]) => {
   if (message === 'xesk.status.v1') {port.postMessage(status); port.close(); return;}
-  assert.deepEqual(message,{type:'xesk.capture.v4',count:1024,rate:slowRate,trigger:{edge:'falling',channel:3,prePercent:expectedPercent}});
-  port.onmessage = () => {port.postMessage({done:true, ticks:'345', rate:slowRate}); port.close();};
-  port.postMessage({armed:true}); port.postMessage({offset:0,data:new Uint8Array(1024)});
+  assert.deepEqual(message,{type:'xesk.capture.v4',count:expectedCount,rate:expectedRate,trigger:{edge:'falling',channel:3,prePercent:expectedPercent}});
+  let offset = 0;
+  const sendBlock = () => {
+    if (offset === expectedCount) {port.postMessage({done:true, ticks:'345', rate:expectedRate}); port.close(); return;}
+    const data = new Uint8Array(Math.min(32768,expectedCount-offset));
+    port.postMessage({offset,data}); offset += data.length;
+  };
+  port.onmessage = sendBlock;
+  port.postMessage({armed:true}); sendBlock();
 };
 await readBoardStatus();
 for (expectedPercent of percentages) assert.equal(await triggerAt(1024,slowRate,expectedPercent),'345');
@@ -176,6 +182,23 @@ await assert.rejects(triggerAt(1024,rates[0],50),/Unsupported/);
 status.capturePreTriggerPercents = [];
 await readBoardStatus(); await assert.rejects(triggerAt(1024,slowRate,50),/Unsupported/);
 
+status.capturePreTriggerPercents = percentages;
+status.captureMaxSamples = 1_048_576;
+status.firmware = 0x2e00;
+await readBoardStatus(); // Older connector paired with newer firmware still only advertises the pilot.
+await assert.rejects(triggerAt(100000,slowRate,50),/Unsupported/);
+status.captureHistoryProfiles = [{rate:slowRate,counts:[1024,100000,1000000]}];
+await readBoardStatus();
+expectedPercent = 50;
+for (expectedCount of [100000,1000000]) assert.equal(await triggerAt(expectedCount,slowRate,expectedPercent),'345');
+status.captureHistoryProfiles.push({rate:83333333,counts:[1024,100000,1000000]});
+await assert.rejects(readBoardStatus(), /history profiles/);
+status.firmware = 0x2f00;
+await readBoardStatus();
+expectedRate = 83333333;
+assert.equal(await triggerAt(expectedCount,expectedRate,expectedPercent),'345');
+await assert.rejects(triggerAt(100001,expectedRate,expectedPercent), /Unsupported/);
+
 globalThis.location = new URL('http://127.0.0.1:40000/#eskLocal=' + 'a'.repeat(32));
 window.parent = window;
 status.capturePreTriggerPercents = percentages;
@@ -183,9 +206,11 @@ globalThis.fetch = async (_url,opts) => {
   const req = JSON.parse(opts.body);
   if (req.op === 'lan_status') return Response.json(status);
   assert.deepEqual(req.trigger, {edge:'falling',channel:3,prePercent:expectedPercent});
-  const body = new Uint8Array(1033);
+  assert.equal(req.count,expectedCount); assert.equal(req.rate,expectedRate);
+  const body = new Uint8Array(expectedCount + 9);
   body[0] = 1; body[1] = 42;
-  return new Response(body,{headers:{'Content-Type':'application/octet-stream','Content-Length':'1033','X-ESK-Armed':'1','X-ESK-Rate':String(slowRate),'X-ESK-Channel-Mask':'255','X-ESK-Format':'raw8'}});
+  return new Response(body,{headers:{'Content-Type':'application/octet-stream','Content-Length':String(body.length),'X-ESK-Armed':'1','X-ESK-Rate':String(expectedRate),'X-ESK-Channel-Mask':'255','X-ESK-Format':'raw8'}});
 };
 await readBoardStatus();
-for (expectedPercent of percentages) assert.equal(await triggerAt(1024,slowRate,expectedPercent),'42');
+for (expectedPercent of percentages) for (expectedCount of [1024,100000,1000000])
+  for (expectedRate of [slowRate,83333333]) assert.equal(await triggerAt(expectedCount,expectedRate,expectedPercent),'42');

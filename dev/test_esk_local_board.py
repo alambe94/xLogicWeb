@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from esk_local_board import HIGH_RATE, HIGH_RATE_MAX, RATES, LocalBoards, capabilities, locator
+from esk_local_board import HIGH_RATE, HIGH_RATE_MAX, RATES, LocalBoards, capabilities, history_profiles, locator
 from esk_native import Handler, ThreadingHTTPServer
 
 
@@ -128,6 +128,25 @@ class LocalBoardTests(unittest.TestCase):
             for n, hz, p in ((1000,41666666,50), (1023,41666666,50), (1024,83333333,50), (1024,41666666,True)):
                 with self.assertRaisesRegex(ValueError, "pretrigger geometry"), boards.capture(dict(pilot, count=n,rate=hz,trigger=dict(trigger,prePercent=p))):
                     self.fail("invalid pretrigger occurrence armed")
+            catalog = client.inspect.return_value
+            catalog.device.firmware_version = 0x2e00
+            self.assertEqual(history_profiles(catalog, 1_000_000, RATES), [dict(rate=41666666, counts=[1024])])
+            with self.assertRaisesRegex(ValueError, "pretrigger geometry"), boards.capture(dict(pilot, count=100000)):
+                self.fail("pilot SDK started a deeper history")
+            def sdk_counts(version, rate):
+                if rate == 41666666 or (version >= (0, 47, 0) and rate == 83333333):
+                    return (1024, 100000, 1000000)
+                return ()
+            with patch.dict("sys.modules", {"xsdk_xesk.network_logic": SimpleNamespace(history_counts=sdk_counts)}):
+                self.assertEqual(history_profiles(catalog, 100000, RATES), [dict(rate=41666666, counts=[1024,100000])])
+                for firmware, hz in ((0x2e00,41666666), (0x2f00,83333333)):
+                    catalog.device.firmware_version = firmware
+                    for n in (100000, 1000000):
+                        rec.status.return_value.sample_rate = hz
+                        rec.status.return_value.stored_bytes = n
+                        with boards.capture(dict(pilot, count=n, rate=hz)):
+                            pass
+                        lease.logic_finite_start.assert_called_with(hz,n,max_capture_bytes=n,trigger_kind=2,trigger_channel=3,pre_percent=25)
 
 
 class LocalHttpTest(unittest.TestCase):

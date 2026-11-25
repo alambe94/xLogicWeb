@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { EskControlRejection, EskUsbSession, requireField, within, withUsbInterface } from './eskUsbSession.js';
-import { DDR_PRETRIGGER_PERCENTS, type DdrTrigger, validDdrEdge } from './eskDdrTrigger.js';
+import { DDR_PRETRIGGER_PERCENTS, ddrHistoryProfiles, type DdrTrigger, validDdrEdge } from './eskDdrTrigger.js';
 import { ESK_FINITE_RATES } from './eskCapture.js';
 
 const RATE = 500_000_000;
@@ -13,13 +13,14 @@ const LEASE_TICKS = 60000n;
 const capacities = new WeakMap<USBDevice, number>();
 const probes = new WeakMap<USBDevice, Promise<number>>();
 const triggerCapacities = new WeakMap<USBDevice, number>();
-const preTriggerDevices = new WeakSet<USBDevice>();
-export const usbPreTriggerPercents = (device?: USBDevice): readonly number[] => device && preTriggerDevices.has(device) ? DDR_PRETRIGGER_PERCENTS : [];
+const firmwareVersions = new WeakMap<USBDevice, number>();
+export const usbHistoryProfiles = (device?: USBDevice) => device ? ddrHistoryProfiles(firmwareVersions.get(device) ?? 0, triggerCapacities.get(device) ?? 0) : [];
+export const usbPreTriggerPercents = (device?: USBDevice): readonly number[] => usbHistoryProfiles(device).length ? DDR_PRETRIGGER_PERCENTS : [];
 export const usbDdrMaximum = (device?: USBDevice) => device && capacities.get(device);
 export function usbDdrTriggerMaximum(device: USBDevice | undefined, rate: number): number | undefined {
   return device && ESK_FINITE_RATES.includes(rate) ? triggerCapacities.get(device) : undefined;
 }
-export function forgetUsbDdr(device: USBDevice): void { capacities.delete(device); triggerCapacities.delete(device); preTriggerDevices.delete(device); }
+export function forgetUsbDdr(device: USBDevice): void { capacities.delete(device); triggerCapacities.delete(device); firmwareVersions.delete(device); }
 
 /** A Logic descriptor is transport-specific. Earlier firmware returns zero arena bytes on USB. */
 async function observeUsbDdr(describe: (query: Uint8Array) => Promise<DataView>): Promise<number> {
@@ -52,11 +53,9 @@ class DdrSession extends EskUsbSession {
     const capacity = Math.floor(bytes / QUANTUM) * QUANTUM;
     const firmware = capacity ? (await this.identity()).firmware : 0;
     const maximum = firmware >= 0x2c00 ? Math.floor(bytes / 64) * 64 : 0;
-    const preTrigger = firmware >= 0x2d00 && maximum >= 1024;
     const changed = capacities.get(this.usb) !== capacity || triggerCapacities.get(this.usb) !== maximum ||
-      preTriggerDevices.has(this.usb) !== preTrigger;
-    if (preTrigger) preTriggerDevices.add(this.usb);
-    else preTriggerDevices.delete(this.usb);
+      firmwareVersions.get(this.usb) !== firmware;
+    firmwareVersions.set(this.usb, firmware);
     capacities.set(this.usb, capacity);
     triggerCapacities.set(this.usb, maximum);
     if (changed && typeof window !== 'undefined') window.dispatchEvent(new Event('esk-usb-ddr'));
@@ -65,8 +64,8 @@ class DdrSession extends EskUsbSession {
   async capture(count: number, signal: AbortSignal, accept: (bytes: Uint8Array) => Promise<void>, rate: number, trigger?: DdrTrigger) {
     const maximum = await this.inspect();
     const quantum = rate === RATE ? QUANTUM : 64;
-    const extent = Math.ceil(count / quantum) * quantum;
-    requireField(trigger ? validDdrEdge(trigger, rate, count, usbPreTriggerPercents(this.usb)) && !!usbDdrTriggerMaximum(this.usb, rate) :
+    const extent = trigger?.prePercent ? count : Math.ceil(count / quantum) * quantum;
+    requireField(trigger ? validDdrEdge(trigger, rate, count, usbPreTriggerPercents(this.usb), usbHistoryProfiles(this.usb)) && !!usbDdrTriggerMaximum(this.usb, rate) :
       rate === RATE, 'Unsupported USB DDR trigger or rate.');
     requireField(Number.isSafeInteger(count) && count > 0 && extent <= (trigger ? usbDdrTriggerMaximum(this.usb, rate)! : maximum),
       'The requested eight-channel capture exceeds the USB DDR capacity.');
