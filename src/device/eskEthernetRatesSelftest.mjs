@@ -198,6 +198,14 @@ await readBoardStatus();
 expectedRate = 83333333;
 assert.equal(await triggerAt(expectedCount,expectedRate,expectedPercent),'345');
 await assert.rejects(triggerAt(100001,expectedRate,expectedPercent), /Unsupported/);
+status.captureHistoryProfiles.push({rate:166666666,counts:[100000]});
+await assert.rejects(readBoardStatus(), /history profiles/);
+status.firmware = 0x3100;
+await readBoardStatus();
+expectedRate = 166666666;
+expectedCount = 100000;
+for (expectedPercent of percentages) assert.equal(await triggerAt(expectedCount,expectedRate,expectedPercent),'345');
+await assert.rejects(triggerAt(100001,expectedRate,50), /Unsupported/);
 
 globalThis.location = new URL('http://127.0.0.1:40000/#eskLocal=' + 'a'.repeat(32));
 window.parent = window;
