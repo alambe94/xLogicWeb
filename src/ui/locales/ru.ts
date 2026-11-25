@@ -90,7 +90,7 @@ export const ru: Messages = {
   'esk.loop': 'Цикл',
   'esk.latestSamples': 'Последние отсчёты',
   'settings.sections.storage': 'Хранилище',
-  'esk.untilStop': 'Записывать всё',
+  'esk.untilStop': 'Запись',
   'esk.mode': 'Режим',
   'esk.finite': 'Конечный',
   'esk.continuous': 'Непрерывный',

@@ -90,7 +90,7 @@ export const fr: Messages = {
   'esk.loop': 'Boucle',
   'esk.latestSamples': 'Derniers échantillons',
   'settings.sections.storage': 'Stockage',
-  'esk.untilStop': 'Tout enregistrer',
+  'esk.untilStop': 'Enregistrer',
   'esk.mode': 'Mode',
   'esk.finite': 'Finie',
   'esk.continuous': 'Continue',

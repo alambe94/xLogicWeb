@@ -88,7 +88,7 @@ export const zhCN: Messages = {
   'esk.loop': '循环',
   'esk.latestSamples': '最近采样数',
   'settings.sections.storage': '存储',
-  'esk.untilStop': '记录全部',
+  'esk.untilStop': '记录',
   'esk.mode': '模式',
   'esk.finite': '有限采集',
   'esk.continuous': '连续采集',
