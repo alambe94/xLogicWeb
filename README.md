@@ -4,6 +4,20 @@ xLogicWeb is the logic analyzer in xEskWeb. Open the Logic instrument to capture
 the eight ESK digital inputs, inspect waveforms and decode protocols on your laptop.
 The viewer runs in your browser. [Open xEskWeb](https://alambe94.github.io/xLogicWeb/)
 
+### Name a board on the LAN
+
+With board firmware 0.41.0 or later, open the board address, select **Connect device**
+on Home, expand **Network**, enter a **Board name** such as `lab-bench`, and
+select **Save to board**. USB supports the same workflow starting with 0.40.0.
+Keep Ethernet connected. The viewer applies the new name, verifies the advertised
+name, and saves the setting in the board EEPROM. If another board already uses
+the name, the result includes the suffix the board selected for this LAN.
+Open the displayed address on the same LAN, for example
+`http://lab-bench.local:5555/`. Name resolution requires mDNS on that network.
+The name takes effect immediately. **Restart board** is a separate action for
+an idle board. Any connected client on a trusted lab LAN can request either operation.
+**Rename on this laptop** in the Windows chooser changes the local display name.
+
 The viewer builds on Sipeed SLogicWeb. **Other analyzer** opens the USB chooser for
 compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWeb)
 
@@ -11,7 +25,7 @@ compatible Sipeed devices. [Upstream project](https://github.com/sipeed/SLogicWe
 
 You can inspect [xBridgeWeb](https://alambe94.github.io/xLogicWeb/?view=bridge)
 from any laptop that can open the viewer. Choose a protocol and prepare its command before connecting. To run it,
-connect a compatible board over USB on Home in that tab.
+connect a compatible board over USB on Home in that tab, or open the board name on the LAN for Ethernet I²C and UART.
 
 On the hosted xEskWeb Home page, choose **Connect via USB** and select the ESK
 application device. Home displays its identity, boot ID, firmware and advertised
@@ -53,7 +67,7 @@ Numeric fields accept decimal multipliers in the displayed unit. For example, en
 
 ## ESK xLOGIC over USB
 
-With both recording options off, **Samples** is the capture length. **Record all** disables Samples and keeps data until Stop or the storage limit. **Loop** uses the same Samples field as the number to retain, accepts values such as `1M`, and keeps acquiring after the window fills. Stop freezes the most recent samples in chronological order for inspection and reopening. Loop and Record all are mutually exclusive and apply to USB. The Windows recorder stores packed 500 MS/s data at two samples per byte. Browser loops use one byte per sample. In **Settings → Storage**, set the Loop RAM limit in MiB (default 256, 0 uses disk only). Before Start, the Capture panel shows the duration, sample-buffer size and destination. A loop that fits stays in RAM until Save or Discard. **Save → Save to recordings** archives the entire retained window. A larger loop writes directly to the archive. The archive limit applies to saved recordings, independently of the RAM limit. The browser's space estimate is for this site and profile on disk. Unsaved browser RAM loops expire when their tab closes. Unsaved native RAM loops expire when the local recorder exits.
+With both recording options off, **Samples** is the capture length. **Record** disables Samples and keeps data until Stop or the storage limit. **Loop** uses the same Samples field as the number to retain, accepts values such as `1M`, and keeps acquiring after the window fills. Stop freezes the most recent samples in chronological order for inspection and reopening. Loop and Record are mutually exclusive and apply to USB. The Windows recorder stores packed 500 MS/s data at two samples per byte. Browser loops use one byte per sample. In **Settings → Storage**, set the Loop RAM limit in MiB (default 256, 0 uses disk only). Before Start, the Capture panel shows the duration, sample-buffer size and destination. A loop that fits stays in RAM until Save or Discard. **Save → Save to recordings** archives the entire retained window. A larger loop writes directly to the archive. The archive limit applies to saved recordings, independently of the RAM limit. The browser's space estimate is for this site and profile on disk. Unsaved browser RAM loops expire when their tab closes. Unsaved native RAM loops expire when the local recorder exits.
 
 **Settings → Storage** controls the recording budget for the current browser origin or the local Windows recorder. The native launch limit also applies. Existing recordings count toward the budget. A loop overwrites only its own oldest samples.
 
@@ -61,17 +75,64 @@ Open xEskWeb directly in Chrome or Edge using HTTPS or localhost. Connect the ES
 application USB cable, open **xLogicWeb**, press **Capture**, and select the board.
 Open the **Capture** panel by clicking the capture summary above the channel labels.
 Choose a **Sample rate** and enter the number of **Samples** to retain. The default is
-65,536. After each capture you can change either field and capture again in the same tab.
+100K (100,000 samples) on boards with configurable capture depth. After each capture you can change either field and capture again in the same tab.
 On USB and Ethernet, enter a whole number or use decimal K, M and G suffixes.
 For example, `100K` means 100,000 samples and `5G` means 5,000,000,000 samples.
 Ethernet counts must fit the capacity advertised by the board.
 The viewer remembers your USB selection until the device disconnects or you change it on Home.
 
 At 41.67, 83.33, 166.67 and 333.33 MS/s the board samples all eight inputs.
-At 500 MS/s choose D0–D3 (the default) or D4–D7. For longer captures the viewer
-saves samples to browser storage and displays a window of the recording. Select
-**Record all** for an open-ended USB recording. The sustainable rate depends
+At 500 MS/s, boards advertising finite eight-channel USB capture offer D0–D7
+by default for counts up to and including `2G` (2,000,000,000 samples), subject to board capacity.
+Enter a count such as `1.5G`. The board records in DDR and downloads all eight
+channels over USB. Choose a four-channel bank to enable **Record** or **Loop**.
+Above `2G`, choose D0–D3 or D4–D7. The bank updates as you edit the count. Longer eight-channel downloads
+use this browser profile’s disk archive. Stop during download to inspect the received prefix.
+Choose D0–D3 or D4–D7 for packed USB capture, streaming, or the packed trigger.
+With compatible firmware, choose a finite sample count and a rising or falling
+edge in **Capture → Trigger**. At 41.67, 83.33, 166.67 and 333.33 MS/s the
+board can wait on any D0–D7 input, acquire eight channels in DDR after the
+edge, and download the result over USB or Ethernet. The waiting indicator
+appears once the board accepts the trigger. Cancel an armed capture to change
+the settings and arm again. Packed USB offers its own pretrigger control.
+
+For eight-channel DDR history, choose a rising or falling edge and a supported
+rate and sample count. **Pre-trigger buffer** offers 25%, 50% and 75% when
+the connection supports that combination.
+
+| Board firmware | Sample rate | Exact sample counts |
+| --- | --- | --- |
+| 0.45.x | 41.67 MS/s | 1,024 |
+| 0.46.x | 41.67 MS/s | 1,024, 100,000, 1,000,000 |
+| 0.47.0 or later | 41.67 or 83.33 MS/s | 1,024, 100,000, 1,000,000 |
+| 0.49.0 or later | 166.67 MS/s | 100,000 |
+
+For example, enter `100K` and select 25% to mark the edge at sample 25,000.
+Enter `1024` for the shortest history window. Entering `1K` requests 1,000
+samples and uses ordinary edge capture. Ethernet reports the profiles supported
+by the board connector or the installed localhost package.
+
+Earlier firmware offers the two four-channel banks. Select
+**Record** for an open-ended USB recording. The sustainable rate depends
 on the board, USB link and host storage. After Stop, use the slider to browse the trace.
+
+### Update board firmware
+
+On a viewer provisioned with the team’s public signing key, connect the board and choose **Home → Versions → Check firmware files…**.
+Select the downloaded `.appimage` and its matching `.sig` together. The browser verifies the local files and compares the signed
+release version with the connected hardware. Older Ethernet connectors need an update to report the board hardware ID.
+For a private team build, configure `VITE_ESK_SIGNER_SPKI` with the Base64 DER SubjectPublicKeyInfo and `VITE_ESK_SIGNER_ID`
+with the exact key ID from the release authority. The published viewer can run without a configured signer.
+
+Home shows the connected board’s firmware version, the web app’s version and build, and the recorder build when using the Windows app. For a recorder without a release label, the build is the first 12 digits of its executable’s SHA-256. Older Windows helpers may show “Version unavailable”.
+
+When a new web app is ready, choose **Home → Versions → Update web app** after saving your capture. On a provisioned ESK board, firmware updates use the xSDK host CLI and a compatible application image:
+
+```powershell
+xeskctl update firmware.appimage --usb
+```
+
+For Ethernet, use `xeskctl update firmware.appimage --host <board-IP>`. The updater verifies the inactive slot and reboots the board for a trial. Reconnect on Home to read the running version.
 
 ### Native USB recording on Windows
 
@@ -82,13 +143,21 @@ to a writable folder on an SSD and double-click
 console open while recording. For USB, use Chrome or Edge, choose **Connect via
 USB**, and select the board once. Logic and Bridge share this selection in the
 same tab, including native recordings. Logic also opens saved recordings while
-disconnected. For finite Ethernet capture, choose **Connect via Ethernet** and
-enter the board address. This opens the board's one-tab viewer and its connection
-consent. The board loads that viewer from GitHub Pages.
+disconnected. In the Windows launcher, expand **Connect via Ethernet** to scan
+the local LAN. Select the advertised board or choose **Rename on this laptop**
+to remember a name such as `lab-bench` with that recorder folder. The nickname
+follows the board's identity across DHCP changes. **Find boards** scans again.
+You can also enter the board's `.local` name or its numeric IP address. In a
+Windows package with the LAN adapter, **Connect on this laptop** keeps the app
+at `127.0.0.1`. Its viewer files come from the package and the helper talks to
+the selected board over Ethernet, including when the lab has no internet.
+**Open board address** opens the board's one-tab viewer from GitHub Pages and
+asks for connection consent. Opening the board's mDNS name or IP directly also
+uses this route.
 
 Choose the rate and sample count in Logic, then press **Capture** once. The waveform opens when the
 requested count is reached, or when you press **Stop**. Counts above 65,536 and
-**Record all** use the native recorder. Choose **Open → Saved recordings…**
+**Record** use the native recorder. Choose **Open → Saved recordings…**
 to reopen a trace after restarting. The same list includes recordings saved in
 this browser profile at this viewer address.
 
@@ -109,7 +178,7 @@ space before acquisition. Cancel keeps the waveform open for inspection.
 Press **Stop** to inspect the recording, select an **Edge channel**, and use
 **Previous edge** or **Next edge** to highlight a transition at the current zoom.
 The guide labels the channel and direction and marks the edge on its waveform.
-For **Record all**, the native recorder uses the free space on the recording
+For **Record**, the native recorder uses the free space on the recording
 drive at capture start and reserves 1 MiB for metadata. A requested sample count
 must fit in that space. **Open → Saved recordings…** shows available space,
 any configured archive quota and each trace's size. Use **Delete recording** to reclaim space.
@@ -139,10 +208,25 @@ on the [PulseView fork's releases page](https://github.com/alambe94/pulseview/re
 
 On Home, choose **Connect via Ethernet** and enter the board IP, or open the
 board IP directly on port 5555. Connect to the board, open **xLogicWeb**, and
-press **Capture**. Ethernet acquires a finite record at 333.33 MS/s. When the board
-advertises a capture capacity, enter a sample count or choose **Use board maximum**.
-Earlier launchers provide 65,536 samples per capture. Longer records download to
-browser storage in blocks.
+select an advertised sample rate and press **Capture**. Finite Ethernet capture
+offers eight inputs at the rates advertised by the board. The standard rates
+are 41.67, 83.33, 166.67 and 333.33 MS/s. Compatible boards also offer 500 MS/s
+on D0–D7. The Windows LAN adapter can use this rate with firmware 0.42.0 and
+later when the board advertises the 500 MHz finite profile. When opening the board
+address directly, its embedded connector must also advertise 500 MS/s. Earlier
+single-rate connectors offer 333.33 MS/s. Enter a sample count or choose
+**Max** beside Samples for the selected rate.
+Open xBridge in the Logic toolbar for Ethernet I²C. On boards advertising Ethernet UART
+(firmware 0.48.0 or later), choose **UART**, set the line settings to match the
+peripheral, then choose **Open UART port**. Enter hex bytes and choose **Send bytes**.
+Received bytes appear in the UART receive field. **Close UART port** releases the
+port so another client can claim it.
+The bus and Logic use independent sessions. The board collects the requested
+samples first. As blocks arrive, the waveform fills from left to right across
+the requested time span. A shaded band marks activity within that interval.
+Long captures download to browser storage. Stop keeps the samples received so
+far; use the time slider to inspect their edges. Earlier launchers provide
+65,536 samples in a single reply.
 For continuous recording use the USB connection on the hosted viewer.
 After Stop, use the time slider to browse the disk recording.
 
@@ -169,7 +253,7 @@ When the full viewer files are served at the board's numeric HTTP origin, open t
 
 ## Record and reopen ESK logic
 
-For live eight-channel recording, open the HTTPS viewer directly in desktop Chrome, enter Logic, choose a rate, then a fixed sample count, **Loop**, or **Record all**, press **Capture** and choose your xESK device. **Stop** ends acquisition and finishes pending disk writes. The status shows saved samples and the additional samples transmitted at the stop boundary. A storage backlog or device error ends recording and reports the failure. You can reopen the committed prefix.
+For live eight-channel recording, open the HTTPS viewer directly in desktop Chrome, enter Logic, choose a rate, then a fixed sample count, **Loop**, or **Record**, press **Capture** and choose your xESK device. **Stop** ends acquisition and finishes pending disk writes. The status shows saved samples and the additional samples transmitted at the stop boundary. A storage backlog or device error ends recording and reports the failure. You can reopen the committed prefix.
 
 Open the HTTPS viewer directly, enter Logic and select **Open → Saved recordings… → Import a .sr session**. Choose an eight-channel sigrok `.sr` file, optionally set a recording limit in MiB, and select **Record**. Replay follows the file's sample rate and can slow down while browser storage drains. The Logic display shows up to the latest 65,536 samples. **Stop** finishes pending writes.
 

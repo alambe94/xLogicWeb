@@ -76,13 +76,43 @@
           <button class="mini" id="esk-refresh" type="button" data-i18n="capturePanel.tempRate" hidden>Refresh</button>
           <a id="esk-usb-site" class="mini" target="_blank" rel="noopener noreferrer" data-i18n="home.connectUsb" hidden>Connect via USB</a>
           <details id="esk-lan-choice"><summary data-i18n="home.connectLan">Connect via Ethernet</summary>
-            <form id="esk-board-form"><label><span data-i18n="home.boardAddress">Board IP address</span>
-              <input id="esk-board-address" class="viewer-input" required autocomplete="off" spellcheck="false" placeholder="192.168.0.103"></label>
-              <button class="mini" type="submit" data-i18n="toolbar.connect">Connect</button></form>
+            <div id="esk-lan-boards" hidden>
+              <button type="button" class="mini" id="esk-lan-scan">Find boards</button>
+              <span id="esk-lan-scan-status" role="status"></span>
+              <div id="esk-lan-results"></div>
+            </div>
+            <form id="esk-board-form"><label><span data-i18n="home.boardAddress">Board address</span>
+              <input id="esk-board-address" class="viewer-input" required autocomplete="off" spellcheck="false" placeholder="lab-bench.local"></label>
+              <button class="mini" type="submit" id="esk-connect-local" data-i18n="home.connectLocal" hidden>Connect on this laptop</button>
+              <button class="mini" type="submit" id="esk-connect-address" data-i18n="toolbar.connect">Connect</button></form>
           </details>
         </div>
         <p id="esk-connection" role="status"></p>
         <pre id="esk-identity" hidden></pre>
+        <details id="esk-network"><summary data-i18n="home.network">Network</summary>
+          <p id="esk-name-connect" data-i18n="home.nameConnect">Connect to the board to view network settings.</p>
+          <form id="esk-name-form" hidden>
+            <label><span data-i18n="home.boardName">Board name</span>
+              <input id="esk-name-input" class="viewer-input" required maxlength="33" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="esk-name-help" disabled></label>
+            <button id="esk-name-save" class="mini" type="submit" data-i18n="home.saveBoardName" disabled>Save to board</button>
+          </form>
+          <p id="esk-name-help" hidden data-i18n="home.boardNameHint">Use 1–33 lowercase letters, digits or internal hyphens.</p>
+          <output id="esk-name-status" aria-live="polite"></output>
+          <button id="esk-restart" class="mini" type="button" data-i18n="home.restart" hidden disabled>Restart board</button>
+          <output id="esk-restart-status" aria-live="polite"></output>
+        </details>
+        <details id="esk-versions" open><summary id="esk-version-label" data-i18n="home.versions">Versions</summary>
+          <div class="esk-catalog-scroll"><table aria-labelledby="esk-version-label"><tbody>
+            <tr><th scope="row" data-i18n="home.firmware">Board firmware</th><td><span id="esk-firmware"></span>
+              <button id="esk-firmware-check" type="button" class="mini" data-i18n="home.checkFirmware" hidden>Check firmware files…</button>
+              <input id="esk-firmware-files" type="file" accept=".appimage,.sig" multiple hidden>
+              <span id="esk-firmware-result" role="status"></span>
+              <a id="esk-firmware-guide" class="esk-new-tab" href="https://github.com/alambe94/xLogicWeb#update-board-firmware" target="_blank" rel="noopener noreferrer" data-i18n="home.updateGuide" hidden>Update instructions</a></td></tr>
+            <tr><th scope="row" data-i18n="home.webBuild">Web app build</th><td><span id="esk-web-build"></span>
+              <button id="esk-web-update" type="button" class="mini" data-i18n="home.applyUpdate" hidden>Update web app</button></td></tr>
+            <tr><th scope="row" data-i18n="home.recorder">Native recorder</th><td id="esk-recorder-version"></td></tr>
+          </tbody></table></div>
+        </details>
         <details id="esk-features" hidden><summary id="esk-feature-label" data-i18n="home.features">Features</summary><div class="esk-catalog-scroll"><table aria-labelledby="esk-feature-label">
           <thead><tr><th scope="col" data-i18n="home.feature">Feature</th><th scope="col" data-i18n="home.instance">Instance</th><th scope="col" data-i18n="home.state">State</th></tr></thead>
           <tbody id="esk-feature-rows"></tbody></table></div></details>

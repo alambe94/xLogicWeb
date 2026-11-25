@@ -246,3 +246,40 @@ for (const loseReply of [false, true]) {
   assert.ok(!opened && !claimed);
 }
 console.log('PWM/1 wire identity, renewal, release and uncertain-delivery cleanup passed.');
+
+const {openEthernetUart} = await import('./eskEthernetUart.js');
+const board = {deviceId:'a'.repeat(32),boot:'42',uartLimits:{write:120,read:116}};
+const line = {baudRate:115200,dataBits:8,stopBits:1,parity:'none'};
+for (const local of [false,true]) {
+  let n = 1, retired = false;
+  const parts = [], opened = [], expected = Uint8Array.from({length:241},(_,i) => i);
+  globalThis.location = new URL(local ? 'http://127.0.0.1:42000/#eskLocal='+'b'.repeat(32) : 'https://example.org/#eskBoard=http%3A%2F%2F192.0.2.1%3A5555');
+  globalThis.document = {querySelector:() => true};
+  const handle = (msg,close) => {
+    assert.equal(msg.id,++n);
+    if (close) { retired=true; return {closed:true}; }
+    if (msg.data) { parts.push(...msg.data); return {id:n,status:0,data:[]}; }
+    assert.equal(msg.count,116);
+    return {id:n,status:0,data:[0xaa,0x55]};
+  };
+  globalThis.window = {parent:{postMessage(msg,origin,[port]) {
+    assert.equal(origin,'http://192.0.2.1:5555'); assert.equal(msg.type,'xesk.uart.v1'); opened.push(msg);
+    port.onmessage = ({data}) => { port.postMessage(handle(data,data.close)); if(data.close)port.close(); };
+    port.postMessage({ready:true});
+  }}};
+  globalThis.fetch = async (_url,options) => {
+    const msg=JSON.parse(options.body);
+    if (msg.op === 'lan_uart_open') { opened.push(msg); return Response.json('c'.repeat(32)); }
+    assert.equal(msg.token,'c'.repeat(32));
+    return Response.json(handle(msg,msg.op==='lan_uart_close'));
+  };
+  const uart = await openEthernetUart(board,line);
+  assert.deepEqual(opened[0].settings,{baud:115200,dataBits:8,stopBits:1,parity:0});
+  await uart.send(expected);
+  const rx=Promise.withResolvers();
+  const reading=uart.receive(bytes => rx.resolve(bytes));
+  assert.deepEqual([...(await rx.promise)],[0xaa,0x55]);
+  await uart.close(); await reading;
+  assert.deepEqual(parts,[...expected]); assert.ok(retired);
+}
+console.log('Paired and localhost UART retain one grant across chunked writes and received bytes, then close.');

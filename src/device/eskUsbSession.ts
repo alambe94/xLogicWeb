@@ -3,6 +3,11 @@ const CONTROL_MAGIC = new TextEncoder().encode('xESKCTRL');
 export function requireField(value: unknown, detail: string): asserts value {
   if (!value) throw new Error(detail);
 }
+export class EskControlRejection extends Error {
+  constructor(readonly status: number, opcode: number) {
+    super(status === 2 ? 'ESK service is busy.' : 'ESK rejected control request ' + opcode + ' (status ' + status + ')');
+  }
+}
 function words(...values: bigint[]): ArrayBuffer {
   const view = new DataView(new ArrayBuffer(values.length * 8));
   values.forEach((value, index) => view.setBigUint64(index * 8, value, true));
@@ -66,6 +71,20 @@ export class EskUsbSession {
     this.boot = header.getBigUint64(8, true);
   }
 
+  async identity() {
+    const query = new Uint8Array(8);
+    query[0] = 1; // DEVICE/0 descriptor
+    const r = await this.exchange(1, query);
+    requireField(r.byteLength === 100 && r.getUint32(48) === 0x7845534b && r.getUint8(52) === 1 &&
+      r.getUint8(53) === 1 && r.getUint16(54, true) === 0 && r.getUint16(56, true) === 52 &&
+      r.getUint16(58, true) === 0 && r.getBigUint64(76, true) === this.boot &&
+      (r.getUint32(92, true) & 1) && r.getUint32(96, true), 'Invalid ESK device identity');
+    const id = new Uint8Array(r.buffer, r.byteOffset + 60, 16);
+    requireField(id.some(b => b !== 0), 'Empty ESK device ID');
+    return {deviceId: Array.from(id, b => b.toString(16).padStart(2, '0')).join(''),
+      boot: this.boot.toString(), firmware: r.getUint32(84, true), hardwareId: r.getUint32(88, true)};
+  }
+
   protected async exchange(opcode: number, payload: Uint8Array, service = 0, session = 0n): Promise<DataView> {
     const frame = new Uint8Array(48 + payload.length);
     const v = new DataView(frame.buffer);
@@ -90,8 +109,7 @@ export class EskUsbSession {
       (opcode === 2 && status === 0 ? reply.getBigUint64(32, true) !== 0n : reply.getBigUint64(32, true) === session) &&
       (status === 0 || reply.byteLength === 48), 'Mismatched ESK control reply');
     await this.output(this.base + 3, words(this.boot, this.sequence));
-    if (status === 2) throw Error('ESK service is busy.');
-    requireField(status === 0, 'ESK rejected control request ' + opcode + ' (status ' + status + ')');
+    if (status !== 0) throw new EskControlRejection(status, opcode);
     return reply;
   }
 

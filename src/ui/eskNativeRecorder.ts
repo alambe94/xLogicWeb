@@ -63,9 +63,11 @@ export async function recordNative(options: EskRecordingOptions, preview: Record
           status.value = 'Live preview · ' + row.samples.toLocaleString() + (row.loop ? ' samples captured · retaining latest ' + row.limit?.toLocaleString() : ' samples on disk');
           nextStatus = now + 250;
         }
-        if (row.samples - cursor < frame.stride) {
-          await new Promise(resolve => setTimeout(resolve, Math.max(0, now + 25 - performance.now())));
-        }
+        // A short loop can wrap between two frames. Longer loops can catch up
+        // through contiguous history while the canvas animates independently.
+        const shortLoop = row.loop && row.limit !== undefined && row.limit <= row.rate / 20;
+        const interval = shortLoop ? 50 : row.samples - cursor < frame.stride ? 25 : 0;
+        if (interval) await new Promise(resolve => setTimeout(resolve, Math.max(0, now + interval - performance.now())));
       }
       await displayNativeRecording(row, display, displaySamples);
       return;

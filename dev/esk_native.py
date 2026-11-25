@@ -1,14 +1,17 @@
 """Serve xEskWeb and its disk-backed Windows recorder on one loopback origin."""
 from contextlib import nullcontext
 import argparse
+import hashlib
 import json
 import mimetypes
 import mmap
 import os
 import re
+import select
 import shutil
 import subprocess
 import threading
+import time
 import uuid
 import webbrowser
 from functools import lru_cache
@@ -74,7 +77,9 @@ class LoopSink:
         self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         self.kernel.CreateNamedPipeW.restype = wintypes.HANDLE
         self.name = r"\\.\pipe\xesk-" + uuid.uuid4().hex
-        self.handle = self.kernel.CreateNamedPipeW(self.name, 0x80001, 8, 1, 0, 1024**2, 0, None)
+        # Absorb brief scheduler and filesystem stalls while the USB recorder
+        # replenishes its reads. This buffer does not change the retained window.
+        self.handle = self.kernel.CreateNamedPipeW(self.name, 0x80001, 8, 1, 0, 16 * 1024**2, 0, None)
         if self.handle == wintypes.HANDLE(-1).value:
             raise ctypes.WinError(ctypes.get_last_error())
         self.path, self.capacity = path, capacity
@@ -350,7 +355,7 @@ class Recordings:
             raise ValueError("Invalid recording window")
         return self.read_samples(row, start, end)
 
-    def read_samples(self, row, start, end):
+    def read_samples(self, row, start, end, *, wire=False):
         packed = row["rate"] == RATES[-1]
         start += row.get("firstSample", 0)
         end += row.get("firstSample", 0)
@@ -376,7 +381,7 @@ class Recordings:
                     data = stream.read(size)
         if len(data) != finish - begin:
             raise ValueError("Recording was truncated")
-        if packed:
+        if packed and not wire:
             expanded = bytearray(2 * len(data))
             expanded[::2] = data.translate(LOW_NIBBLE)
             expanded[1::2] = data.translate(HIGH_NIBBLE)
@@ -410,8 +415,16 @@ class Recordings:
                     row["samples"] = ring.total * factor
                     oldest = max(0, row["samples"] - row["limit"])
                     start = max(start, (oldest + stride - 1) // stride * stride)
-                    end = min(row["samples"] // stride * stride, start + 1024**2)
-                bins = self.loop_bins(row, start, end, stride)
+                    end = min(row["samples"] // stride * stride, start + 4 * 1024**2)
+                # Take a bounded copy while the writer is locked. Process the
+                # snapshot outside the lock, directly in the recorder's format.
+                data = self.read_samples(row, start, end, wire=True) if end > start else b""
+            if packed and stride == 1:
+                bins = [((v >> shift) & 15) * 257 for v in data for shift in (0, 4)]
+                bins = bins[start % 2:start % 2 + end - start]
+            else:
+                step = stride // factor
+                bins = [activity_masks(data[i:i + step], packed, False) for i in range(0, len(data), step)]
         else:
             bins = self.activity_range(key, start, end, stride, packed)
         return dict(record=row, first=start, end=end, stride=stride, bins=bins)
@@ -506,9 +519,47 @@ class Recordings:
         for suffix in (".bin", ".log", ".json", ".tmp", ".removing"):
             self.path(key, suffix).unlink(missing_ok=True)
 
+    def board_names(self):
+        path = self.directory / ".board-names.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
     def request(self, body):
+        if body.get("op") == "discover":
+            from esk_discovery import discover
+            boards = discover()
+            with self.lock:
+                names = self.board_names()
+            return [dict(board, alias=names.get(board["id"], "")) for board in boards]
         with self.lock:
             op, key = body.get("op"), body.get("id")
+            if op == "name_board":
+                name = body.get("name")
+                if not isinstance(key, str) or not re.fullmatch("[0-9a-f]{12}", key) or not isinstance(name, str):
+                    raise ValueError("Invalid board identity or name")
+                name = name.strip()
+                if len(name) > 48 or (name and not name.isprintable()):
+                    raise ValueError("Use up to 48 printable characters")
+                names = self.board_names()
+                if name:
+                    names[key] = name
+                else:
+                    names.pop(key, None)
+                tmp = self.directory / ".board-names.tmp"
+                tmp.write_text(json.dumps(names), encoding="utf-8")
+                tmp.replace(self.directory / ".board-names.json")
+                return name
+            if op == "version":
+                digest = hashlib.sha256(self.executable.read_bytes()).hexdigest()
+                version = None
+                manifest = self.executable.with_suffix(".version.json")
+                if manifest.is_file():
+                    try:
+                        metadata = json.loads(manifest.read_text(encoding="utf-8"))
+                        if isinstance(metadata, dict) and metadata.get("sha256") == digest:
+                            version = metadata.get("version")
+                    except (ValueError, OSError):
+                        pass
+                return {"version": version, "sha256": digest}
             if op == "start":
                 return self.start(body.get("rate"), body.get("bank"), body.get("samples"), body.get("serial"), body.get("loop", False), body.get("ramMiB", 0))
             if op == "save_loop":
@@ -556,6 +607,67 @@ class Recordings:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def send_capture(self, body):
+        # Hold the last block until the hardware releases the retained capture.
+        # If transfer or cleanup fails after headers, Content-Length stays short.
+        started = False
+        triggered = body.get("trigger") is not None
+        def headers(ticks=None):
+            nonlocal started
+            self.connection.settimeout(1)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(body["count"] + (9 if triggered else 0)))
+            if triggered:
+                self.send_header("X-ESK-Armed", "1")
+            else:
+                self.send_header("X-ESK-Ticks", ticks)
+            self.send_header("X-ESK-Rate", str(body["rate"]))
+            self.send_header("X-ESK-Format", "raw8")
+            self.send_header("X-ESK-Channel-Mask", "255")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            started = True
+            if triggered:
+                self.wfile.write(b"\x01")
+
+        def check_connection():
+            if select.select([self.connection], [], [], 0)[0]:
+                raise BrokenPipeError("Viewer closed the capture connection")
+
+        try:
+            options = dict(armed=headers, check_connection=check_connection) if triggered else {}
+            with self.server.boards.capture(body, **options) as (ticks, chunks, keep_alive):
+                if triggered:
+                    self.wfile.write(int(ticks).to_bytes(8, "little"))
+                else:
+                    headers(ticks)
+                last = b""
+                for chunk in chunks:
+                    pending = memoryview(last)
+                    progress = time.monotonic()
+                    while pending:
+                        try:
+                            written = self.connection.send(pending)
+                        except TimeoutError:
+                            if time.monotonic() - progress >= 30:
+                                raise
+                            keep_alive()
+                            continue
+                        if not written:
+                            raise BrokenPipeError("Viewer disconnected")
+                        pending = pending[written:]
+                        progress = time.monotonic()
+                        keep_alive()
+                    last = chunk
+            self.connection.settimeout(15)
+            self.wfile.write(last)
+        except (ValueError, OSError):
+            if not started:
+                raise
+            self.close_connection = True
+
     def reply(self, status, data, mime):
         self.send_response(status)
         self.send_header("Content-Type", mime)
@@ -581,7 +693,14 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(size))
             if not isinstance(body, dict):
                 raise ValueError("Invalid request")
-            result = self.server.records.request(body)
+            if isinstance(body.get("op"), str) and body["op"].startswith("lan_"):
+                if not self.server.boards:
+                    raise ValueError("The packaged LAN adapter is unavailable")
+                if body["op"] == "lan_capture":
+                    return self.send_capture(body)
+                result = self.server.boards.request(body)
+            else:
+                result = self.server.records.request(body)
         except (ValueError, KeyError, OSError) as exc:
             return self.reply(400, str(exc).encode(), "text/plain; charset=utf-8")
         if isinstance(result, bytes):
@@ -597,7 +716,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
         data = path.read_bytes()
         if path == self.server.dist / "index.html":
-            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis data-loop data-ram-loop>', 1)
+            lan = b" data-local-board" if self.server.boards else b""
+            data = data.replace(b"<head>", b'<head><meta name="esk-native-recorder" content="1" data-overview data-analysis data-loop data-ram-loop data-discovery' + lan + b'>', 1)
         self.reply(200, data, mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
 
@@ -626,6 +746,13 @@ def main():
         server.dist = dist
         budget = None if args.archive_limit_gib is None else args.archive_limit_gib * GIB
         server.records = Recordings(store, args.recorder.resolve(), args.serial, budget)
+        try:
+            from xsdk_xesk import open_tcp
+            from esk_local_board import LocalBoards
+        except ImportError:
+            server.boards = None
+        else:
+            server.boards = LocalBoards()
         server.authority = f"127.0.0.1:{server.server_port}"
         url = f"http://{server.authority}/"
         print(url, flush=True)

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { receiveBoardCapture } from './eskPairedBoard.js';
+import type { DdrTrigger } from './eskDdrTrigger.js';
 
 function committed(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -9,7 +10,7 @@ function committed(tx: IDBTransaction): Promise<void> {
 }
 
 /** The HTTP board embeds the viewer. IndexedDB also works in that insecure ancestor context. */
-export async function downloadBoardTrace(count: number, signal: AbortSignal, progress: (bytes: number) => void) {
+export async function downloadBoardTrace(count: number, rate: number, signal: AbortSignal, progress: (bytes: number, block: Uint8Array) => void, trigger?: DdrTrigger) {
   const id = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16)).join('-');
   const key = 'xesk-ethernet-' + id;
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -19,6 +20,7 @@ export async function downloadBoardTrace(count: number, signal: AbortSignal, pro
     open.onerror = () => reject(open.error);
   });
   let samples = 0;
+  let pendingWrite: Promise<void> | undefined;
   const dispose = () => {
     window.removeEventListener('pagehide', leave);
     db.close();
@@ -30,12 +32,16 @@ export async function downloadBoardTrace(count: number, signal: AbortSignal, pro
     await receiveBoardCapture(count, signal, async (block, offset) => {
       const tx = db.transaction('blocks', 'readwrite');
       tx.objectStore('blocks').add(block, offset);
-      await committed(tx);
-      samples += block.length;
-      progress(samples);
-    });
+      pendingWrite = committed(tx).then(() => {
+        samples += block.length;
+        progress(samples, block);
+      });
+      await pendingWrite;
+    }, rate, trigger);
   } catch (error) {
     if (!signal.aborted) { dispose(); throw error; }
+    // Stop can arrive between the last IndexedDB add and its commit.
+    try { await pendingWrite; } catch (writeError) { dispose(); throw writeError; }
   }
   const read = (start: number, end: number): Promise<Uint8Array> => {
     if (!(start >= 0 && start < end && end <= samples)) return Promise.reject(new RangeError('Invalid sample window'));
