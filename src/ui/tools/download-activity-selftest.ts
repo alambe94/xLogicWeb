@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { DownloadActivity } from '../downloadActivity.js';
-import { drawActivity } from '../recordingActivity.js';
+import { drawActivity, RecordingActivity } from '../recordingActivity.js';
+import type { NativeRecord } from '../nativeArchive.js';
 import type { RowBox } from '../waveformStack.js';
 
 function check(value: boolean, label: string): void {
@@ -26,4 +27,11 @@ Object.defineProperty(globalThis, 'devicePixelRatio', {value: 1, configurable: t
 drawActivity(canvas as unknown as HTMLCanvasElement, [row], ['','','','red'], activity, 0, activity.count, activity.end);
 check(rectangles.some(([x,,width,height]) => x === 0 && width === 3 && height! > 2), 'D3 activity painted');
 check(rectangles.every(([x,,w]) => x! + w! <= activity.end), 'undownloaded samples remain blank');
+Object.defineProperty(globalThis, 'document', {value: {createElement: () => ({setAttribute() {}, addEventListener() {}})}, configurable: true});
+const record: NativeRecord = {id: 'loop', rate: 333333333, bank: 'lower', loop: true, limit: 1024,
+  samples: 1000000, state: 'recording', title: '', note: ''};
+const loop = new RecordingActivity(record, 4, () => {});
+loop.update({record, first: 998976, end: 1000000, stride: 4, bins: Array(256).fill(0x0800)});
+loop.advance(performance.now());
+check(loop.end === 1000000 && loop.start === loop.end - 768, 'wrapped loop immediately shows 75% confirmed activity');
 console.log('Ethernet activity overview passed');
