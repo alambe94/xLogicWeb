@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import {forgetUsbDdr, inspectUsbDdr, receiveUsbDdr, usbDdrMaximum} from './eskUsbDdr.js';
+import {forgetUsbDdr, inspectUsbDdr, receiveUsbDdr, usbDdrMaximum, usbDdrTriggerMaximum} from './eskUsbDdr.js';
 import {requestEskDevice, restoreEskLogicDevice, selectedEskUsbDevice, selectEskUsbDevice} from './eskCapture.js';
 
 const MiB = 1024 * 1024, maximum = 2147483520;
@@ -10,6 +10,7 @@ class Board {
   flags = 3;
   transport = 1;
   hz = 500000000;
+  firmware = 0x2b01;
   sid = 33n;
   boot = 54n;
   capture = 77n;
@@ -41,10 +42,15 @@ class Board {
     assert.equal(setup.request, 0x72);
     const req = this.req, op = req.getUint8(10);
     this.common.push(op);
-    const data = new DataView(new ArrayBuffer(op === 1 ? 116 : op === 7 ? 128 : op === 6 ? 48 : 100));
+    const identity = op === 1 && req.getUint8(48) === 1;
+    const data = new DataView(new ArrayBuffer(op === 1 && !identity ? 116 : op === 7 ? 128 : op === 6 ? 48 : 100));
     new Uint8Array(data.buffer, 0, 48).set(new Uint8Array(req.buffer, 0, 48));
     data.setUint8(9, 2); data.setUint16(12, data.byteLength, true);
-    if (op === 1) {
+    if (identity) {
+      data.setUint32(48,0x7845534b); data.setUint8(52,1); data.setUint8(53,1); data.setUint16(56,52,true);
+      data.setUint8(60,1); data.setBigUint64(76,this.boot,true); data.setUint32(84,this.firmware,true);
+      data.setUint32(92,1,true); data.setUint32(96,1,true);
+    } else if (op === 1) {
       const idx = req.getUint32(52,true);
       assert.equal(req.getUint8(48), 2);
       assert(idx < 2);
@@ -58,15 +64,17 @@ class Board {
       data.setUint32(48, 0x32434c78, true); data.setUint16(52, 2, true);
       data.setUint16(54, 80, true); data.setUint32(56, cmd, true); data.setBigUint64(72, this.capture, true);
       if (cmd === 2) {
-        assert.equal(req.getBigUint64(64,true), 0n); assert.equal(req.getUint32(80,true), this.hz);
+        assert.equal(req.getBigUint64(64,true), 0n); this.requestedRate = req.getUint32(80,true);
+        this.edge = [req.getUint8(84), req.getUint8(85)];
+        assert.equal(req.getUint16(86,true), 0);
         assert.equal(req.getUint16(60,true), 1); assert.equal(req.getUint16(62,true), 255);
         this.extent = req.getBigUint64(72,true);
-        assert.equal(this.extent % 192n, 0n);
+        assert.equal(this.extent % (this.requestedRate === 500000000 ? 192n : 64n), 0n);
       } else assert.equal(req.getBigUint64(64,true), this.capture);
       if (cmd === 2 || cmd === 3) {
         const ready = !this.hold;
         data.setUint16(64, 5 | (ready ? 512 : 256), true); data.setUint8(66, 1); data.setUint8(67, 255);
-        data.setUint32(80, this.hz, true); data.setBigUint64(88, this.extent, true);
+        data.setUint32(80, this.requestedRate, true); data.setBigUint64(88, this.extent, true);
         data.setBigUint64(96, this.extent, true); data.setBigUint64(120, 200000000n, true);
         if (cmd === 3 && this.hold) this.hold();
       } else {
@@ -115,10 +123,10 @@ class Board {
   grants = [a,other];
   await Promise.all([restoreEskLogicDevice(), restoreEskLogicDevice()]);
   assert.equal(selectedEskUsbDevice(), a); assert.equal(usbDdrMaximum(a), maximum);
-  assert.deepEqual(a.common, [1,1]); assert.equal(pickCount, 0);
+  assert.deepEqual(a.common, [1,1,1]); assert.equal(pickCount, 0);
   selectEskUsbDevice(undefined); grants = [a,b];
   await restoreEskLogicDevice();
-  assert.equal(selectedEskUsbDevice(), a); assert.deepEqual(a.common, [1,1]);
+  assert.equal(selectedEskUsbDevice(), a); assert.deepEqual(a.common, [1,1,1]);
   selectEskUsbDevice(undefined); grants = [b];
   await restoreEskLogicDevice(); assert.equal(selectedEskUsbDevice(), undefined);
   await requestEskDevice(true); assert.equal(pickCount, 1); assert.equal(selectedEskUsbDevice(), a);
@@ -182,3 +190,20 @@ for (const changes of [{capacity: 0}, {flags: 67}, {transport: 2}, {hz: 33333333
   assert(!board.common.includes(2));
 }
 console.log('USB finite DDR capability, bounded download, heartbeat and cancellation passed');
+
+for (const [i,rate] of [333333333,166666666,83333333,41666666].entries()) {
+  const board = new Board(), edge = i % 2 ? 'falling' : 'rising';
+  const trigger = {edge, channel: 3, onArmed() { assert.equal(board.native.at(-1),2); }};
+  await assert.rejects(receiveUsbDdr(board, 193, signal(), assert.fail, rate, trigger), /Unsupported/);
+  board.firmware = 0x2c00;
+  let saved = 0;
+  await receiveUsbDdr(board, 193, signal(), block => { saved += block.length; }, rate, trigger);
+  assert.equal(usbDdrTriggerMaximum(board, rate), maximum);
+  assert.deepEqual(board.edge, [i % 2 ? 2 : 1,3]); assert.equal(saved,193); assert.equal(board.extent,256n);
+  await assert.rejects(receiveUsbDdr(board, 193, signal(), assert.fail, 500000000, trigger), /Unsupported/);
+  const controller = new AbortController();
+  board.hold = () => {};
+  await assert.rejects(receiveUsbDdr(board, 193, controller.signal, assert.fail, rate, {...trigger,
+    onArmed() { controller.abort(); }}), {name: 'AbortError'});
+  assert.equal(board.native.at(-1),5);
+}

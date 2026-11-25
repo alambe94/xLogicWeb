@@ -119,3 +119,40 @@ localMask = '255';
 truncate = true;
 await assert.rejects(captureLocal(), /Incomplete/);
 console.log('Loopback Ethernet capture and truncation detection passed');
+
+const edge = {edge:'falling', channel:3, onArmed() { armed++; }};
+let armed = 0;
+status.firmware = 0x2c00; status.captureTriggerRates = rates; status.captureRates = rates;
+globalThis.fetch = async (_url, options) => {
+  const request = JSON.parse(options.body);
+  if (request.op === 'lan_status') return Response.json(status);
+  assert.deepEqual(request.trigger, {edge:'falling',channel:3});
+  return new Response(new ReadableStream({start(c) {
+    c.enqueue(Uint8Array.of(1)); c.enqueue(Uint8Array.of(123,0,0)); c.enqueue(Uint8Array.of(0,0,0,0,0,7,9)); c.close();
+  }}), {headers:{'Content-Type':'application/octet-stream','Content-Length':'11','X-ESK-Armed':'1','X-ESK-Rate':String(rates[0]),'X-ESK-Channel-Mask':'255','X-ESK-Format':'raw8'}});
+};
+await readBoardStatus();
+const acquired = [];
+assert.equal(await receiveBoardCapture(2, new AbortController().signal, async b => { acquired.push(...b); }, rates[0], edge), '123');
+assert.deepEqual(acquired,[7,9]); assert.equal(armed,1);
+globalThis.location = new URL('https://example.org/#' + new URLSearchParams({eskBoard: origin}));
+let cancelReceived;
+const canceled = new Promise(done => { cancelReceived=done; });
+window.parent = {postMessage(message, _origin, [port]) {
+  if (message === 'xesk.status.v1') { port.postMessage(status); port.close(); return; }
+  assert.deepEqual(message,{type:'xesk.capture.v4',count:2,rate:rates[0],trigger:{edge:'falling',channel:3}});
+  port.onmessage = ({data}) => {
+    if (data === 'cancel') { port.close(); cancelReceived(); return; }
+    if (data === 'alive') { port.postMessage({offset:0,data:Uint8Array.of(7,9)}); return; }
+    assert.equal(data,'ack'); port.postMessage({done:true, ticks:'123', rate:rates[0]}); port.close();
+  };
+  port.postMessage({armed:true}); port.postMessage({waiting:true});
+}};
+await readBoardStatus();
+const receive = (signal, trigger) => receiveBoardCapture(2,signal,async b => assert.deepEqual([...b],[7,9]),rates[0],trigger);
+assert.equal(await receive(new AbortController().signal,edge),'123');
+const controller = new AbortController();
+await assert.rejects(receive(controller.signal,{...edge,onArmed() {controller.abort();}}), {name:'AbortError'});
+await canceled;
+assert.equal(await receive(new AbortController().signal,edge),'123');
+console.log('DDR trigger arming, heartbeat, cancel and rearm passed for board and helper protocols');

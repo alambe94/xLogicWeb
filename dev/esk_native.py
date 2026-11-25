@@ -7,6 +7,7 @@ import mimetypes
 import mmap
 import os
 import re
+import select
 import shutil
 import subprocess
 import threading
@@ -600,20 +601,38 @@ class Handler(BaseHTTPRequestHandler):
         # Hold the last block until the hardware releases the retained capture.
         # If transfer or cleanup fails after headers, Content-Length stays short.
         started = False
-        try:
-            with self.server.boards.capture(body) as (ticks, chunks, keep_alive):
-                self.connection.settimeout(1)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/octet-stream")
-                self.send_header("Content-Length", str(body["count"]))
+        triggered = body.get("trigger") is not None
+        def headers(ticks=None):
+            nonlocal started
+            self.connection.settimeout(1)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(body["count"] + (9 if triggered else 0)))
+            if triggered:
+                self.send_header("X-ESK-Armed", "1")
+            else:
                 self.send_header("X-ESK-Ticks", ticks)
-                self.send_header("X-ESK-Rate", str(body["rate"]))
-                self.send_header("X-ESK-Format", "raw8")
-                self.send_header("X-ESK-Channel-Mask", "255")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                started = True
+            self.send_header("X-ESK-Rate", str(body["rate"]))
+            self.send_header("X-ESK-Format", "raw8")
+            self.send_header("X-ESK-Channel-Mask", "255")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            started = True
+            if triggered:
+                self.wfile.write(b"\x01")
+
+        def check_connection():
+            if select.select([self.connection], [], [], 0)[0]:
+                raise BrokenPipeError("Viewer closed the capture connection")
+
+        try:
+            options = dict(armed=headers, check_connection=check_connection) if triggered else {}
+            with self.server.boards.capture(body, **options) as (ticks, chunks, keep_alive):
+                if triggered:
+                    self.wfile.write(int(ticks).to_bytes(8, "little"))
+                else:
+                    headers(ticks)
                 last = b""
                 for chunk in chunks:
                     pending = memoryview(last)

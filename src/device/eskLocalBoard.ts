@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { BoardStatus } from './eskPairedBoard.js';
+import type { DdrTrigger } from './eskDdrTrigger.js';
 
 export function localEthernetAvailable(): boolean {
   return typeof location !== 'undefined' && location.hostname === '127.0.0.1' &&
@@ -36,12 +37,16 @@ export async function localBoardName(board: BoardStatus, name?: string): Promise
 }
 
 export async function localCapture(boot: string, count: number, rate: number, signal: AbortSignal,
-    accept: (data: Uint8Array, offset: number) => Promise<void>): Promise<string> {
-  const response = await localRequest('lan_capture', {boot, count, rate}, signal);
-  const ticks = response.headers.get('X-ESK-Ticks') ?? '';
+    accept: (data: Uint8Array, offset: number) => Promise<void>, trigger?: DdrTrigger): Promise<string> {
+  const response = await localRequest('lan_capture', {boot, count, rate,
+    ...(trigger ? {trigger: {edge: trigger.edge, channel: trigger.channel}} : {})}, signal);
+  const prefix = trigger ? new Uint8Array(9) : undefined;
+  let prefixUsed = 0;
+  let ticks = response.headers.get('X-ESK-Ticks') ?? '';
   const reportedRate = response.headers.get('X-ESK-Rate');
   const checkGeometry = rate === 500_000_000 || reportedRate !== null;
-  if (response.headers.get('Content-Length') !== String(count) || !/^\d{1,20}$/.test(ticks) ||
+  if (response.headers.get('Content-Length') !== String(count + (prefix?.length ?? 0)) ||
+      (trigger ? response.headers.get('X-ESK-Armed') !== '1' : !/^\d{1,20}$/.test(ticks)) ||
       (checkGeometry && (reportedRate !== String(rate) || response.headers.get('X-ESK-Format') !== 'raw8' ||
         response.headers.get('X-ESK-Channel-Mask') !== '255')) ||
       response.headers.get('Content-Type') !== 'application/octet-stream' || !response.body) {
@@ -52,8 +57,20 @@ export async function localCapture(boot: string, count: number, rate: number, si
   let offset = 0;
   try {
     for (;;) {
-      const {value, done} = await reader.read();
+      const {value: chunk, done} = await reader.read();
       if (done) break;
+      let value = chunk;
+      if (prefix && prefixUsed < prefix.length) {
+        const take = Math.min(prefix.length - prefixUsed, value.byteLength);
+        prefix.set(value.subarray(0, take), prefixUsed);
+        if (!prefixUsed && take) {
+          if (prefix[0] !== 1) throw new Error('Invalid local trigger acknowledgement.');
+          trigger!.onArmed();
+        }
+        prefixUsed += take;
+        if (prefixUsed === prefix.length) ticks = new DataView(prefix.buffer).getBigUint64(1, true).toString();
+        value = value.subarray(take);
+      }
       if (offset + value.byteLength > count) throw new Error('Capture exceeded the requested length.');
       for (let i = 0; i < value.byteLength; i += 32768) {
         signal.throwIfAborted();

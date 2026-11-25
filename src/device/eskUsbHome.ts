@@ -10,20 +10,6 @@ const names = ['', 'Device', 'Logic', 'DAP', 'UART', 'I2C', 'SPI', 'GPIO', 'USB 
 const owners = ['Unknown', 'Unclaimed', 'Pending', 'Claimed', 'Retiring', 'Quarantined', 'Faulted'];
 
 class HomeSession extends EskUsbSession {
-  async identity() {
-    const query = new Uint8Array(8);
-    query[0] = 1; // DEVICE/0 descriptor
-    const r = await this.exchange(1, query);
-    requireField(r.byteLength === 100 && r.getUint32(48) === 0x7845534b && r.getUint8(52) === 1 &&
-      r.getUint8(53) === 1 && r.getUint16(54, true) === 0 && r.getUint16(56, true) === 52 &&
-      r.getUint16(58, true) === 0 && r.getBigUint64(76, true) === this.boot &&
-      (r.getUint32(92, true) & 1) && r.getUint32(96, true), 'Invalid ESK device identity');
-    const id = new Uint8Array(r.buffer, r.byteOffset + 60, 16);
-    requireField(id.some(b => b !== 0), 'Empty ESK device ID');
-    return {deviceId: Array.from(id, b => b.toString(16).padStart(2, '0')).join(''),
-      boot: this.boot.toString(), firmware: r.getUint32(84, true), hardwareId: r.getUint32(88, true)};
-  }
-
   async status(): Promise<BoardStatus> {
     const identity = await this.identity();
     const features: BoardStatus['features'] = [];
