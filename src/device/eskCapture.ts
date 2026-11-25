@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { EskUsbSession, withUsbInterface, within, requireField, delay } from './eskUsbSession.js';
+import { forgetUsbDdr, inspectUsbDdr } from './eskUsbDdr.js';
 
 /** Finite raw8 capture on ESK's existing scoped xLOGIC USB interface. */
 export const ESK_CHANNELS = 8;
@@ -23,19 +24,41 @@ const ABI_MAGIC = 0x584c4f47;
 const SCOPED_MAGIC = new TextEncoder().encode('xELG');
 
 let selected: USBDevice | undefined;
+const selectionKey = 'xesk.usb.serial';
 export function selectedEskUsbDevice(): USBDevice | undefined { return selected; }
 export function selectEskUsbDevice(device?: USBDevice): void {
   if (selected === device) return;
   selected = device;
+  if (device) {
+    try {
+      if (device.serialNumber) localStorage.setItem(selectionKey, device.serialNumber);
+      else localStorage.removeItem(selectionKey);
+    } catch { /* Storage may be unavailable in a portable or private tab. */ }
+  }
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('esk-usb-ddr'));
 }
 export async function requestEskDevice(change = false): Promise<USBDevice> {
-  if (selected && !change) return selected;
-  const device = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x1209, productId: 3 }] });
+  const device = selected && !change ? selected :
+    await navigator.usb.requestDevice({ filters: [{ vendorId: 0x1209, productId: 3 }] });
   selectEskUsbDevice(device);
+  // Home, Bridge and older packed-only Logic still work when MI0 is temporarily busy.
+  await inspectUsbDdr(device).catch(() => {});
   return device;
 }
+/** A new Logic tab can reuse a browser grant without showing a picker or guessing between boards. */
+export async function restoreEskLogicDevice(): Promise<void> {
+  if (!navigator.usb) return;
+  if (!selected) {
+    const devices = (await navigator.usb.getDevices()).filter(d => d.vendorId === 0x1209 && d.productId === 3);
+    let serial: string | null = null;
+    try { serial = localStorage.getItem(selectionKey); } catch { /* Optional origin storage. */ }
+    const candidates = serial ? devices.filter(d => d.serialNumber === serial) : devices;
+    if (!selected && candidates.length === 1) selectEskUsbDevice(candidates[0]);
+  }
+  if (selected) await inspectUsbDdr(selected);
+}
 if (typeof navigator !== 'undefined') navigator.usb?.addEventListener('disconnect', event => {
+  forgetUsbDdr(event.device);
   if (event.device === selected) selectEskUsbDevice();
 });
 

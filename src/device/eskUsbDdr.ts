@@ -9,10 +9,12 @@ const ACQUIRING = 0x100, READY = 0x200, FAILED = 0x400;
 const START = 2, STATUS = 3, CANCEL = 5, RELEASE = 6;
 const LEASE_TICKS = 60000n;
 const capacities = new WeakMap<USBDevice, number>();
+const probes = new WeakMap<USBDevice, Promise<number>>();
 export const usbDdrMaximum = (device?: USBDevice) => device && capacities.get(device);
+export function forgetUsbDdr(device: USBDevice): void { capacities.delete(device); }
 
 /** A Logic descriptor is transport-specific. Earlier firmware returns zero arena bytes on USB. */
-export async function observeUsbDdr(device: USBDevice, describe: (query: Uint8Array) => Promise<DataView>): Promise<number> {
+async function observeUsbDdr(device: USBDevice, describe: (query: Uint8Array) => Promise<DataView>): Promise<number> {
   const query = new Uint8Array(8);
   query[0] = 2;
   let capacity = 0;
@@ -144,9 +146,16 @@ class DdrSession extends EskUsbSession {
   }
 }
 
-export async function inspectUsbDdr(device: USBDevice) {
+/** The capacity belongs to Logic MI0. Management MI2 can describe the same service with zero capacity. */
+export function inspectUsbDdr(device: USBDevice): Promise<number> {
+  const pending = probes.get(device);
+  if (pending) return pending;
+  const known = capacities.get(device);
+  if (known !== undefined) return Promise.resolve(known);
   const session = new DdrSession(device);
-  return withUsbInterface(device, session, () => session.inspect());
+  const probe = withUsbInterface(device, session, () => session.inspect()).finally(() => probes.delete(device));
+  probes.set(device, probe);
+  return probe;
 }
 
 export async function receiveUsbDdr(device: USBDevice, count: number, signal: AbortSignal, accept: (block: Uint8Array) => Promise<void>) {
