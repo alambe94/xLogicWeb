@@ -284,6 +284,18 @@ class RecordingTests(unittest.TestCase):
         self.assertEqual(capture.read_bytes(), b"saved")
 
     @patch("esk_native.subprocess.Popen")
+    def test_read_queue_depth_by_rate(self, launch):
+        for rate in RATES:
+            with self.subTest(rate=rate):
+                store = Recordings(self.store.directory, Path("xlogic_capture.exe"), None, self.store.budget)
+                store.start(rate, "lower", 1024)
+                command = launch.call_args.args[0]
+                if rate == 333333333:
+                    self.assertEqual(command[command.index("--queue-depth") + 1], "32")
+                else:
+                    self.assertNotIn("--queue-depth", command)
+
+    @patch("esk_native.subprocess.Popen")
     @patch("esk_native.shutil.disk_usage")
     def test_until_stopped_uses_drive_space_without_archive_quota(self, usage, launch):
         usage.return_value.free = 5 * 1024**4

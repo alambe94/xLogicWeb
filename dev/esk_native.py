@@ -246,6 +246,9 @@ class Recordings:
                "--channel-mask", str((15 if bank == "lower" else 240) if factor == 2 else 255),
                "--duration", str(duration), "--record-bytes", str(wire_limit), "--stop-on-stdin-close",
                "--output", str(self.path(key, ".bin")), "--json", str(self.path(key, ".json"))]
+        if rate == 333333333:
+            # At 333 MB/s the default 16 reads cover only about 100 ms of sink delay.
+            cmd += ["--queue-depth", "32"]
         if serial or self.serial:
             cmd += ["--serial", serial or self.serial]
         try:
